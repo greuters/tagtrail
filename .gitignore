@@ -102,3 +102,12 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# custom
+.gitignore
+*.ods
+*.csv
+*.swp
+*.jpg
+*.JPG
+*.txt
