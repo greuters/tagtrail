@@ -16,5 +16,33 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+"""
+.. module:: tagtrail_gen
+   :platform: Linux
+   :synopsis: A tool to generate ProductSheets and TagSheets ready to print.
+
+.. moduleauthor:: Simon Greuter <simon.greuter@gmx.net>
 
 
+"""
+
+import cv2 as cv
+import slugify
+from database import Database
+from sheets import ProductSheet
+
+def main():
+    dataFilePath = 'data/{}'
+    db = Database(dataFilePath.format('database/mitglieder.csv'),
+            dataFilePath.format('database/produkte.csv'))
+    product = db._products[2]
+    for (q0, q1) in [(s, min(s+ProductSheet.maxQuantity(), product._quantity)-1) for s in
+            range(0, product._quantity, ProductSheet.maxQuantity())]:
+        sheet1 = ProductSheet(product._description, product._unit,
+                product._price, q1-q0+1, db, False)
+        cv.imwrite(dataFilePath.format("sheets/{}_{}_{}.jpg".
+            format(slugify.slugify(product._id), q0, q1)),
+            sheet1.createImg())
+
+if __name__== "__main__":
+    main()
