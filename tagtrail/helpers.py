@@ -17,30 +17,44 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from abc import ABC, abstractmethod
+import slugify
 
-class Member(ABC):
+class IdentifiableObject(ABC):
+    def __init__(self,
+            objId):
+        self._id = objId
+
+class Member(IdentifiableObject):
     def __init__(self,
             memberId,
             names,
             emails
             ):
-        self._id = memberId
+        super().__init__(memberId)
         self._names = names
         self._emails = emails
 
-class Product(ABC):
+class Product(IdentifiableObject):
     def __init__(self,
-            productId,
             description,
             unit,
             price,
             quantity
             ):
-        self._id = productId
+        super().__init__(slugify.slugify(description))
         self._description = description
         self._unit = unit
-        self._price = price
+        self._price = self.formatPrice(price)
         self._quantity = quantity
+
+    def formatPrice(self, price):
+        if "." in price:
+            i, d = price.split(".")
+        else:
+            i = price
+            d = ""
+        d = d + "00"
+        return i + "." + d[0:2]
 
 class Log(ABC):
     LEVEL_DEBUG = 0

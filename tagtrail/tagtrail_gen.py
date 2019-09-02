@@ -32,17 +32,26 @@ from database import Database
 from sheets import ProductSheet
 
 def main():
+    sheetDescription = "Cashews Nature"
+    #sheetDescription = "MIR"
+
     dataFilePath = 'data/{}'
     db = Database(dataFilePath.format('database/mitglieder.csv'),
             dataFilePath.format('database/produkte.csv'))
-    product = db._products[2]
-    for (q0, q1) in [(s, min(s+ProductSheet.maxQuantity(), product._quantity)-1) for s in
-            range(0, product._quantity, ProductSheet.maxQuantity())]:
-        sheet1 = ProductSheet(product._description, product._unit,
-                product._price, q1-q0+1, db, False)
-        cv.imwrite(dataFilePath.format("sheets/{}_{}_{}.jpg".
-            format(slugify.slugify(product._id), q0, q1)),
-            sheet1.createImg())
+
+    if slugify.slugify(sheetDescription) in db._products:
+        product = db._products[slugify.slugify(sheetDescription)]
+        for (q0, q1) in [(s, min(s+ProductSheet.maxQuantity(), product._quantity)-1) for s in
+                range(0, product._quantity, ProductSheet.maxQuantity())]:
+            sheet1 = ProductSheet(product._description, product._unit,
+                    product._price, q1-q0+1, db, False)
+            cv.imwrite(dataFilePath.format("sheets/{}_{}_{}.jpg".
+                format(product._id, q0, q1)), sheet1.createImg())
+    elif sheetDescription in db._members:
+        member = db._members[sheetDescription]
+        # TODO: implement TagSheet
+    else:
+        print("nothing to do here, sheet not found")
 
 if __name__== "__main__":
     main()

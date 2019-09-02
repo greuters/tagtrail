@@ -401,24 +401,35 @@ class RecognizeText(ProcessingStep):
         memberIds = [m._id for m in self._sheet._database._members]
         self._log.debug("names={}, units={}, prices={}, memberIds={}", names,
                 units, prices, memberIds)
+        self._recognizedBoxTexts = {}
         for box in self._sheet._boxes:
             if box.name == "nameBox":
-                self.recognizeBoxText(box, names)
+                text, confidence = self.recognizeBoxText(box, names)
             elif box.name == "unitBox":
-                self.recognizeBoxText(box, units)
+                text, confidence = self.recognizeBoxText(box, units)
             elif box.name == "priceBox":
-                self.recognizeBoxText(box, prices)
+                text, confidence = self.recognizeBoxText(box, prices)
             elif box.name.find("dataBox") != -1:
-                self.recognizeBoxText(box, memberIds)
+                text, confidence = self.recognizeBoxText(box, memberIds)
+            else:
+                text, confidence = ("", 1.0)
+
+            self._recognizedBoxTexts[box.name] = (text, confidence)
+            box.text = text
+            if confidence < self.confidenceThreshold:
+                box.bgColor = (0, 0, 80)
 
         self._outputImg = self._sheet.createImg()
 
+    """
+    Returns (text, confidence) among candidateTexts
+    """
     def recognizeBoxText(self, box, candidateTexts):
         (x0,y0),(x1,y1)=box.pt1,box.pt2
         m=20
         thresholdImg = self._thresholdImg[y0+m:y1-m,x0+m:x1-m]
         if np.min(thresholdImg) == 255 or np.max(thresholdImg) == 0:
-            return
+            return ("", 1.0)
 
         kernel = cv.getStructuringElement(cv.MORPH_RECT, (2,2))
         inputImg = cv.erode(self._inputImg[y0+m:y1-m,x0+m:x1-m], kernel, 1)
@@ -434,11 +445,8 @@ class RecognizeText(ProcessingStep):
         #os.remove(filename)
 
         confidence, text = self.findClosestString(ocrText.upper(), candidateTexts)
-        if confidence < self.confidenceThreshold:
-            box.bgColor = (0, 0, 80)
-        box.text = text
-
-        self._log.info("(ocrText, confidence, text) = ({}, {}, {})", ocrText, confidence, box.text)
+        self._log.info("(ocrText, confidence, text) = ({}, {}, {})", ocrText, confidence, text)
+        return (text, confidence)
 
     def findClosestString(self, string, strings):
         strings=list(set(strings))
@@ -456,21 +464,33 @@ class RecognizeText(ProcessingStep):
         cv.imwrite("{}/{}_0_grayImg.jpg".format(self._outputPath, self._name), self._grayImg)
         cv.imwrite("{}/{}_1_output.jpg".format(self._outputPath, self._name), self._outputImg)
 
+    def storeRatings(self, path):
+        with open("{}/{}.csv".format(path,
+            self._recognizedBoxTexts["nameBox"][0]), "w+") as fout:
+            fout.write("{};{};{}\n"
+                    .format("boxName", "ocr_text", "confidence"))
+            for boxName, (text, confidence) in self._recognizedBoxTexts.items():
+                fout.write("{};{};{}\n".format(boxName, text, confidence))
+
 def main():
+    #pathToScan='Risottoreis_0_95_rot.jpg'
+    #pathToScan='Risottoreis_96_119_rot.jpg'
+    #pathToScan='test2_fitToSheet_1_output.jpg'
+    #pathToScan='data/tmp/2_fitToSheet_1_output.jpg'
+    pathToScan='data/scans/test0002.jpg'
+    pathToWrite='data/ocr_out/'
     processors=[]
     processors.append(RotateSheet("0_rotateSheet"))
     processors.append(FindMarginsByContour("1_findMargins"))
     processors.append(FitToSheet("2_fitToSheet"))
-    processors.append(RecognizeText("3_recognizeText"))
-    #img = cv.imread('Risottoreis_0_95_rot.jpg')
-    #img = cv.imread('Risottoreis_96_119_rot.jpg')
-    #img = cv.imread('test2_fitToSheet_1_output.jpg')
-    img = cv.imread('data/scans/test0002.jpg')
-    #img = cv.imread('data/tmp/2_fitToSheet_1_output.jpg')
+    recognizer = RecognizeText("3_recognizeText")
+    processors.append(recognizer)
+    img = cv.imread(pathToScan)
     for p in processors:
         p.process(img)
         p.writeOutput()
         img = p._outputImg
+    recognizer.storeRatings(pathToWrite)
 
 if __name__== "__main__":
     main()

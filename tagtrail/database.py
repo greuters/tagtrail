@@ -50,15 +50,15 @@ class Database(ABC):
             =========  ============  =================
 
         * Expected product format:
-            ===========   ===================  =====  =========
-            productId;    description;         unit;  price
-            ___________   ___________________  _____  _________
-            rice_brown;   Organic brown rice;  500g;  123 CHF
-            ===========   ===================  =====  =========
+            ===================  =====  =========
+            description;         unit;  price
+            ___________________  _____  _________
+            Organic brown rice;  500g;  123 CHF
+            ===================  =====  =========
 
     """
     csvDelimiter = ';'
-    "Delimiter between csv columns. default value: ';;'"
+    "Delimiter between csv columns. default value: ';'"
     colInternalDelimiter = ','
     quotechar = '"'
     newline = ''
@@ -78,10 +78,10 @@ class Database(ABC):
         return Member(row[0], row[1], row[2])
 
     def productFromRow(self, row):
-        return Product(row[0], row[1], row[2], row[3], int(row[4]))
+        return Product(row[0], row[1], row[2], int(row[3]))
 
     def readRowsFromCSV(self, path, rowProcessor, skipCnt=0):
-        l = []
+        d = {}
         with open(path, newline=self.newline) as csvfile:
             reader = csv.reader(csvfile, delimiter=self.csvDelimiter,
                     quotechar=self.quotechar)
@@ -89,5 +89,6 @@ class Database(ABC):
                 if cnt<skipCnt:
                     continue
                 self._log.debug("row={}", row)
-                l.append(rowProcessor(row))
-        return l
+                idObj = rowProcessor(row)
+                d[idObj._id]= idObj
+        return d
