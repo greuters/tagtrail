@@ -26,33 +26,48 @@ lista = ['a', 'actions', 'additional', 'also', 'an', 'and', 'angle', 'are', 'as'
 
 
 class AutocompleteEntry(ttk.Combobox):
-    def __init__(self, lista, *args, **kwargs):
-        
+    def __init__(self, lista, entryBefore, *args, **kwargs):
         Entry.__init__(self, *args, **kwargs)
-        self.lista = lista        
+        self.lista = lista
+        self.entryBefore = entryBefore
+        print(self.entryBefore)
         self.var = self["textvariable"]
         if self.var == '':
             self.var = self["textvariable"] = StringVar()
 
         self.var.trace('w', self.changed)
-        self.bind("<Right>", self.selection)
+        self.bind("<Return>", self.selection)
         self.bind("<Up>", self.up)
         self.bind("<Down>", self.down)
-        
+        self.bind("<Tab>", self.next)
+
+        self.prev_val = ""
         self.lb_up = False
 
+    def next(self, event):
+        print("select next entry with low confidence")
+
+
     def changed(self, name, index, mode):  
+        print(self.var.get())
 
         if self.var.get() == '':
-            self.lb.destroy()
-            self.lb_up = False
+            if self.lb_up:
+                self.lb.destroy()
+                self.lb_up = False
         else:
             words = self.comparison()
-            if words:            
+            print(words)
+            if len(words) == 1 and len(self.prev_val) < len(self.var.get()):
+                if self.lb_up:
+                    self.lb.destroy()
+                    self.lb_up = False
+                self.delete(0, END)
+                self.insert(0, words[0])
+
+            elif words:
                 if not self.lb_up:
                     self.lb = Listbox()
-                    self.lb.bind("<Double-Button-1>", self.selection)
-                    self.lb.bind("<Right>", self.selection)
                     self.lb.place(x=self.winfo_x(), y=self.winfo_y()+self.winfo_height())
                     self.lb_up = True
                 
@@ -63,8 +78,12 @@ class AutocompleteEntry(ttk.Combobox):
                 if self.lb_up:
                     self.lb.destroy()
                     self.lb_up = False
+                self.var.set(self.prev_val)
+
+        self.prev_val = self.var.get()
         
     def selection(self, event):
+        print("selection")
 
         if self.lb_up:
             self.var.set(self.lb.get(ACTIVE))
@@ -85,6 +104,10 @@ class AutocompleteEntry(ttk.Combobox):
                 self.lb.selection_set(first=index)
                 self.lb.activate(index) 
 
+        elif self.entryBefore:
+            self.entryBefore.focus_set()
+
+
     def down(self, event):
 
         if self.lb_up:
@@ -99,8 +122,10 @@ class AutocompleteEntry(ttk.Combobox):
                 self.lb.activate(index) 
 
     def comparison(self):
-        pattern = re.compile('.*' + self.var.get() + '.*')
-        return [w for w in self.lista if re.match(pattern, w)]
+        if not self.lista:
+            return [self.var.get()]
+        pattern = re.compile(self.var.get().upper() + '.*')
+        return [w for w in self.lista if re.match(pattern, w.upper())]
 
 if __name__ == '__main__':
     root = Tk()
@@ -125,6 +150,7 @@ if __name__ == '__main__':
             dataFilePath.format('produkte.csv'))
     sheet = ProductSheet("not", "known", "yet",
             ProductSheet.maxQuantity(), db)
+    entryBefore = None
     for box in sheet._boxes:
         if box.name == "nameBox":
             choices = db._products.keys()
@@ -141,7 +167,7 @@ if __name__ == '__main__':
         x1, y1 = x1*ratio, y1*ratio
         (x2, y2) = box.pt2
         x2, y2 = x2*ratio, y2*ratio
-        AutocompleteEntry(choices, root).place(x=canvas_w+x1, y=y1, w=x2-x1,
-                h=y2-y1)
+        entryBefore = AutocompleteEntry(choices, entryBefore, root)
+        entryBefore.place(x=canvas_w+x1, y=y1, w=x2-x1, h=y2-y1)
 
     root.mainloop()
