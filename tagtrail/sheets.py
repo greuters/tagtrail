@@ -71,6 +71,8 @@ class ProductSheet(ABC):
         self.testMode=testMode
         self._boxes=[]
         self._log=Log()
+        self._box_to_pos={}
+        self._pos_to_box={}
 
         # Page margin (for easier OCR)
         p0, p1 = self.getPageMarginPts()
@@ -81,30 +83,30 @@ class ProductSheet(ABC):
         v0 = self.layoutMargin
         u1 = u0+self.nameW
         v1 = v0+self.headerH
-        self._boxes.append(Box(
+        self.addBox(Box(
                 "nameBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1],
-                self.name))
+                self.name), 0, 0)
 
         u0 = u1
         u1 = u0+self.unitW
-        self._boxes.append(Box(
+        self.addBox(Box(
                 "unitBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1],
-                self.unit))
+                self.unit), 1, 0)
 
         u0 = u1
         u1 = u0+self.priceW
-        self._boxes.append(Box(
+        self.addBox(Box(
                 "priceBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1],
-                self.price))
+                self.price), 2, 0)
 
         # Data
         for (col, row) in itertools.product(range(0,self.dataColCount),
@@ -126,15 +128,42 @@ class ProductSheet(ABC):
                 text = ""
                 textRotation = 0
 
-            self._boxes.append(Box(
+            self.addBox(Box(
                     "dataBox{}({},{})".format(num,col,row),
                     self.pointFromMM(u0, v0),
                     self.pointFromMM(u0+self.dataRowW, v0+self.dataColH),
                     color,
                     text,
                     textRotation=textRotation
-                    ))
+                    ), col, row+1)
 
+    def addBox(self, box, col, row):
+        self._boxes.append(box)
+        pos = (col, row)
+        self._box_to_pos[box]=pos
+        self._pos_to_box[pos]=box
+
+    def neighbourBox(self, box, direction):
+        if box not in self._box_to_pos:
+            return None
+
+        col, row = self._box_to_pos[box]
+        if direction == 'Up':
+            row -= 1
+        elif direction == 'Down':
+            row += 1
+        elif direction == 'Left':
+            col -= 1
+        elif direction == 'Right':
+            col += 1
+        else:
+            return None
+
+        neighbourPos = (col, row)
+        if neighbourPos in self._pos_to_box:
+            return self._pos_to_box[(col, row)]
+        else:
+            return None
 
     def createImg(self):
         img = np.full((self.yRes, self.xRes, 3), 255, np.uint8)
