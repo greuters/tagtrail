@@ -397,26 +397,27 @@ class RecognizeText(ProcessingStep):
                 cv.THRESH_BINARY)
 
         names, units, prices =zip(*[(p._description.upper(), p._unit.upper(), p._price.upper()) for p
-            in self._sheet._database._products])
-        memberIds = [m._id for m in self._sheet._database._members]
+            in self._sheet._database._products.values()])
+        memberIds = [m._id for m in self._sheet._database._members.values()]
         self._log.debug("names={}, units={}, prices={}, memberIds={}", names,
                 units, prices, memberIds)
         self._recognizedBoxTexts = {}
         for box in self._sheet._boxes:
             if box.name == "nameBox":
-                text, confidence = self.recognizeBoxText(box, names)
+                box.text, box.confidence = self.recognizeBoxText(box, names)
+                self._sheet.name = box.text
             elif box.name == "unitBox":
-                text, confidence = self.recognizeBoxText(box, units)
+                box.text, box.confidence = self.recognizeBoxText(box, units)
+                self._sheet.unit = box.text
             elif box.name == "priceBox":
-                text, confidence = self.recognizeBoxText(box, prices)
+                box.text, box.confidence = self.recognizeBoxText(box, prices)
+                self._sheet.price = box.text
             elif box.name.find("dataBox") != -1:
-                text, confidence = self.recognizeBoxText(box, memberIds)
+                box.text, box.confidence = self.recognizeBoxText(box, memberIds)
             else:
-                text, confidence = ("", 1.0)
+                box.text, box.confidence = ("", 1.0)
 
-            self._recognizedBoxTexts[box.name] = (text, confidence)
-            box.text = text
-            if confidence < self.confidenceThreshold:
+            if box.confidence < self.confidenceThreshold:
                 box.bgColor = (0, 0, 80)
 
         self._outputImg = self._sheet.createImg()
@@ -464,13 +465,6 @@ class RecognizeText(ProcessingStep):
         cv.imwrite("{}/{}_0_grayImg.jpg".format(self._outputPath, self._name), self._grayImg)
         cv.imwrite("{}/{}_1_output.jpg".format(self._outputPath, self._name), self._outputImg)
 
-    def storeRatings(self, path):
-        with open("{}/{}.csv".format(path,
-            self._recognizedBoxTexts["nameBox"][0]), "w+") as fout:
-            fout.write("{};{};{}\n"
-                    .format("boxName", "ocr_text", "confidence"))
-            for boxName, (text, confidence) in self._recognizedBoxTexts.items():
-                fout.write("{};{};{}\n".format(boxName, text, confidence))
 
 def main():
     #pathToScan='Risottoreis_0_95_rot.jpg'
@@ -490,7 +484,7 @@ def main():
         p.process(img)
         p.writeOutput()
         img = p._outputImg
-    recognizer.storeRatings(pathToWrite)
+    recognizer._sheet.store(pathToWrite)
 
 if __name__== "__main__":
     main()

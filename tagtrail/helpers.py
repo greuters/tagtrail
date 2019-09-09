@@ -67,18 +67,18 @@ class Log(ABC):
         self._logLevel = logLevel
 
     def debug(self, msg, *args, **kwargs):
-        if self._logLevel<=self.LEVEL_DEBUG:
-            self.print(msg, *args, **kwargs)
+        if self._logLevel<=Log.LEVEL_DEBUG:
+            self._print(msg, *args, **kwargs)
 
     def warn(self, msg, *args, **kwargs):
-        if self._logLevel<=self.LEVEL_WARN:
-            self.print(msg, *args, **kwargs)
+        if self._logLevel<=Log.LEVEL_WARN:
+            self._print(msg, *args, **kwargs)
 
     def info(self, msg, *args, **kwargs):
-        if self._logLevel<=self.LEVEL_INFO:
-            self.print(msg, *args, **kwargs)
+        if self._logLevel<=Log.LEVEL_INFO:
+            self._print(msg, *args, **kwargs)
 
-    def print(self, msg, *args, **kwargs):
+    def _print(self, msg, *args, **kwargs):
         if isinstance(msg, str):
             print(msg.format(*args, **kwargs))
         else:

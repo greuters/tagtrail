@@ -22,6 +22,7 @@ import datetime
 import decimal
 import itertools
 import random
+import csv
 from helpers import Log
 from abc import ABC, abstractmethod
 from PIL import ImageFont, Image, ImageDraw
@@ -171,6 +172,45 @@ class ProductSheet(ABC):
             box.draw(img)
         return img
 
+    def load(self, path):
+        skipCnt=1
+        csvDelimiter = ';'
+        quotechar = '"'
+        name_to_box = {}
+        for b in self._boxes:
+            name_to_box[b.name] = b
+
+        numDataBoxes = 0
+        with open(path, newline='') as csvfile:
+            reader = csv.reader(csvfile, delimiter=csvDelimiter,
+                    quotechar=quotechar)
+            for cnt, row in enumerate(reader):
+                if cnt<skipCnt:
+                    continue
+                self._log.debug("row={}", row)
+                boxName, text, confidence = row[0], row[1], float(row[2])
+                if boxName == "nameBox":
+                    self.name = text
+                elif boxName == "unitBox":
+                    self.unit = text
+                elif boxName == "priceBox":
+                    self.price = text
+                elif boxName == "marginBox":
+                    continue
+                elif boxName.find("dataBox") != -1:
+                    numDataBoxes += 1
+                else:
+                    self._log.warn("skipped unexpected box, row = {}", row)
+                name_to_box[boxName].name = boxName
+                name_to_box[boxName].text = text
+                name_to_box[boxName].confidence = confidence
+
+    def store(self, path):
+        with open("{}/{}.csv".format(path, self.name), "w+") as fout:
+            fout.write("{};{};{}\n" .format("boxName", "text", "confidence"))
+            for box in self._boxes:
+                fout.write("{};{};{}\n".format(box.name, box.text, box.confidence))
+
 class Box(ABC):
     fontColor = 'black'
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -178,6 +218,7 @@ class Box(ABC):
 
     def __init__(self, name, pt1, pt2, bgColor,
             text = "",
+            confidence = 1,
             lineW = 3,
             lineColor = [0, 0, 0],
             textRotation = 0):
@@ -186,6 +227,7 @@ class Box(ABC):
         self.pt2 = pt2
         self.bgColor = bgColor
         self.text = text
+        self.confidence = confidence
         self.lineW = lineW
         self.lineColor = lineColor
         self.textRotation = textRotation
