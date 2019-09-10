@@ -476,7 +476,8 @@ def main():
     processors=[]
     processors.append(RotateSheet("0_rotateSheet"))
     processors.append(FindMarginsByContour("1_findMargins"))
-    processors.append(FitToSheet("2_fitToSheet"))
+    fit = FitToSheet("2_fitToSheet")
+    processors.append(fit)
     recognizer = RecognizeText("3_recognizeText")
     processors.append(recognizer)
     img = cv.imread(pathToScan)
@@ -485,6 +486,8 @@ def main():
         p.writeOutput()
         img = p._outputImg
     recognizer._sheet.store(pathToWrite)
+    cv.imwrite("{}{}_normalized_scan.jpg".format(pathToWrite,
+        recognizer._sheet.name), fit._outputImg)
 
 if __name__== "__main__":
     main()

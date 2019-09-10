@@ -22,6 +22,7 @@ from PIL import ImageTk,Image
 from sheets import ProductSheet
 from database import Database
 from helpers import Log
+from functools import partial
 
 class AutocompleteEntry(ttk.Combobox):
     def __init__(self, box, possibleValues, releaseFocus, *args, **kwargs):
@@ -175,9 +176,11 @@ class AutocompleteEntry(ttk.Combobox):
             self.config({"background": 'green'})
 
 class InputSheet(ProductSheet):
-    def __init__(self, name, unit, price, quantity, database, path):
+    def __init__(self, name, unit, price, quantity, root, aspectRatio,
+            database, path):
         super().__init__(name, unit, price, quantity)
         self.load(path)
+
         self._box_to_widget = {}
         for box in self._boxes:
             if box.name == "nameBox":
@@ -192,22 +195,17 @@ class InputSheet(ProductSheet):
                 continue
 
             (x1, y1) = box.pt1
-            x1, y1 = x1*ratio, y1*ratio
+            x1, y1 = x1*aspectRatio, y1*aspectRatio
             (x2, y2) = box.pt2
-            x2, y2 = x2*ratio, y2*ratio
+            x2, y2 = x2*aspectRatio, y2*aspectRatio
             entry = AutocompleteEntry(box, choices, self.switchFocus, root)
-            entry.place(x=canvas_w+x1, y=y1, w=x2-x1, h=y2-y1)
+            entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             self._box_to_widget[box] = entry
+        self._box_to_widget[self._boxes[1]].focus_set()
 
     def switchFocus(self, event):
-        if str(event.type) != "KeyPress":
-            return event
-
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
-        if event.char == event.keysym:
-            # normal key, not handled here
-            return event
-        else:
+        if str(event.type) == "KeyPress" and event.char != event.keysym:
             # punctuation or special key, distinguish by event.keysym
             if event.keysym in ["Return", "Tab"]:
                 if event.keysym == "Return":
@@ -219,17 +217,13 @@ class InputSheet(ProductSheet):
                     print("TODO")
                 else:
                     self._box_to_widget[nextBox].focus_set()
-                    # TODO switch highlight on canvas as well
-
-                return "break"
 
             elif event.keysym in ["Up", "Down", "Left", "Right"]:
                 neighbourBox = self.neighbourBox(event.widget.box, event.keysym)
                 if neighbourBox:
                     self._box_to_widget[neighbourBox].focus_set()
-                return "break"
-            else:
-                return event
+
+        return event
 
     def nextUnclearBox(self, selectedBox):
         indicesOfUnclearBoxes = [idx for idx, b in enumerate(self._boxes) if b.confidence<1]
@@ -243,42 +237,88 @@ class InputSheet(ProductSheet):
                 return self._boxes[min(filter(lambda x: currentIndex < x,
                     indicesOfUnclearBoxes))]
 
-# TODO: refactor
-images = []  # to hold the newly created image
+class MainGui:
+    def __init__(self, scanPath, ocrOutputPath, memberFilePath, productFilePath):
+        self.root = Tk()
+        self.buttonCanvasWidth=200
+        self.width=self.root.winfo_screenwidth()
+        self.height=self.root.winfo_screenheight()
+        self.root.geometry(str(self.width)+'x'+str(self.height))
+        self.root.bind("<Tab>", self.switchInputFocus)
+        self.root.bind("<Return>", self.switchInputFocus)
+        self.root.bind("<Up>", self.switchInputFocus)
+        self.root.bind("<Down>", self.switchInputFocus)
+        self.root.bind("<Left>", self.switchInputFocus)
+        self.root.bind("<Right>", self.switchInputFocus)
 
-def create_rectangle(x1, y1, x2, y2, **kwargs):
-    if 'alpha' in kwargs:
-        alpha = int(kwargs.pop('alpha') * 255)
-        fill = kwargs.pop('fill')
-        fill = root.winfo_rgb(fill) + (alpha,)
-        image = Image.new('RGBA', (x2-x1, y2-y1), fill)
-        images.append(ImageTk.PhotoImage(image))
-        canvas.create_image(x1, y1, image=images[-1], anchor='nw')
-    canvas.create_rectangle(x1, y1, x2, y2, **kwargs)
-
-
-if __name__ == '__main__':
-    root = Tk()
-    window_w, window_h = 1366, 768
-    root.geometry(str(window_w)+'x'+str(window_h))
-
-    canvas_w, canvas_h = window_w/2, window_h
-    canvas = Canvas(root,
+        self.scannedImg = Image.open(scanPath)
+        o_w, o_h = self.scannedImg.size
+        aspectRatio = min(self.height / o_h, (self.width - self.buttonCanvasWidth) / 2 / o_w)
+        canvas_w, canvas_h = int(o_w * aspectRatio), int(o_h * aspectRatio)
+        self.scanCanvas = Canvas(self.root,
                width=canvas_w,
                height=canvas_h)
-    canvas.place(x=0, y=0)
-    img = Image.open("data/scans/test0002.jpg")
-    o_w, o_h = img.size
-    ratio = min(canvas_h / o_h, canvas_w / o_w)
-    img = img.resize((int(ratio * o_w), int(ratio * o_h)), Image.BILINEAR)
-    img = ImageTk.PhotoImage(img)
-    canvas.create_image(0,0, anchor=NW, image=img)
-    create_rectangle(10, 10, 200, 100, fill='green', alpha=0.2)
+        self.scanCanvas.place(x=0, y=0)
+        self.scannedImg = self.scannedImg.resize((canvas_w, canvas_h), Image.BILINEAR)
+        self.scannedImg = ImageTk.PhotoImage(self.scannedImg)
+        self.scanCanvas.create_image(0,0, anchor=NW, image=self.scannedImg)
+        self.__focusAreaImage = None
+        self.__focusAreaBorderRect = None
 
+        self.inputCanvas = Canvas(self.root,
+               width=canvas_w,
+               height=canvas_h)
+        self.inputCanvas.place(x=canvas_w, y=0)
+        self.db = Database(memberFilePath, productFilePath)
+        self.inputSheet = InputSheet("not", "known", "yet", ProductSheet.maxQuantity(),
+                self.inputCanvas, aspectRatio, self.db, ocrOutputPath)
+
+        self.buttonCanvas = Frame(self.root,
+               width=self.buttonCanvasWidth,
+               height=canvas_h)
+        self.buttonCanvas.place(x=2*canvas_w, y=0)
+        buttons = []
+        buttons.append(Button(self.buttonCanvas, text='Save and next',
+            command=partial(self.inputSheet.store, 'data/ocr_out/')))
+        buttons.append(Button(self.buttonCanvas, text="Don't ever try this one",
+            command=partial(self.inputSheet.store, 'data/ocr_out/')))
+
+        y = 60
+        for b in buttons:
+            b.place(relx=.5, y=y, anchor="center",
+                    width=.8*self.buttonCanvasWidth)
+            b.update()
+            y += b.winfo_height()
+
+    def switchInputFocus(self, event):
+        focused = self.root.focus_displayof()
+        if focused and isinstance(focused, AutocompleteEntry):
+            info = focused.place_info()
+            self.setFocusAreaOnScan(int(info['x']), int(info['y']),
+                    int(info['width']), int(info['height']))
+        return 'break'
+
+
+    def setFocusAreaOnScan(self, x, y, width, height):
+        if self.__focusAreaImage:
+            self.scanCanvas.delete(self.__focusAreaImage)
+            self.scanCanvas.delete(self.__focusAreaBorderRect)
+
+        # cudos to https://stackoverflow.com/questions/54637795/how-to-make-a-tkinter-canvas-rectangle-transparent
+        alpha = 80
+        self.__focusAreaImageSrc = ImageTk.PhotoImage(Image.new('RGBA',
+            (width, height),
+            self.root.winfo_rgb('green') + (alpha,)))
+        self.__focusAreaImage = self.scanCanvas.create_image(x, y, image=self.__focusAreaImageSrc, anchor='nw')
+        self.__focusAreaBorderRect = self.scanCanvas.create_rectangle(x, y,
+                x+width, y+height)
+
+if __name__ == '__main__':
     dataFilePath = 'data/database/{}'
-    db = Database(dataFilePath.format('mitglieder.csv'),
+    productName = 'DRINK HAFER'
+    gui = MainGui('data/ocr_out/{}_normalized_scan.jpg'.format(productName),
+            'data/ocr_out/{}.csv'.format(productName),
+            dataFilePath.format('mitglieder.csv'),
             dataFilePath.format('produkte.csv'))
-    sheet = InputSheet("not", "known", "yet",
-            ProductSheet.maxQuantity(), db, 'data/ocr_out/DRINK HAFER.csv')
 
-    root.mainloop()
+    gui.root.mainloop()
