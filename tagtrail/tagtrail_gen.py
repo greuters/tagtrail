@@ -32,7 +32,8 @@ from database import Database
 from sheets import ProductSheet
 
 def main():
-    sheetDescription = "Cashews Nature"
+    #sheetDescription = "Cashews Nature"
+    sheetDescription = "Pasta Rigatoni"
     #sheetDescription = "MIR"
 
     dataFilePath = 'data/{}'
@@ -44,7 +45,7 @@ def main():
         for (q0, q1) in [(s, min(s+ProductSheet.maxQuantity(), product._quantity)-1) for s in
                 range(0, product._quantity, ProductSheet.maxQuantity())]:
             sheet1 = ProductSheet(product._description, product._unit,
-                    product._price, q1-q0+1, db, False)
+                    product._price, q1-q0+1, db, True)
             cv.imwrite(dataFilePath.format("sheets/{}_{}_{}.jpg".
                 format(product._id, q0, q1)), sheet1.createImg())
     elif sheetDescription in db._members:

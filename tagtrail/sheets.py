@@ -120,7 +120,7 @@ class ProductSheet(ABC):
             u0 = self.layoutMargin + col*self.dataRowW
             if self.testMode:
                 if self._database:
-                    text = self._database._members[random.randint(0,
+                    text = list(self._database._members.values())[random.randint(0,
                         len(self._database._members)-1)]._id
                 else:
                     text = "Test"
@@ -206,6 +206,7 @@ class ProductSheet(ABC):
                 name_to_box[boxName].confidence = confidence
 
     def store(self, path):
+        self._log.info("storing sheet to {}".format(path))
         with open("{}/{}.csv".format(path, self.name), "w+") as fout:
             fout.write("{};{};{}\n" .format("boxName", "text", "confidence"))
             for box in self._boxes:

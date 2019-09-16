@@ -60,6 +60,7 @@ class Log(ABC):
     LEVEL_DEBUG = 0
     LEVEL_WARN = 1
     LEVEL_INFO = 2
+    LEVEL_ERROR = 3
 
     defaultLogLevel = LEVEL_WARN
 
@@ -76,6 +77,10 @@ class Log(ABC):
 
     def info(self, msg, *args, **kwargs):
         if self._logLevel<=Log.LEVEL_INFO:
+            self._print(msg, *args, **kwargs)
+
+    def error(self, msg, *args, **kwargs):
+        if self._logLevel<=Log.LEVEL_ERROR:
             self._print(msg, *args, **kwargs)
 
     def _print(self, msg, *args, **kwargs):

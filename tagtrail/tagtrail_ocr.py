@@ -28,6 +28,7 @@ from abc import ABC, abstractmethod
 from helpers import Log
 from sheets import ProductSheet
 from database import Database
+from os import walk
 
 class ProcessingStep(ABC):
     def __init__(self,
@@ -465,14 +466,8 @@ class RecognizeText(ProcessingStep):
         cv.imwrite("{}/{}_0_grayImg.jpg".format(self._outputPath, self._name), self._grayImg)
         cv.imwrite("{}/{}_1_output.jpg".format(self._outputPath, self._name), self._outputImg)
 
-
-def main():
-    #pathToScan='Risottoreis_0_95_rot.jpg'
-    #pathToScan='Risottoreis_96_119_rot.jpg'
-    #pathToScan='test2_fitToSheet_1_output.jpg'
-    #pathToScan='data/tmp/2_fitToSheet_1_output.jpg'
-    pathToScan='data/scans/test0002.jpg'
-    pathToWrite='data/ocr_out/'
+def processFile(inputFile, outputDir):
+    print('Processing file: ', inputFile)
     processors=[]
     processors.append(RotateSheet("0_rotateSheet"))
     processors.append(FindMarginsByContour("1_findMargins"))
@@ -480,14 +475,24 @@ def main():
     processors.append(fit)
     recognizer = RecognizeText("3_recognizeText")
     processors.append(recognizer)
-    img = cv.imread(pathToScan)
+    img = cv.imread(inputFile)
     for p in processors:
         p.process(img)
         p.writeOutput()
         img = p._outputImg
-    recognizer._sheet.store(pathToWrite)
-    cv.imwrite("{}{}_normalized_scan.jpg".format(pathToWrite,
+    recognizer._sheet.store(outputDir)
+    cv.imwrite("{}{}_normalized_scan.jpg".format(outputDir,
         recognizer._sheet.name), fit._outputImg)
+
+
+
+def main():
+    outputDir = 'data/ocr_out/'
+    inputDir = 'data/scans/'
+    for (dirPath, dirNames, fileNames) in walk(inputDir):
+        for f in fileNames:
+            processFile(dirPath + f, outputDir)
+        break
 
 if __name__== "__main__":
     main()

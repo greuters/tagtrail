@@ -18,6 +18,7 @@
 from tkinter import *
 from tkinter import ttk
 import re
+import os
 from PIL import ImageTk,Image
 from sheets import ProductSheet
 from database import Database
@@ -212,10 +213,7 @@ class InputSheet(ProductSheet):
                     event.widget.confidence=1
 
                 nextBox = self.nextUnclearBox(event.widget.box)
-                if not nextBox:
-                    # TODO go to next sheet button
-                    print("TODO")
-                else:
+                if nextBox:
                     self._box_to_widget[nextBox].focus_set()
 
             elif event.keysym in ["Up", "Down", "Left", "Right"]:
@@ -238,7 +236,28 @@ class InputSheet(ProductSheet):
                     indicesOfUnclearBoxes))]
 
 class MainGui:
-    def __init__(self, scanPath, ocrOutputPath, memberFilePath, productFilePath):
+    def __init__(self, ocrOutputPath, sanitizeOutputPath, memberFilePath, productFilePath):
+        self.log = Log()
+        self.ocrCsvPaths = []
+        self.normalizedScanPaths = []
+        for (dirPath, _, fileNames) in os.walk(ocrOutputPath):
+            for f in fileNames:
+                if f.find("normalized_scan.jpg") != -1:
+                    self.normalizedScanPaths.append(dirPath + f)
+                if f.find(".csv") != -1:
+                    self.ocrCsvPaths.append(dirPath + f)
+        if len(self.ocrCsvPaths) != len(self.normalizedScanPaths):
+            self.log.warn("""Incorrect files in input path (not the same number
+            of scans and CSVs)\nCSVs = {}\nScans = {}""", self.ocrCsvPaths,
+            self.normalizedScanPaths)
+            return
+        self.fileIndex = 0
+
+        self.ocrOutputPath = ocrOutputPath
+        self.sanitizeOutputPath = sanitizeOutputPath
+        self.memberFilePath = memberFilePath
+        self.productFilePath = productFilePath
+
         self.root = Tk()
         self.buttonCanvasWidth=200
         self.width=self.root.winfo_screenwidth()
@@ -251,40 +270,66 @@ class MainGui:
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
 
+        self.loadProductSheet()
+
+
+    def saveAndContinue(self):
+        self.inputSheet.store('data/ocr_out/')
+        self.fileIndex += 1
+        # TODO: abort when done
+        self.loadProductSheet()
+
+    def loadProductSheet(self):
+        if len(self.normalizedScanPaths) <= self.fileIndex:
+            raise AssertionError("fileIndex out of bounds")
+
+        csvPath = self.ocrCsvPaths[self.fileIndex]
+        scanPath = self.normalizedScanPaths[self.fileIndex]
+        if scanPath.find(os.path.splitext(csvPath)[0]) == -1:
+            self.log.error("Input CSV {} doesn't match corresponding scan {}",
+                    csvPath, scanPath)
+            return
+
+        self.db = Database(self.memberFilePath, self.productFilePath)
+
+        # Scanned input image
+        # Note: it is necessary to store the image locally for tkinter to show it
         self.scannedImg = Image.open(scanPath)
         o_w, o_h = self.scannedImg.size
         aspectRatio = min(self.height / o_h, (self.width - self.buttonCanvasWidth) / 2 / o_w)
         canvas_w, canvas_h = int(o_w * aspectRatio), int(o_h * aspectRatio)
+        self.scannedImg = self.scannedImg.resize((canvas_w, canvas_h), Image.BILINEAR)
+        self.scannedImg = ImageTk.PhotoImage(self.scannedImg)
         self.scanCanvas = Canvas(self.root,
                width=canvas_w,
                height=canvas_h)
         self.scanCanvas.place(x=0, y=0)
-        self.scannedImg = self.scannedImg.resize((canvas_w, canvas_h), Image.BILINEAR)
-        self.scannedImg = ImageTk.PhotoImage(self.scannedImg)
         self.scanCanvas.create_image(0,0, anchor=NW, image=self.scannedImg)
         self.__focusAreaImage = None
         self.__focusAreaBorderRect = None
 
+        # Input mask to correct product sheet
         self.inputCanvas = Canvas(self.root,
                width=canvas_w,
                height=canvas_h)
         self.inputCanvas.place(x=canvas_w, y=0)
-        self.db = Database(memberFilePath, productFilePath)
         self.inputSheet = InputSheet("not", "known", "yet", ProductSheet.maxQuantity(),
-                self.inputCanvas, aspectRatio, self.db, ocrOutputPath)
+                self.inputCanvas, aspectRatio, self.db, csvPath)
 
+        # Additional buttons
         self.buttonCanvas = Frame(self.root,
                width=self.buttonCanvasWidth,
                height=canvas_h)
         self.buttonCanvas.place(x=2*canvas_w, y=0)
-        buttons = []
-        buttons.append(Button(self.buttonCanvas, text='Save and next',
-            command=partial(self.inputSheet.store, 'data/ocr_out/')))
-        buttons.append(Button(self.buttonCanvas, text="Don't ever try this one",
-            command=partial(self.inputSheet.store, 'data/ocr_out/')))
+        self.buttons = {}
+        self.buttons['saveAndContinue'] = Button(self.buttonCanvas, text='Save and continue',
+            command=self.saveAndContinue)
+        self.buttons['saveAndContinue'].bind('<Return>', lambda x: self.saveAndContinue())
+        self.buttons['saveAndReload'] = Button(self.buttonCanvas, text='Save and reload current',
+            command=self.loadProductSheet)
 
         y = 60
-        for b in buttons:
+        for b in self.buttons.values():
             b.place(relx=.5, y=y, anchor="center",
                     width=.8*self.buttonCanvasWidth)
             b.update()
@@ -292,12 +337,20 @@ class MainGui:
 
     def switchInputFocus(self, event):
         focused = self.root.focus_displayof()
-        if focused and isinstance(focused, AutocompleteEntry):
-            info = focused.place_info()
-            self.setFocusAreaOnScan(int(info['x']), int(info['y']),
-                    int(info['width']), int(info['height']))
+        if not focused:
+            return event
+        elif isinstance(focused, AutocompleteEntry):
+            if focused.confidence == 1 and event.keysym == 'Tab':
+                self.buttons['saveAndContinue'].focus_set()
+            else:
+                info = focused.place_info()
+                self.setFocusAreaOnScan(int(info['x']), int(info['y']),
+                        int(info['width']), int(info['height']))
+        elif event.keysym == 'Tab':
+            focused.tk_focusNext().focus_set()
+        else:
+            return event
         return 'break'
-
 
     def setFocusAreaOnScan(self, x, y, width, height):
         if self.__focusAreaImage:
@@ -315,9 +368,8 @@ class MainGui:
 
 if __name__ == '__main__':
     dataFilePath = 'data/database/{}'
-    productName = 'DRINK HAFER'
-    gui = MainGui('data/ocr_out/{}_normalized_scan.jpg'.format(productName),
-            'data/ocr_out/{}.csv'.format(productName),
+    gui = MainGui('data/ocr_out/',
+            'data/sanitize_out/',
             dataFilePath.format('mitglieder.csv'),
             dataFilePath.format('produkte.csv'))
 
