@@ -17,6 +17,7 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from tkinter import *
 from tkinter import ttk
+from tkinter import messagebox
 import re
 import os
 from PIL import ImageTk,Image
@@ -24,6 +25,7 @@ from sheets import ProductSheet
 from database import Database
 from helpers import Log
 from functools import partial
+import random
 
 class AutocompleteEntry(ttk.Combobox):
     def __init__(self, box, possibleValues, releaseFocus, *args, **kwargs):
@@ -73,6 +75,7 @@ class AutocompleteEntry(ttk.Combobox):
     def selection(self, event):
         if self._listBox:
             self.text = self._listBox.get(ACTIVE)
+            self.box.text = self.text
             self.icursor(END)
             self.destroyListBox()
         return self._releaseFocus(event)
@@ -99,7 +102,7 @@ class AutocompleteEntry(ttk.Combobox):
 
                 else:
                     if not self._listBox:
-                        self._listBox = Listbox()
+                        self._listBox = Listbox(self.master)
                         self._listBox.place(x=self.winfo_x(), y=self.winfo_y()+self.winfo_height())
 
                     self._listBox.delete(0, END)
@@ -177,23 +180,44 @@ class AutocompleteEntry(ttk.Combobox):
             self.config({"background": 'green'})
 
 class InputSheet(ProductSheet):
+    validationProbability = 0.05
+
     def __init__(self, name, unit, price, quantity, root, aspectRatio,
             database, path):
-        super().__init__(name, unit, price, quantity)
+        super().__init__(name, unit, price, 0, quantity)
         self.load(path)
+        self.originalPath = path
 
         self._box_to_widget = {}
-        for box in self._boxes:
+        self.validationBoxTexts = {}
+        for box in self._boxes.values():
             if box.name == "nameBox":
                 choices = [v._description for v in database._products.values()]
             elif box.name == "unitBox":
                 choices = []
             elif box.name == "priceBox":
                 choices = []
+            elif box.name == "pageNumberBox":
+                choices = [str(x) for x in range(100)]
             elif box.name.find("dataBox") != -1:
                 choices = database._members.keys()
             else:
                 continue
+
+            # TODO make this concept more clear
+            # prepare for OCR validation
+            # 1. select some boxes with high confidence
+            # 2. let the user correct them
+            # 3. check if any of the boxes had a wrong value - must not happen
+            v = random.uniform(0, 1)
+            if box.confidence == 1 and \
+                ( \
+                    (box.text == '' and v < (self.validationProbability / 10.0)) \
+                or \
+                    (box.text != '' and v < self.validationProbability) \
+                ):
+                self.validationBoxTexts[box.name] = box.text
+                box.confidence = 0
 
             (x1, y1) = box.pt1
             x1, y1 = x1*aspectRatio, y1*aspectRatio
@@ -202,7 +226,8 @@ class InputSheet(ProductSheet):
             entry = AutocompleteEntry(box, choices, self.switchFocus, root)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             self._box_to_widget[box] = entry
-        self._box_to_widget[self._boxes[1]].focus_set()
+
+        self._box_to_widget[self._boxes['nameBox']].focus_set()
 
     def switchFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
@@ -224,39 +249,41 @@ class InputSheet(ProductSheet):
         return event
 
     def nextUnclearBox(self, selectedBox):
-        indicesOfUnclearBoxes = [idx for idx, b in enumerate(self._boxes) if b.confidence<1]
+        sortedBoxes = self.sortedBoxes()
+        indicesOfUnclearBoxes = [idx for idx, b in enumerate(sortedBoxes) if b.confidence<1]
         if not indicesOfUnclearBoxes:
             return None
         else:
-            currentIndex = self._boxes.index(selectedBox)
+            currentIndex = sortedBoxes.index(selectedBox)
             if max(indicesOfUnclearBoxes) <= currentIndex:
-                return self._boxes[min(indicesOfUnclearBoxes)]
+                return sortedBoxes[min(indicesOfUnclearBoxes)]
             else:
-                return self._boxes[min(filter(lambda x: currentIndex < x,
+                return sortedBoxes[min(filter(lambda x: currentIndex < x,
                     indicesOfUnclearBoxes))]
 
-class MainGui:
-    def __init__(self, ocrOutputPath, sanitizeOutputPath, memberFilePath, productFilePath):
-        self.log = Log()
-        self.ocrCsvPaths = []
-        self.normalizedScanPaths = []
-        for (dirPath, _, fileNames) in os.walk(ocrOutputPath):
-            for f in fileNames:
-                if f.find("normalized_scan.jpg") != -1:
-                    self.normalizedScanPaths.append(dirPath + f)
-                if f.find(".csv") != -1:
-                    self.ocrCsvPaths.append(dirPath + f)
-        if len(self.ocrCsvPaths) != len(self.normalizedScanPaths):
-            self.log.warn("""Incorrect files in input path (not the same number
-            of scans and CSVs)\nCSVs = {}\nScans = {}""", self.ocrCsvPaths,
-            self.normalizedScanPaths)
-            return
-        self.fileIndex = 0
+    def getValidationScore(self):
+        numCorrect = 0
+        numValidated = 0
+        for box in self._boxes.values():
+            if box.name in self.validationBoxTexts and box.confidence == 1:
+                numValidated += 1
+                if self.validationBoxTexts[box.name] == box.text:
+                    numCorrect += 1
 
-        self.ocrOutputPath = ocrOutputPath
-        self.sanitizeOutputPath = sanitizeOutputPath
+        return (numCorrect, numValidated)
+
+class MainGui:
+    scanPostfix = '_normalized_scan.jpg'
+
+    def __init__(self, dataPath, memberFilePath, productFilePath):
+        self.log = Log()
+        self.dataPath = dataPath
         self.memberFilePath = memberFilePath
         self.productFilePath = productFilePath
+        self.db = Database(self.memberFilePath, self.productFilePath)
+        self.pairToSanitizeGenerator = self.nextPairToSanitize()
+        self.numCorrectValidatedBoxes = 0
+        self.numValidatedValidatedBoxes = 0
 
         self.root = Tk()
         self.buttonCanvasWidth=200
@@ -270,31 +297,100 @@ class MainGui:
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
 
-        self.loadProductSheet()
+        try:
+            self.csvPath, self.scanPath = next(self.pairToSanitizeGenerator)
+        except StopIteration:
+            messagebox.showinfo('Nothing to do',
+                'No file needing sanitation in input path {}'.format(dataPath))
+            self.root.destroy()
+        else:
+            self.loadProductSheet()
 
+    def nextPairToSanitize(self):
+        # assuming each product is stored in dataPath as a pair of
+        # ({productName}_{page}.csv, {productName}_{page}_normalized_scan.jpg)
+        for (_, _, fileNames) in os.walk(self.dataPath):
+            csvFiles = sorted(filter(lambda f: os.path.splitext(f)[1] ==
+                '.csv', fileNames))
+            scanFiles = sorted(filter(lambda f: f.find(self.scanPostfix)
+                != -1, fileNames))
+            break
 
-    def saveAndContinue(self):
-        self.inputSheet.store('data/ocr_out/')
-        self.fileIndex += 1
-        # TODO: abort when done
+        foundPairToSanitize = False
+        for csvFile in csvFiles:
+            scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
+            if scanFile in scanFiles:
+                # check if this csv needs sanitation
+                sheet = ProductSheet("not", "known", "yet", 0,
+                        ProductSheet.maxQuantity(), self.db)
+                sheet.load(self.dataPath + csvFile)
+                if list(filter(lambda box: box.confidence < 1,
+                    sheet._boxes.values())):
+                    foundPairToSanitize = True
+                    yield (self.dataPath + csvFile, self.dataPath + scanFile)
+            else:
+                self.log.warn('{} omitted, corresponding scan is missing'
+                        .format(csvFile))
+
+        if foundPairToSanitize:
+            # start a new round, as there are still files to sanitize
+            for p in self.nextPairToSanitize():
+                yield p
+
+    def saveAndContinue(self, event=None):
+        self.save()
+        try:
+            self.csvPath, self.scanPath = next(self.pairToSanitizeGenerator)
+        except StopIteration:
+            if self.numCorrectValidatedBoxes == self.numValidatedValidatedBoxes:
+                messagebox.showinfo('Sanitation complete',
+                    'Congratulations, your work is done')
+            else:
+                messagebox.showwarning('Sanitation complete',
+                    """
+                    Your work is done, but OCR didn't work properly.
+                    You corrected {} out of {} validated texts. Apparently OCR
+                    was overconfident and probably some of the initially green
+                    boxes contain wrong entries. Please check them and file a
+                    bug report at https://github.com/greuters/tagtrail.git/
+                    """)
+            self.root.destroy()
+        else:
+            self.destroyCanvas()
+            self.loadProductSheet()
+            return "break"
+
+    def saveAndReloadDB(self, event=None):
+        self.save()
+        self.db = Database(self.memberFilePath, self.productFilePath)
         self.loadProductSheet()
+        return "break"
+
+    def save(self):
+        numCorrect, numValidated = self.inputSheet.getValidationScore()
+        self.numCorrectValidatedBoxes += numCorrect
+        self.numValidatedValidatedBoxes += numValidated
+        self.log.info('sheet validation score: {} out of {} validated texts were correct',
+                numCorrect, numValidated)
+        self.log.info('total validation score: {} out of {} validated texts were correct',
+                self.numCorrectValidatedBoxes, self.numValidatedValidatedBoxes)
+        os.remove(self.csvPath)
+        self.inputSheet.store(self.dataPath)
+        os.rename(self.scanPath, "{}{}_{}{}".format(self.dataPath,
+            self.inputSheet._boxes['nameBox'].text,
+            self.inputSheet._boxes['pageNumberBox'].text,
+            self.scanPostfix))
+        self.destroyCanvas()
+
+    def destroyCanvas(self):
+        self.scanCanvas.destroy()
+        self.inputCanvas.destroy()
+        self.buttonCanvas.destroy()
 
     def loadProductSheet(self):
-        if len(self.normalizedScanPaths) <= self.fileIndex:
-            raise AssertionError("fileIndex out of bounds")
-
-        csvPath = self.ocrCsvPaths[self.fileIndex]
-        scanPath = self.normalizedScanPaths[self.fileIndex]
-        if scanPath.find(os.path.splitext(csvPath)[0]) == -1:
-            self.log.error("Input CSV {} doesn't match corresponding scan {}",
-                    csvPath, scanPath)
-            return
-
-        self.db = Database(self.memberFilePath, self.productFilePath)
-
         # Scanned input image
         # Note: it is necessary to store the image locally for tkinter to show it
-        self.scannedImg = Image.open(scanPath)
+        self.scannedImg = Image.open(self.scanPath)
         o_w, o_h = self.scannedImg.size
         aspectRatio = min(self.height / o_h, (self.width - self.buttonCanvasWidth) / 2 / o_w)
         canvas_w, canvas_h = int(o_w * aspectRatio), int(o_h * aspectRatio)
@@ -314,7 +410,7 @@ class MainGui:
                height=canvas_h)
         self.inputCanvas.place(x=canvas_w, y=0)
         self.inputSheet = InputSheet("not", "known", "yet", ProductSheet.maxQuantity(),
-                self.inputCanvas, aspectRatio, self.db, csvPath)
+                self.inputCanvas, aspectRatio, self.db, self.csvPath)
 
         # Additional buttons
         self.buttonCanvas = Frame(self.root,
@@ -324,9 +420,11 @@ class MainGui:
         self.buttons = {}
         self.buttons['saveAndContinue'] = Button(self.buttonCanvas, text='Save and continue',
             command=self.saveAndContinue)
-        self.buttons['saveAndContinue'].bind('<Return>', lambda x: self.saveAndContinue())
-        self.buttons['saveAndReload'] = Button(self.buttonCanvas, text='Save and reload current',
-            command=self.loadProductSheet)
+        self.buttons['saveAndContinue'].bind('<Return>', self.saveAndContinue)
+        self.buttons['saveAndReloadDB'] = Button(self.buttonCanvas,
+            text='Save and reload current',
+            command=self.saveAndReloadDB)
+        self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
 
         y = 60
         for b in self.buttons.values():
@@ -340,7 +438,7 @@ class MainGui:
         if not focused:
             return event
         elif isinstance(focused, AutocompleteEntry):
-            if focused.confidence == 1 and event.keysym == 'Tab':
+            if focused.confidence == 1 and event.keysym in ('Tab', 'Return'):
                 self.buttons['saveAndContinue'].focus_set()
             else:
                 info = focused.place_info()
@@ -369,8 +467,6 @@ class MainGui:
 if __name__ == '__main__':
     dataFilePath = 'data/database/{}'
     gui = MainGui('data/ocr_out/',
-            'data/sanitize_out/',
             dataFilePath.format('mitglieder.csv'),
             dataFilePath.format('produkte.csv'))
-
     gui.root.mainloop()

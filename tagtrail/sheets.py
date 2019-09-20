@@ -41,7 +41,8 @@ class ProductSheet(ABC):
     headerH = 15
     nameW = 100
     unitW = 30
-    priceW = 50
+    priceW = 30
+    pageNumberW = 20
     dataBgColors = [[220, 220, 220], [190, 190, 190]]
     dataColCount = 6
     dataRowCount = 16
@@ -62,22 +63,19 @@ class ProductSheet(ABC):
         return (round(u / self.sheetW * self.xRes),
                 round(v / self.sheetH * self.yRes))
 
-    def __init__(self, name, unit, price, quantity, database=None,
+    def __init__(self, name, unit, price, pageNumber, quantity, database=None,
             testMode=False):
-        self.name=name
-        self.unit=unit
-        self.price=price
         self.quantity=quantity
         self._database=database
         self.testMode=testMode
-        self._boxes=[]
+        self._boxes={}
         self._log=Log()
         self._box_to_pos={}
         self._pos_to_box={}
 
         # Page margin (for easier OCR)
         p0, p1 = self.getPageMarginPts()
-        self._boxes.append(Box("marginBox", p0, p1, (235,235,235), lineW=20))
+        self._boxes["marginBox"] = Box("marginBox", p0, p1, (235,235,235), lineW=20)
 
         # Header
         u0 = self.layoutMargin
@@ -89,7 +87,7 @@ class ProductSheet(ABC):
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1],
-                self.name), 0, 0)
+                name), 0, 0)
 
         u0 = u1
         u1 = u0+self.unitW
@@ -98,7 +96,7 @@ class ProductSheet(ABC):
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1],
-                self.unit), 1, 0)
+                unit), 0, 1)
 
         u0 = u1
         u1 = u0+self.priceW
@@ -107,14 +105,23 @@ class ProductSheet(ABC):
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1],
-                self.price), 2, 0)
+                price), 0, 2)
+
+        u0 = u1
+        u1 = u0+self.pageNumberW
+        self.addBox(Box(
+                "pageNumberBox",
+                self.pointFromMM(u0, v0),
+                self.pointFromMM(u1, v1),
+                self.dataBgColors[1],
+                str(pageNumber)), 0, 3)
 
         # Data
-        for (col, row) in itertools.product(range(0,self.dataColCount),
-                range(0,self.dataRowCount)):
+        for (row, col) in itertools.product(range(0,self.dataRowCount),
+                range(0,self.dataColCount)):
             v0 = self.layoutMargin + self.headerH//2 + (row+1)*self.dataColH
             color = self.dataBgColors[row % 2]
-            num = col*self.dataRowCount + row
+            num = row*self.dataColCount + col
             if num == self.quantity:
                 break
             u0 = self.layoutMargin + col*self.dataRowW
@@ -130,25 +137,32 @@ class ProductSheet(ABC):
                 textRotation = 0
 
             self.addBox(Box(
-                    "dataBox{}({},{})".format(num,col,row),
+                    "dataBox{}({},{})".format(num,row,col),
                     self.pointFromMM(u0, v0),
                     self.pointFromMM(u0+self.dataRowW, v0+self.dataColH),
                     color,
                     text,
                     textRotation=textRotation
-                    ), col, row+1)
+                    ), row+1, col)
 
-    def addBox(self, box, col, row):
-        self._boxes.append(box)
-        pos = (col, row)
+    def addBox(self, box, row, col):
+        self._boxes[box.name]=box
+        pos = (row, col)
         self._box_to_pos[box]=pos
         self._pos_to_box[pos]=box
+
+    def sortedPositions(self):
+        return sorted(self._pos_to_box.keys(), key = lambda pos:
+                pos[0]*ProductSheet.dataRowCount + pos[1])
+
+    def sortedBoxes(self):
+        return [self._pos_to_box[pos] for pos in self.sortedPositions()]
 
     def neighbourBox(self, box, direction):
         if box not in self._box_to_pos:
             return None
 
-        col, row = self._box_to_pos[box]
+        row, col = self._box_to_pos[box]
         if direction == 'Up':
             row -= 1
         elif direction == 'Down':
@@ -160,15 +174,15 @@ class ProductSheet(ABC):
         else:
             return None
 
-        neighbourPos = (col, row)
+        neighbourPos = (row, col)
         if neighbourPos in self._pos_to_box:
-            return self._pos_to_box[(col, row)]
+            return self._pos_to_box[(row, col)]
         else:
             return None
 
     def createImg(self):
         img = np.full((self.yRes, self.xRes, 3), 255, np.uint8)
-        for box in self._boxes:
+        for box in self._boxes.values():
             box.draw(img)
         return img
 
@@ -176,9 +190,6 @@ class ProductSheet(ABC):
         skipCnt=1
         csvDelimiter = ';'
         quotechar = '"'
-        name_to_box = {}
-        for b in self._boxes:
-            name_to_box[b.name] = b
 
         numDataBoxes = 0
         with open(path, newline='') as csvfile:
@@ -189,27 +200,23 @@ class ProductSheet(ABC):
                     continue
                 self._log.debug("row={}", row)
                 boxName, text, confidence = row[0], row[1], float(row[2])
-                if boxName == "nameBox":
-                    self.name = text
-                elif boxName == "unitBox":
-                    self.unit = text
-                elif boxName == "priceBox":
-                    self.price = text
-                elif boxName == "marginBox":
+                if boxName == "marginBox":
                     continue
                 elif boxName.find("dataBox") != -1:
                     numDataBoxes += 1
-                else:
+                elif boxName not in ("nameBox", "unitBox", "priceBox", "pageNumberBox"):
                     self._log.warn("skipped unexpected box, row = {}", row)
-                name_to_box[boxName].name = boxName
-                name_to_box[boxName].text = text
-                name_to_box[boxName].confidence = confidence
+                self._boxes[boxName].name = boxName
+                self._boxes[boxName].text = text
+                self._boxes[boxName].confidence = confidence
 
     def store(self, path):
-        self._log.info("storing sheet to {}".format(path))
-        with open("{}/{}.csv".format(path, self.name), "w+") as fout:
+        filePath = "{}{}_{}.csv".format(path, self._boxes['nameBox'].text,
+                self._boxes['pageNumberBox'].text)
+        self._log.info("storing sheet {}".format(filePath))
+        with open(filePath, "w+") as fout:
             fout.write("{};{};{}\n" .format("boxName", "text", "confidence"))
-            for box in self._boxes:
+            for box in self._boxes.values():
                 fout.write("{};{};{}\n".format(box.name, box.text, box.confidence))
 
 class Box(ABC):

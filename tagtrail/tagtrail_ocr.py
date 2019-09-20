@@ -386,7 +386,7 @@ class RecognizeText(ProcessingStep):
         dataFilePath = 'data/database/{}'
         db = Database(dataFilePath.format('mitglieder.csv'),
                 dataFilePath.format('produkte.csv'))
-        self._sheet = ProductSheet("not", "known", "yet",
+        self._sheet = ProductSheet("not", "known", "yet", 0,
                 ProductSheet.maxQuantity(),
                 db)
 
@@ -397,22 +397,24 @@ class RecognizeText(ProcessingStep):
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255,
                 cv.THRESH_BINARY)
 
-        names, units, prices =zip(*[(p._description.upper(), p._unit.upper(), p._price.upper()) for p
+        names, units, prices = zip(*[(p._description.upper(), p._unit.upper(), p._price.upper()) for p
             in self._sheet._database._products.values()])
         memberIds = [m._id for m in self._sheet._database._members.values()]
         self._log.debug("names={}, units={}, prices={}, memberIds={}", names,
                 units, prices, memberIds)
         self._recognizedBoxTexts = {}
-        for box in self._sheet._boxes:
+        for box in self._sheet._boxes.values():
             if box.name == "nameBox":
                 box.text, box.confidence = self.recognizeBoxText(box, names)
-                self._sheet.name = box.text
             elif box.name == "unitBox":
                 box.text, box.confidence = self.recognizeBoxText(box, units)
-                self._sheet.unit = box.text
             elif box.name == "priceBox":
                 box.text, box.confidence = self.recognizeBoxText(box, prices)
-                self._sheet.price = box.text
+            elif box.name == "pageNumberBox":
+                box.text, box.confidence = self.recognizeBoxText(box, map(str,
+                    range(0,100)))
+                if box.text == '':
+                    box.text = '0'
             elif box.name.find("dataBox") != -1:
                 box.text, box.confidence = self.recognizeBoxText(box, memberIds)
             else:
@@ -430,7 +432,7 @@ class RecognizeText(ProcessingStep):
         (x0,y0),(x1,y1)=box.pt1,box.pt2
         m=20
         thresholdImg = self._thresholdImg[y0+m:y1-m,x0+m:x1-m]
-        if np.min(thresholdImg) == 255 or np.max(thresholdImg) == 0:
+        if np.max(thresholdImg) - np.min(thresholdImg) < 10:
             return ("", 1.0)
 
         kernel = cv.getStructuringElement(cv.MORPH_RECT, (2,2))
@@ -481,10 +483,9 @@ def processFile(inputFile, outputDir):
         p.writeOutput()
         img = p._outputImg
     recognizer._sheet.store(outputDir)
-    cv.imwrite("{}{}_normalized_scan.jpg".format(outputDir,
-        recognizer._sheet.name), fit._outputImg)
-
-
+    cv.imwrite("{}{}_{}_normalized_scan.jpg".format(outputDir,
+        recognizer._sheet._boxes['nameBox'].text,
+        recognizer._sheet._boxes['pageNumberBox'].text), fit._outputImg)
 
 def main():
     outputDir = 'data/ocr_out/'

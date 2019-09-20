@@ -30,29 +30,38 @@ import cv2 as cv
 import slugify
 from database import Database
 from sheets import ProductSheet
+from helpers import Log
 
-def main():
-    #sheetDescription = "Cashews Nature"
-    sheetDescription = "Pasta Rigatoni"
-    #sheetDescription = "MIR"
-
-    dataFilePath = 'data/{}'
-    db = Database(dataFilePath.format('database/mitglieder.csv'),
-            dataFilePath.format('database/produkte.csv'))
-
-    if slugify.slugify(sheetDescription) in db._products:
-        product = db._products[slugify.slugify(sheetDescription)]
+def generateSheet(dataFilePath, sheetName, db):
+    log = Log()
+    if sheetName in db._products:
+        product = db._products[sheetName]
+        pageNumber = 0
         for (q0, q1) in [(s, min(s+ProductSheet.maxQuantity(), product._quantity)-1) for s in
                 range(0, product._quantity, ProductSheet.maxQuantity())]:
+            pageNumber += 1
             sheet1 = ProductSheet(product._description, product._unit,
-                    product._price, q1-q0+1, db, True)
-            cv.imwrite(dataFilePath.format("sheets/{}_{}_{}.jpg".
-                format(product._id, q0, q1)), sheet1.createImg())
+                    product._price, pageNumber, q1-q0+1, db, True)
+            path = dataFilePath.format("sheets/{}_{}.jpg".format(sheetName,
+                pageNumber))
+            cv.imwrite(path, sheet1.createImg())
+            log.info("generate sheet {}".format(path))
+
     elif sheetDescription in db._members:
         member = db._members[sheetDescription]
         # TODO: implement TagSheet
     else:
-        print("nothing to do here, sheet not found")
+        log.error("nothing to do here, sheet {} not found".format(sheetName))
+
+def main():
+    # TODO add commandline arguments to generate all products, all members or
+    # individual
+    dataFilePath = 'data/{}'
+    db = Database(dataFilePath.format('database/mitglieder.csv'),
+            dataFilePath.format('database/produkte.csv'))
+
+    for productName in db._products:
+        generateSheet(dataFilePath, productName, db)
 
 if __name__== "__main__":
     main()
