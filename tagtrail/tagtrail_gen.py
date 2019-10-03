@@ -41,7 +41,7 @@ def generateSheet(dataFilePath, sheetName, db):
                 range(0, product._quantity, ProductSheet.maxQuantity())]:
             pageNumber += 1
             sheet1 = ProductSheet(product._description, product._unit,
-                    product._price, pageNumber, q1-q0+1, db, True)
+                    helpers.formatPrice(product._price), pageNumber, q1-q0+1, db, True)
             path = dataFilePath.format("sheets/{}_{}.jpg".format(sheetName,
                 pageNumber))
             cv.imwrite(path, sheet1.createImg())
@@ -60,8 +60,8 @@ def main():
     db = Database(dataFilePath.format('database/mitglieder.csv'),
             dataFilePath.format('database/produkte.csv'))
 
-    for productName in db._products:
-        generateSheet(dataFilePath, productName, db)
+    for productId in db._products:
+        generateSheet(dataFilePath, productId, db)
 
 if __name__== "__main__":
     main()

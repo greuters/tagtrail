@@ -16,5 +16,8 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#TODO:
+# * for each member, load the tag count CSV, compile and send the adapted
+# template mail
 
 

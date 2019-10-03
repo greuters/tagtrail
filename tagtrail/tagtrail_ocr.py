@@ -24,8 +24,9 @@ import PIL
 import os
 import math
 import Levenshtein
+import slugify
 from abc import ABC, abstractmethod
-from helpers import Log
+import helpers
 from sheets import ProductSheet
 from database import Database
 from os import walk
@@ -34,7 +35,7 @@ class ProcessingStep(ABC):
     def __init__(self,
             name,
             outputPath = 'data/tmp',
-            log = Log()):
+            log = helpers.Log()):
         self._name = name
         self._log = log
         self._outputPath = outputPath
@@ -110,7 +111,7 @@ class RotateSheet(RotationStep):
     def __init__(self,
                  name,
                  outputPath = 'data/tmp',
-                 log = Log(),
+                 log = helpers.Log(),
                  minLineLength = 200,
                  rotPrecision = np.pi/720,
                  maxLineGap = 5,
@@ -197,7 +198,7 @@ class RotateLabel(RotationStep):
     def __init__(self,
                  name,
                  outputPath = 'data/tmp',
-                 log = Log(),
+                 log = helpers.Log(),
                  kernelSize = 10):
         super().__init__(name, outputPath, log)
         self._kernelSize = kernelSize
@@ -397,7 +398,8 @@ class RecognizeText(ProcessingStep):
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255,
                 cv.THRESH_BINARY)
 
-        names, units, prices = zip(*[(p._description.upper(), p._unit.upper(), p._price.upper()) for p
+        names, units, prices = zip(*[(p._description.upper(), p._unit.upper(),
+            str(p._price).upper()) for p
             in self._sheet._database._products.values()])
         memberIds = [m._id for m in self._sheet._database._members.values()]
         self._log.debug("names={}, units={}, prices={}, memberIds={}", names,
@@ -484,13 +486,14 @@ def processFile(inputFile, outputDir):
         img = p._outputImg
     recognizer._sheet.store(outputDir)
     cv.imwrite("{}{}_{}_normalized_scan.jpg".format(outputDir,
-        recognizer._sheet._boxes['nameBox'].text,
+        slugify.slugify(recognizer._sheet._boxes['nameBox'].text),
         recognizer._sheet._boxes['pageNumberBox'].text), fit._outputImg)
 
 def main():
-    outputDir = 'data/ocr_out/'
-    inputDir = 'data/scans/'
-    for (dirPath, dirNames, fileNames) in walk(inputDir):
+    accountingDir = 'data/accounting_2019-09-26/'
+    outputDir = '{}1_products/'.format(accountingDir)
+    helpers.recreateDir(outputDir)
+    for (dirPath, dirNames, fileNames) in walk('{}0_scans/'.format(accountingDir)):
         for f in fileNames:
             processFile(dirPath + f, outputDir)
         break

@@ -26,6 +26,7 @@ import csv
 from helpers import Log
 from abc import ABC, abstractmethod
 from PIL import ImageFont, Image, ImageDraw
+import slugify
 random.seed()
 
 class ProductSheet(ABC):
@@ -206,12 +207,14 @@ class ProductSheet(ABC):
                     numDataBoxes += 1
                 elif boxName not in ("nameBox", "unitBox", "priceBox", "pageNumberBox"):
                     self._log.warn("skipped unexpected box, row = {}", row)
+                    continue
                 self._boxes[boxName].name = boxName
                 self._boxes[boxName].text = text
                 self._boxes[boxName].confidence = confidence
 
     def store(self, path):
-        filePath = "{}{}_{}.csv".format(path, self._boxes['nameBox'].text,
+        filePath = "{}{}_{}.csv".format(path,
+                slugify.slugify(self._boxes['nameBox'].text),
                 self._boxes['pageNumberBox'].text)
         self._log.info("storing sheet {}".format(filePath))
         with open(filePath, "w+") as fout:

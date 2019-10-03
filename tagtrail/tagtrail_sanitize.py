@@ -15,6 +15,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import slugify
 from tkinter import *
 from tkinter import ttk
 from tkinter import messagebox
@@ -24,7 +25,6 @@ from PIL import ImageTk,Image
 from sheets import ProductSheet
 from database import Database
 from helpers import Log
-from functools import partial
 import random
 
 class AutocompleteEntry(ttk.Combobox):
@@ -272,16 +272,19 @@ class InputSheet(ProductSheet):
 
         return (numCorrect, numValidated)
 
-class MainGui:
+class Gui:
     scanPostfix = '_normalized_scan.jpg'
 
     def __init__(self, dataPath, memberFilePath, productFilePath):
+        # TODO: add second dataPath - for each csv, check if the corresponding
+        # csv existed in the last accounting. if a box has a (validated, assert
+        # confidence = 1) non '' text, override the ocr suggestion and set
+        # confidence to 1
         self.log = Log()
         self.dataPath = dataPath
         self.memberFilePath = memberFilePath
         self.productFilePath = productFilePath
         self.db = Database(self.memberFilePath, self.productFilePath)
-        self.pairToSanitizeGenerator = self.nextPairToSanitize()
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
 
@@ -297,6 +300,7 @@ class MainGui:
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
 
+        self.pairToSanitizeGenerator = self.nextPairToSanitize()
         try:
             self.csvPath, self.scanPath = next(self.pairToSanitizeGenerator)
         except StopIteration:
@@ -309,12 +313,16 @@ class MainGui:
     def nextPairToSanitize(self):
         # assuming each product is stored in dataPath as a pair of
         # ({productName}_{page}.csv, {productName}_{page}_normalized_scan.jpg)
+        csvFiles = None
         for (_, _, fileNames) in os.walk(self.dataPath):
             csvFiles = sorted(filter(lambda f: os.path.splitext(f)[1] ==
                 '.csv', fileNames))
             scanFiles = sorted(filter(lambda f: f.find(self.scanPostfix)
                 != -1, fileNames))
             break
+
+        if not csvFiles:
+            raise StopIteration
 
         foundPairToSanitize = False
         for csvFile in csvFiles:
@@ -377,7 +385,7 @@ class MainGui:
         os.remove(self.csvPath)
         self.inputSheet.store(self.dataPath)
         os.rename(self.scanPath, "{}{}_{}{}".format(self.dataPath,
-            self.inputSheet._boxes['nameBox'].text,
+            slugify.slugify(self.inputSheet._boxes['nameBox'].text),
             self.inputSheet._boxes['pageNumberBox'].text,
             self.scanPostfix))
         self.destroyCanvas()
@@ -465,8 +473,11 @@ class MainGui:
                 x+width, y+height)
 
 if __name__ == '__main__':
+    # TODO: check that only valid member ids and product ids are stored for new
+    # tags (that are not in previous accounting)
+    # product files need to have product ids in file names
     dataFilePath = 'data/database/{}'
-    gui = MainGui('data/ocr_out/',
+    gui = Gui('data/accounting_2019-09-26/1_products/',
             dataFilePath.format('mitglieder.csv'),
             dataFilePath.format('produkte.csv'))
     gui.root.mainloop()

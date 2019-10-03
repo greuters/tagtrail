@@ -15,6 +15,9 @@ The tools in this repository help automating this process as far as possible,
 mailing an individual bill to each member and generating csv's which can be
 processed by GnuCash.
 
+* TODO: setup of scan folder, adding new products,
+tagging SCHWUND, consistent handling of net/gross price
+
 * tagtrail_gen generates empty ProductSheets for products, TagSheets for
   members
 
@@ -26,16 +29,16 @@ processed by GnuCash.
   all tags (validated against a database of member ids) and thus generates one
   CSV per product with confidence of all tags = 1
 
-* tagtrail_send generates a bill for each member, listing the quantity and
-  price of each product they tagged and the total price. it then sends this
-  bill along with a template email to all members.
-  
 * tagtrail_account
+  - generates a CSV per member, listing the quantity and price of each product
+    they tagged
+
   - generates transaction CSVs which can be imported by GnuCash, containing two
     transactions per member (total price of products (net), proft margin on top
     of this price)
 
-  - generates an inventory CSV with accounted for and left quantity per product
+  - generates product statistics: how many units of each product should be
+    left, how many were sold during this accounting, ... ?
 
   - prepares for the next accounting period. ProductSheets that are physically
     removed have to be selected by the user, the CSVs of all remaining products
@@ -46,3 +49,6 @@ processed by GnuCash.
   Dominik (Mutationen): welches Produkt stammt von welchem Produzenten, welche
   aus Lager? Gibts einen Export?
 
+* tagtrail_send compiles and sends an email for each member, with a bill
+  listing the quantity and price of each product they tagged and the total
+  price

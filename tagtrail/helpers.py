@@ -18,6 +18,7 @@
 
 from abc import ABC, abstractmethod
 import slugify
+import shutil
 
 class IdentifiableObject(ABC):
     def __init__(self,
@@ -44,17 +45,26 @@ class Product(IdentifiableObject):
         super().__init__(slugify.slugify(description))
         self._description = description
         self._unit = unit
-        self._price = self.formatPrice(price)
+        self._price = float(price)
         self._quantity = quantity
 
-    def formatPrice(self, price):
-        if "." in price:
-            i, d = price.split(".")
-        else:
-            i = price
-            d = ""
-        d = d + "00"
-        return i + "." + d[0:2]
+def roundPriceCH(price):
+    # round to 5-cent precision
+    # price : float
+    # returns float
+    return round(price * 20) / 20
+
+def formatPrice(price):
+    # price : float
+    # returns string
+    price = str(price)
+    if "." in price:
+        i, d = price.split(".")
+    else:
+        i = price
+        d = ""
+    d = d + "00"
+    return i + "." + d[0:2]
 
 class Log(ABC):
     LEVEL_DEBUG = 0
@@ -88,5 +98,12 @@ class Log(ABC):
             print(msg.format(*args, **kwargs))
         else:
             print(msg)
+
+def recreateDir(path, log = Log()):
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        log.warn('Directory not found: {}', path)
+    shutil.os.mkdir(path)
 
 
