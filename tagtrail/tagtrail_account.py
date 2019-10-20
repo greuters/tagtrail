@@ -20,122 +20,147 @@ from tkinter import *
 from abc import ABC, abstractmethod
 import helpers
 from sheets import ProductSheet
-from database import Database
+import database
 from tkinter import messagebox
+import traceback
 import os
 import shutil
 import csv
-from datetime import date
+import copy
 
 class TagCollector(ABC):
+    """
+    TagCollector reads all sanitized product sheets and compares them to
+    those of the last accounting. It collects all newly added tags per product.
+    """
     skipCnt = 1
     csvDelimiter = ';'
     quotechar = '"'
     newline = ''
 
-    def __init__(self, previousAccountingPath, currentAccountingPath, db, log = helpers.Log()):
+    def __init__(self,
+            alreadyAccountedProductsPath,
+            currentProductsToAccountPath,
+            accountingDate,
+            db, log = helpers.Log()):
         self.log = log
         self.db = db
-        self.previousAccountingPath = previousAccountingPath
-        self.currentAccountingPath = currentAccountingPath
-        self.previousTags, _ = self.collectTagsPerProductPage(self.previousAccountingPath)
-        self.currentTags, self.currentProductPagePaths = self.collectTagsPerProductPage(self.currentAccountingPath)
-        self.tagsPerProduct = self.collectTagsPerProduct()
-        self.productsPerMember = self.collectProductsPerMember()
+        self.alreadyAccountedProductsPath = alreadyAccountedProductsPath
+        self.currentProductsToAccountPath = currentProductsToAccountPath
+        self.accountingDate = accountingDate
+        self.alreadyAccountedSheets = self.loadProductSheets(self.alreadyAccountedProductsPath)
+        self.currentSheets = self.loadProductSheets(self.currentProductsToAccountPath)
+        self.newTagsPerProduct = self.collectNewTagsPerProduct()
 
-    def collectProductsPerMember(self):
-        productsPerMember = {} # memberId: [(productId, cnt), ..]
-        for m in self.db._members.values():
-            productsPerMember[m._id] = []
-            for productId, tags in self.tagsPerProduct.items():
-                tagCnt = len(list(filter(lambda tag: tag == m._id, tags)))
-                self.log.debug('tags={}, memberId={}, tagCnt={}'.format(tags,
-                    m._id, tagCnt))
-                productsPerMember[m._id].append((productId, tagCnt))
-        return productsPerMember
+    def currentProductPagePaths(self):
+        return [sheet.filePath for sheet in self.currentSheets.values()]
 
-    def collectTagsPerProduct(self):
-        changedTags = {}
-        for key in self.currentTags.keys():
-            if key not in self.previousTags:
-                changedTags[key] = self.currentTags[key]
-                continue
-            assert(len(self.previousTags[key]) == len(self.currentTags[key]))
-            self.log.debug('previousTags: {}'.format(self.previousTags[key]))
-            self.log.debug('currentTags: {}'.format(self.currentTags[key]))
-            changedTagIndices = [idx for idx, tag in enumerate(self.previousTags[key])
-                    if self.currentTags[key][idx] != tag]
-            self.log.debug('changedTagIndices: {}'.format(changedTagIndices))
-            if list(filter(lambda idx: self.previousTags[key][idx] != '', changedTagIndices)):
-                raise Exception(
-                    """{1}{2}_{3}.csv has tags that changed compared to
-                    {0}{2}_{3}.csv. This situation indicates a tagging error
-                    and needs to be resolved manually (editing mentioned CSVs
-                    in a text editor) or by running tagtrail_sanitize again
-                    (overriding tags of {1}{2}_{3}.csv by those of {0}{2}_{3}.csv)."""
-                    .format(self.previousAccountingPath, self.currentAccountingPath, key[0], key[1]))
-            changedTags[key] = list(map(lambda idx: self.currentTags[key][idx],
-                changedTagIndices))
+    def currentGrossSalesPrice(self, productId):
+        prices = [s.grossSalesPrice
+                  for (pId, _), s in self.currentSheets.items()
+                  if pId == productId]
+        if len(set(prices)) != 1:
+            raise AssertionError('should have exactly one price per ' + \
+                    f'{productId}, but prices={prices}')
+        return prices[0]
+
+    def numNewTags(self, productId, memberIds):
+        if productId in self.newTagsPerProduct:
+            tags = self.newTagsPerProduct[productId]
+            numTags = sum([1 for tag in tags if tag in memberIds])
+            self.log.debug(f'tags={tags}, productId={productId}, ' + \
+                    f'memberIds={memberIds}, numTags={numTags}')
+            return numTags
+        else:
+            return 0
+
+    def newTags(self, productId, pageNumber):
+        key = (productId, pageNumber)
+        alreadyAccountedTags = self.alreadyAccountedSheets[key].confidentTags()
+        currentTags = self.currentSheets[key].confidentTags()
+        assert(len(alreadyAccountedTags) == len(currentTags))
+        self.log.debug(f'alreadyAccountedTags: {alreadyAccountedTags}')
+        self.log.debug(f'currentTags: {currentTags}')
+
+        changedIndices = [idx for idx, tag in enumerate(alreadyAccountedTags)
+                if currentTags[idx] != tag]
+        self.log.debug(f'changedIndices: {changedIndices}')
+        offendingDataboxes = [f'dataBox{idx}' for idx in changedIndices if alreadyAccountedTags[idx] != '']
+        if offendingDataboxes:
+            self.log.error(f'offendingDataboxes: {offendingDataboxes}')
+            raise ValueError(
+                'Already accounted tags were changed in the ' + \
+                'current accounting.\n\n' + \
+                'This situation indicates a tagging error and has ' + \
+                'to be resolved manually by correcting this file:\n\n' + \
+                f'{self.currentProductsToAccountPath}{productId}_{pageNumber}.csv\n\n' + \
+                'Offending data boxes:\n\n' + \
+                f'{offendingDataboxes}\n\n' + \
+                'Corresponding file from last accounting:\n\n' + \
+                f'{self.alreadyAccountedProductsPath}{productId}_{pageNumber}.csv')
+
+        return list(map(lambda idx: currentTags[idx], changedIndices))
+
+    def collectNewTagsPerProduct(self):
+        newTags = {}
+        for key in self.currentSheets.keys():
+            if key not in self.alreadyAccountedSheets:
+                newTags[key] = self.currentSheets[key].confidentTags()
+            else:
+                newTags[key] = self.newTags(key[0], key[1])
+
             unknownTags = list(filter(
-                    lambda tag: tag not in self.db._members.keys(),
-                    changedTags[key]))
+                    lambda tag: tag and tag not in self.db.members.keys(),
+                    newTags[key]))
             if unknownTags:
                 raise Exception(
-                    """{}{}_{}.csv contains a tag for non-existent members '{}'. Run
-                    tagtrail_sanitize before tagtrail_account!"""
-                    .format(self.currentAccountingPath, key[0], key[1], unknownTags))
-            self.log.debug('changed tags: {}'.format(changedTags[key]))
+                    f"{self.currentProductsToAccountPath}{key[0]}_{key[1]}.csv " + \
+                    f"contains a tag for non-existent members '{unknownTags}'." + \
+                    "Run tagtrail_sanitize before tagtrail_account!")
+            self.log.debug(f'newTags[{key}]={newTags[key]}')
 
-        tagsPerProduct = {}
-        for productId, page in self.currentTags.keys():
-            if productId not in tagsPerProduct:
-                tagsPerProduct[productId] = []
-            tagsPerProduct[productId] += changedTags[productId, page]
-        self.log.debug('tagsPerProduct: {}'.format(tagsPerProduct.items()))
-        return tagsPerProduct
+        newTagsPerProduct = {}
+        for productId, pageNumber in self.currentSheets.keys():
+            if productId not in newTagsPerProduct:
+                newTagsPerProduct[productId] = []
+            newTagsPerProduct[productId] += newTags[productId, pageNumber]
+        self.log.debug(f'newTagsPerProduct: {newTagsPerProduct.items()}')
+        return newTagsPerProduct
 
-    def collectTagsPerProductPage(self, path):
-        productPagePaths = []
-        csvFilePaths = []
-        for (_, _, fileNames) in os.walk(path):
-            csvFilePaths = sorted(filter(lambda f: os.path.splitext(f)[1] ==
-                '.csv', fileNames))
-            break
+    def loadProductSheets(self, path):
+        self.log.info(f'collecting tags in {path}')
+        csvFilePaths = helpers.sortedFilesInDir(path, ext = '.csv')
         if not csvFilePaths:
-            return {}, {}
+            return {}
 
-        tagsPerProductPage = {} # (productId, page): [memberId, ..]
+        productSheets = {}
         for filePath in csvFilePaths:
-            productPagePaths.append(filePath)
-            productId, page = os.path.splitext(filePath)[0].split('_')
-            self.log.info('Collecting tags of file {}'.format(path+filePath))
-            self.log.debug('productId={}, page={}'.format(productId, page))
-            tagsPerProductPage[(productId, page)] = []
-            with open(path+filePath, newline=self.newline) as csvFile:
-                reader = csv.reader(csvFile, delimiter=self.csvDelimiter,
-                        quotechar=self.quotechar)
-                for cnt, row in enumerate(reader):
-                    if cnt<self.skipCnt:
-                        continue
-                    self.log.debug("row={}", row)
-                    boxName, memberId, confidence = row[0], row[1], float(row[2])
-                    if boxName in ("marginBox", "nameBox", "unitBox", "priceBox", "pageNumberBox"):
-                        continue
-                    else:
-                        if boxName.find("dataBox") == -1:
-                            self.log.warn("skipped unexpected box, row = {}", row)
-                            continue
-
-                    if confidence != 1:
-                        self.log.info("row={}", row)
-                        raise Exception("""{} is not properly sanitized. Run
-                            tagtrail_sanitize before tagtrail_account!"""
-                            .format(csvFile))
-
-                    tagsPerProductPage[(productId, page)].append(memberId)
-            self.log.debug('Tags in {}: {}'.format(filePath,
-                tagsPerProductPage[(productId, page)]))
-        return (tagsPerProductPage, productPagePaths)
+            productId, pageNumber = os.path.splitext(filePath)[0].split('_')
+            self.log.debug(f'productId={productId}, pageNumber={pageNumber}')
+            sheet = ProductSheet()
+            sheet.load(path+filePath)
+            sheet.filePath = filePath
+            if sheet.productId() != productId:
+                raise ValueError(f'{path+filePath} is invalid.\n' + \
+                    '{sheet.productId()} != {productId}')
+            if sheet.pageNumber != pageNumber:
+                raise ValueError(f'{path+filePath} is invalid.\n' + \
+                    '{sheet.pageNumber()} != {pageNumber}')
+            if sheet.unconfidentTags():
+                raise ValueError(
+                    f'{path+filePath} is not properly sanitized.\n' + \
+                    'Run tagtrail_sanitize before tagtrail_account!')
+            if (productId, pageNumber) in productSheets:
+                raise ValueError(
+                    f'{(productId, pageNumber)} exists more than once')
+            productSheets[(productId, pageNumber)] = sheet
+            prices = [s.grossSalesPrice
+                      for (pId, _), s in productSheets.items()
+                      if pId == productId]
+            if len(set(prices)) != 1:
+                raise ValueError(
+                    f'{productId} pages have different prices, {prices}')
+        return productSheets
 
 class Checkbar(Frame):
    def __init__(self, parent=None, title='', picks=[], available=True, side=TOP,
@@ -161,157 +186,211 @@ class Checkbar(Frame):
        return map((lambda var: var.get()), self.vars)
 
 class Gui:
-    def __init__(self, previousAccountingDate, currentAccountingDate,
-            dataPath, db):
+    def __init__(self, accountingDataPath, nextAccountingDataPath, accountingDate, db):
         self.log = helpers.Log()
-        self.previousAccountingDate = previousAccountingDate
-        self.currentAccountingDate = currentAccountingDate
-        self.previousAccountingName = 'accounting_'+previousAccountingDate
-        self.currentAccountingName = 'accounting_'+currentAccountingDate
-        self.previousAccountingPath = '{}/{}/'.format(dataPath,
-                self.previousAccountingName)
-        self.currentAccountingPath = '{}/{}/'.format(dataPath,
-                self.currentAccountingName)
+        self.accountingDate = accountingDate
+        self.accountingDataPath = accountingDataPath
+        self.nextAccountingDataPath = nextAccountingDataPath
         self.db = db
 
         self.root = Tk()
+        self.root.report_callback_exception = self.reportCallbackException
         self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
 
-        # read in all necessary files
-        try:
-            self.tagCollector = TagCollector(self.previousAccountingPath+'5_accounted_products/',
-                    self.currentAccountingPath+'1_products/', db, self.log)
+        self.productSheetSelection = Checkbar(self.root,
+                'Accounted pages to keep:',
+                self.db.productPagePaths, True)
+        self.productSheetSelection.pack(side=TOP, fill=BOTH, expand=YES, padx=5, pady=5)
+        self.productSheetSelection.config(relief=GROOVE, bd=2)
 
-            # TODO: parse postFinance CSV
-            self.payments = {'CAB': 123, 'MIR': 777}
-        except Exception:
-            # TODO implement correctly
-            messagebox.showwarning('Abort Accounting', 'message') #e.message)
-            self.root.quit()
-            raise
-        else:
-            self.productSheetSelection = Checkbar(self.root,
-                    'Accounted pages to keep:', self.tagCollector.currentProductPagePaths, True)
-            self.productSheetSelection.pack(side=TOP, fill=BOTH, expand=YES, padx=5, pady=5)
-            self.productSheetSelection.config(relief=GROOVE, bd=2)
+        missingProducts = sorted([
+            p.id for p in self.db.products.values()
+            if '{}_1.csv'.format(p.id) not in
+            self.db.productPagePaths
+            ])
+        mp = Checkbar(self.root, 'Missing products:', missingProducts, False)
+        mp.pack(side=TOP, fill=BOTH, expand=YES, padx=5, pady=5)
+        mp.config(relief=GROOVE, bd=2)
 
-            missingProducts = sorted([
-                p._id for p in db._products.values()
-                if '{}_0.csv'.format(p._id) not in self.tagCollector.currentProductPagePaths
-                ])
-            mp = Checkbar(self.root, 'Missing products:', missingProducts, False)
-            mp.pack(side=TOP, fill=BOTH, expand=YES, padx=5, pady=5)
-            mp.config(relief=GROOVE, bd=2)
+        buttonFrame = Frame(self.root)
+        buttonFrame.pack(side=BOTTOM, pady=5)
+        cancelButton = Button(buttonFrame, text='Cancel',
+                command=self.root.quit)
+        cancelButton.pack(side=LEFT)
+        cancelButton.bind('<Return>', lambda _: self.root.quit())
+        saveButton = Button(buttonFrame, text='Save and Quit',
+                command=self.saveAndQuit)
+        saveButton.pack(side=RIGHT)
+        saveButton.bind('<Return>', lambda _: self.saveAndQuit())
+        saveButton.focus_set()
+        self.root.mainloop()
 
-            buttonFrame = Frame(self.root)
-            buttonFrame.pack(side=BOTTOM, pady=5)
-            quitButton = Button(buttonFrame, text='Cancel',
-                    command=self.root.quit)
-            quitButton.pack(side=LEFT)
-            quitButton = Button(buttonFrame, text='Save and Quit',
-                    command=self.saveAndQuit)
-            quitButton.pack(side=RIGHT)
-            self.root.mainloop()
+    def reportCallbackException(self, exception, value, tb):
+        traceback.print_exception(exception, value, tb)
+        messagebox.showerror('Abort Accounting', value)
 
     def saveAndQuit(self):
         try:
-            self.writeMemberCSVs()
-            self.writeTransactions()
-            self.writeStatistics()
-            self.copyAccountedSheets()
-        except:
-            self.root.quit()
-            raise
-        else:
+            self.writeBills()
+            self.writeGnuCashFiles()
+            self.prepareNextAccounting()
+        finally:
             self.root.quit()
 
-    def writeMemberCSVs(self):
-        destPath = '{}2_bills/'.format(self.currentAccountingPath)
+    def writeBills(self):
+        destPath = f'{self.accountingDataPath}3_bills/'
         helpers.recreateDir(destPath, self.log)
+        for member in self.db.members.values():
+            database.Database.writeCsv(destPath+member.id+'.csv',
+                    self.db.bills[member.id])
 
-        for memberId in self.tagCollector.productsPerMember.keys():
-            filePath = '{}{}.csv'.format(destPath, memberId)
-            helpers.Log().info("storing member CSV {}".format(filePath))
-            with open(filePath, "w+") as fout:
-                fout.write("{};{};{};{}\n" .format("productId", "numTags",
-                'unitPrice', 'totalPrice'))
-                for (productId, cnt) in self.tagCollector.productsPerMember[memberId]:
-                    price = self.db._products[productId]._price
-                    if cnt > 0:
-                        fout.write("{};{};{};{}\n".format(productId, cnt,
-                            price, price * cnt))
-
-    def writeTransactions(self):
-        destPath = '{}3_gnucash/'.format(self.currentAccountingPath)
+    def writeGnuCashFiles(self):
+        destPath = f'{self.accountingDataPath}/4_gnucash/'
         helpers.recreateDir(destPath, self.log)
+        database.Database.writeCsv(f'{destPath}accounts.csv', self.db.accounts)
+        database.Database.writeCsv(f'{destPath}purchaseTransactions.csv',
+                self.db.purchaseTransactions)
+        database.Database.writeCsv(f'{destPath}paymentTransactions.csv',
+                self.db.paymentTransactions)
 
-        filePath = '{}accounts.csv'.format(destPath)
-        with open(filePath, "w+") as fout:
-            helpers.Log().info("writing accounts {}".format(filePath))
-            fmt = '{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}\n'
-            fout.write(fmt.format('type', 'full_name', 'name', 'code',
-                'description', 'color', 'notes', 'commoditym',
-                'commodityn', 'hidden', 'tax', 'place_holder'))
-            for memberId in self.db._members.keys():
-                fout.write(fmt.format('LIABILITY',
-                'Fremdkapital:Guthaben Mitglieder:'+memberId, memberId,
-                '', '', '', '', 'CHF', 'CURRENCY', 'F', 'F', 'F'))
+    def prepareNextAccounting(self):
+        helpers.recreateDir(self.nextAccountingDataPath, self.log)
+        helpers.recreateDir(f'{self.nextAccountingDataPath}0_input', self.log)
+        helpers.recreateDir(f'{self.nextAccountingDataPath}0_input/scans', self.log)
+        helpers.recreateDir(f'{self.accountingDataPath}5_output/', self.log)
+        self.writeMemberCSV()
+        self.writeProductsCSVs()
+        self.copyAccountedSheets()
+        shutil.copytree(f'{self.accountingDataPath}0_input/templates',
+                f'{self.nextAccountingDataPath}0_input/templates')
 
-        marginPercentage = 0.05
-        filePath = '{}withdrawals.csv'.format(destPath)
-        with open(filePath, "w+") as fout:
-            helpers.Log().info("writing withdrawals {}".format(filePath))
-            fout.write("{},{},{},{},{}\n"
-                    .format("Date", "Description", "Account", "Deposit",
-                        "Transfer Account"))
-            for memberId in self.tagCollector.productsPerMember.keys():
-                grossPrice = 0
-                for (productId, cnt) in self.tagCollector.productsPerMember[memberId]:
-                    grossPrice += self.db._products[productId]._price * cnt
-                netPrice = grossPrice / (1 + marginPercentage)
-                fout.write("{},{},{},{},{}\n"
-                        .format(self.currentAccountingDate,
-                            self.currentAccountingName, memberId,
-                            helpers.formatPrice(helpers.roundPriceCH(netPrice)),
-                            'Warenwert'))
-                fout.write("{},{},{},{},{}\n"
-                        .format(self.currentAccountingDate,
-                            self.currentAccountingName, memberId,
-                            helpers.formatPrice(helpers.roundPriceCH(grossPrice - netPrice)),
-                            'Marge'))
+    def writeMemberCSV(self):
+        newMembers = copy.deepcopy(self.db.members)
+        for m in newMembers.values():
+            m.balance = self.db.bills[m.id].currentBalance()
+        database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/members.csv',
+                newMembers)
 
-        filePath = '{}payments.csv'.format(destPath)
-        with open(filePath, "w+") as fout:
-            helpers.Log().info("writing gnucash {}".format(filePath))
-            fout.write("{},{},{},{},{}\n"
-                    .format("Date", "Description", "Account", "Withdrawal",
-                        "Transfer Account"))
-            for memberId, payment in self.payments.items():
-                fout.write("{},{},{},{},{}\n"
-                        .format(date.today(), 'Einzahlung', memberId, payment,
-                            'Girokonto'))
-
-    def writeStatistics(self):
-        destPath = '{}4_statistics/'.format(self.currentAccountingPath)
-        helpers.recreateDir(destPath, self.log)
-        print('not yet implemented')
+    def writeProductsCSVs(self):
+        database.Database.writeCsv(f'{self.accountingDataPath}5_output/products.csv',
+                self.db.products)
+        database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/products.csv',
+                self.db.products.copyForNextAccounting(self.accountingDate))
 
     def copyAccountedSheets(self):
         productSheetsToKeep = list(zip(*filter(
             lambda pair: pair[0] == 1,
-            zip(self.productSheetSelection.state(), self.tagCollector.currentProductPagePaths)
+            zip(self.productSheetSelection.state(),
+                self.db.productPagePaths)
             )))[1]
 
-        destPath = '{}5_accounted_products/'.format(self.currentAccountingPath)
+        destPath = self.nextAccountingDataPath+'0_input/accounted_products/'
         helpers.recreateDir(destPath, self.log)
         for productFileName in productSheetsToKeep:
-            srcPath = '{}{}{}'.format(self.currentAccountingPath, '1_products/', productFileName)
+            srcPath = self.accountingDataPath+'2_taggedProductSheets/'+productFileName
             self.log.info("copy {} to {}".format(srcPath, destPath))
             shutil.copy(srcPath, destPath)
 
+class EnrichedDatabase(database.Database):
+    # TODO move to config file
+    merchandiseValue = 'Warenwert'
+    merchandiseValueAccount = 'Warenwert'
+    margin = 'Marge'
+    marginAccount = 'Marge'
+    payment = 'Einzahlung'
+    giroAccount = 'Girokonto'
+
+    def __init__(self, accountingDataPath, accountingDate):
+        self.log = helpers.Log()
+        self.accountingDataPath = accountingDataPath
+        self.accountingDate = accountingDate
+        super().__init__(f'{accountingDataPath}0_input/')
+
+        payments = self.loadPayments()
+        tagCollector = TagCollector(
+                self.accountingDataPath+'0_input/accounted_products/',
+                self.accountingDataPath+'2_taggedProductSheets/',
+                self.accountingDate,
+                self, self.log)
+
+        self.products.expectedQuantityDate = self.accountingDate
+        for productId, product in self.products.items():
+            product.soldQuantity = tagCollector.numNewTags(productId,
+                    list(self.members.keys()))
+
+        self.bills = self.createBills(tagCollector, payments)
+        self.productPagePaths = tagCollector.currentProductPagePaths()
+        self.accounts = database.MemberAccountDict(
+                {m.id: database.MemberAccount(m.id) for m in self.members.values()})
+        self.purchaseTransactions = self.createPurchaseTransactions()
+        self.paymentTransactions = self.createPaymentTransactions(payments)
+
+    def loadPayments(self):
+        # TODO: parse postFinance CSV
+        # file:
+        # export_Transactions_{self.previousAccountingDate}_{self.accountingDate}.csv
+        return {member.id: 0 for member in self.members.values()}
+
+    def createBills(self, tagCollector, paymentsPerMember):
+        bills = {}
+        for member in self.members.values():
+            bill = database.Bill(member.id,
+                    self.members.accountingDate,
+                    self.accountingDate,
+                    member.balance,
+                    paymentsPerMember[member.id])
+            for productId in tagCollector.newTagsPerProduct.keys():
+                numTags = tagCollector.numNewTags(productId, [member.id])
+                if numTags != 0:
+                    position = database.BillPosition(productId,
+                            self.products[productId].description,
+                            numTags,
+                            self.products[productId].purchasePrice,
+                            tagCollector.currentGrossSalesPrice(productId),
+                            0)
+                    bill[position.id] = position
+            bills[member.id] = bill
+        return bills
+
+    def createPurchaseTransactions(self):
+        return database.TransactionDict({
+            **{self.merchandiseValue+bill.memberId:
+                database.Transaction(self.merchandiseValue+bill.memberId,
+                f'{self.merchandiseValue} accounted on {self.accountingDate}',
+                bill.totalPurchasePrice(),
+                self.merchandiseValueAccount,
+                bill.memberId)
+                for bill in self.bills.values()},
+            **{self.margin+bill.memberId:
+                database.Transaction(self.margin+bill.memberId,
+                f'{self.margin} accounted on {self.accountingDate}',
+                bill.totalGrossSalesPrice()-bill.totalPurchasePrice(),
+                self.marginAccount,
+                bill.memberId)
+                for bill in self.bills.values()}
+            })
+
+    def createPaymentTransactions(self, payments):
+        return database.TransactionDict({
+            bill.memberId:
+                database.Transaction(bill.memberId,
+                # TODO: better description
+                f'{self.payment} accounted on {self.accountingDate}',
+                payments[bill.memberId],
+                bill.memberId,
+                self.giroAccount)
+                for bill in self.bills.values()})
+
+
 if __name__ == '__main__':
-    dataPath = 'data'
-    databasePath = '{}/database/{}'
-    db = Database(databasePath.format(dataPath, 'mitglieder.csv'),
-            databasePath.format(dataPath, 'produkte.csv'))
-    Gui('2019-08-23', '2019-09-26', dataPath, db)
+    dataPath = 'data/'
+    accountingDate = '2019-11-03'
+    originalPath = f'{dataPath}next/'
+    newPath = f'{dataPath}next/'
+    #originalPath = f'{dataPath}next/'
+    #newPath = f'{dataPath}accounting_{accountingDate}/'
+    if originalPath != newPath:
+        shutil.move(originalPath, newPath)
+
+    db = EnrichedDatabase(newPath, accountingDate)
+    Gui(newPath, f'{dataPath}next2/', accountingDate, db)

@@ -17,36 +17,22 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from abc import ABC, abstractmethod
-import slugify
 import shutil
+import os
+import datetime
+import re
 
-class IdentifiableObject(ABC):
-    def __init__(self,
-            objId):
-        self._id = objId
+def today():
+    return datetime.date.today().strftime('%Y-%m-%d')
 
-class Member(IdentifiableObject):
-    def __init__(self,
-            memberId,
-            names,
-            emails
-            ):
-        super().__init__(memberId)
-        self._names = names
-        self._emails = emails
-
-class Product(IdentifiableObject):
-    def __init__(self,
-            description,
-            unit,
-            price,
-            quantity
-            ):
-        super().__init__(slugify.slugify(description))
-        self._description = description
-        self._unit = unit
-        self._price = float(price)
-        self._quantity = quantity
+def readPrefixRow(prefix, row):
+    if len(row) < 2:
+        raise ValueError(f'len(row) < 2; row = {row}')
+    if not all(e is None or e == '' for e in row[2:]):
+        raise ValueError(f'row[2:] contains non-null elements, {row}')
+    if row[0] != prefix:
+        raise ValueError(f"row[0] = '{row[0]}', but expected '{prefix}'")
+    return row[1]
 
 def roundPriceCH(price):
     # round to 5-cent precision
@@ -54,17 +40,21 @@ def roundPriceCH(price):
     # returns float
     return round(price * 20) / 20
 
-def formatPrice(price):
+def formatPrice(price, currency = None):
     # price : float
     # returns string
-    price = str(price)
-    if "." in price:
-        i, d = price.split(".")
+    if currency is None:
+        return '%.2f' % (price)
     else:
-        i = price
-        d = ""
-    d = d + "00"
-    return i + "." + d[0:2]
+        return f'%.2f {currency}' % (price)
+
+
+def priceFromFormatted(priceStr):
+    numberOnly = ''.join(re.findall('\d|\.', priceStr))
+    if numberOnly:
+        return float(numberOnly)
+    else:
+        return 0
 
 class Log(ABC):
     LEVEL_DEBUG = 0
@@ -103,7 +93,24 @@ def recreateDir(path, log = Log()):
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
-        log.warn('Directory not found: {}', path)
+        log.debug('Directory not found: {}', path)
     shutil.os.mkdir(path)
 
-
+# retrieve names of all files directly in directory 'dir' (no recursion)
+# return an alphabetically sorted list of them
+# optionally filter for extension 'ext'
+# if 'removeExt' is true and ext is given, return the name without extension
+def sortedFilesInDir(path, ext = None, removeExt = False):
+    filteredNames = None
+    for (_, _, fileNames) in os.walk(path):
+        filteredNames = sorted(
+                filter(lambda f:
+                    ext == None or os.path.splitext(f)[1] == ext,
+                    fileNames))
+        if ext and removeExt:
+            filteredNames = map(lambda f: os.path.splitext(f)[0], filteredNames)
+        break
+    if not filteredNames:
+        return []
+    else:
+        return filteredNames

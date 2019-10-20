@@ -1,0 +1,9 @@
+"Previous Quantity Date";"10.03.19";;;;;;;;;;;;
+"Expected Quantity Date";;;;;;;;;;;;;
+"Inventory Quantity Date";;;;;;;;;;;;;
+"Name";"Amount";"Unit [kg, g, l, cl, ml]";"Purchase Price";"Previous Quantity";"Added Quantity";"Sold Quantity";"Expected Quantity";"Inventory Quantity";"Eaternity Name";"Origin [country]";"Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish]";"Transport [air, ground]";"Conservation [fresh, frozen, dried, conserved, canned, boiled-down]"
+"Cashews nature";200;"g";4.4;50;20;;;;"cashew";"ghana";"fair-trade, organic";"air";"dried"
+"Pasta Rigatoni";500;"g";2.55;48;;;;;"pasta";"Italien";"organic";"ground";"dried"
+"Drink Hafer";1;"l";1.8;200;20;;;;"haferdrink";"österreich";"organic";"ground";"fresh"
+"Tomaten Pelato in Salsa";880;"ml";1.95;48;;;;;"tomaten";"Italien";"organic";"ground";"canned"
+"Pfiffikus Gemüse-Brühe";200;"g";3.95;30;;;;;"gemüsebrühe";"Schweiz";"organic";"ground";"dried"

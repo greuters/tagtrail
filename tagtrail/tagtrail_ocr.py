@@ -291,7 +291,7 @@ class FindMargins(ProcessingStep):
         super().process(inputImg)
         self._x0, self._y0 = 0, 0
         self._x1, self._y1, _ = inputImg.shape
-        self._marginImg = np.copy(inputImg)
+        self._frameImg = np.copy(inputImg)
         self._grayImg = cv.cvtColor(inputImg, cv.COLOR_BGR2GRAY)
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 1,
                 cv.THRESH_BINARY)
@@ -300,7 +300,7 @@ class FindMargins(ProcessingStep):
     def writeOutput(self):
         cv.imwrite("{}/{}_0_gray.jpg".format(self._outputPath, self._name), self._grayImg*255)
         cv.imwrite("{}/{}_1_threshold.jpg".format(self._outputPath, self._name), self._thresholdImg*255)
-        cv.imwrite("{}/{}_2_margins.jpg".format(self._outputPath, self._name), self._marginImg)
+        cv.imwrite("{}/{}_2_frames.jpg".format(self._outputPath, self._name), self._frameImg)
         cv.imwrite("{}/{}_3_output.jpg".format(self._outputPath, self._name), self._outputImg)
 
     def updateRect(self,x0,y0,x1,y1,drawRect=False):
@@ -319,7 +319,7 @@ class FindMargins(ProcessingStep):
         #score=2*(precision*recall)/(precision + recall)
         self._log.debug("precision={}, recall={}, score={}".format(precision, recall, score))
         if drawRect:
-            cv.rectangle(self._marginImg,(x0,y0),(x1,y1),(0,255,255),5)
+            cv.rectangle(self._frameImg,(x0,y0),(x1,y1),(0,255,255),5)
 
         if score>self._maxScore:
             self._log.info("new maxScore={}".format(score))
@@ -343,7 +343,7 @@ class FindMarginsByContour(FindMargins):
         for cnt in contours:
             x,y,w,h=cv.boundingRect(cnt)
             self.updateRect(x, y, x+w, y+h, True)
-        cv.rectangle(self._marginImg,(self._x0,self._y0),(self._x1,self._y1),(0,0,255),9)
+        cv.rectangle(self._frameImg,(self._x0,self._y0),(self._x1,self._y1),(0,0,255),9)
 
         # second pass - try to find an optimum locally
         # optimizing one variable at a time for performance reasons
@@ -356,7 +356,7 @@ class FindMarginsByContour(FindMargins):
             self.updateRect(self._x0,self._y0,self._x1+dx,self._y1, True)
         for dy in optimizationRange:
             self.updateRect(self._x0,self._y0,self._x1,self._y1+dy, True)
-        cv.rectangle(self._marginImg,(self._x0,self._y0),(self._x1,self._y1),(255,0,0),9)
+        cv.rectangle(self._frameImg,(self._x0,self._y0),(self._x1,self._y1),(255,0,0),9)
 
         self._outputImg=inputImg[self._y0:self._y1,self._x0:self._x1]
 
@@ -365,12 +365,12 @@ class FindMarginsByContour(FindMargins):
         cv.imwrite("{}/{}_1a_closing.jpg".format(self._outputPath, self._name), self._closingImg*255)
 
 class FitToSheet(ProcessingStep):
-    (marginP0, marginP1) = ProductSheet.getPageMarginPts()
+    (frameP0, frameP1) = ProductSheet.getPageFramePts()
 
     def process(self, inputImg):
         super().process(inputImg)
-        xMargin,yMargin = self.marginP0
-        wMargin,hMargin = np.subtract(self.marginP1, self.marginP0)
+        xMargin,yMargin = self.frameP0
+        wMargin,hMargin = np.subtract(self.frameP1, self.frameP0)
         self._resizedImg = cv.resize(inputImg,(wMargin, hMargin))
         self._outputImg = cv.copyMakeBorder(self._resizedImg,yMargin,yMargin,xMargin,xMargin,cv.BORDER_CONSTANT,value=(255,255,255))
 
@@ -384,12 +384,14 @@ class RecognizeText(ProcessingStep):
     def __init__(self,
             name):
         super().__init__(name)
-        dataFilePath = 'data/database/{}'
-        db = Database(dataFilePath.format('mitglieder.csv'),
-                dataFilePath.format('produkte.csv'))
-        self._sheet = ProductSheet("not", "known", "yet", 0,
-                ProductSheet.maxQuantity(),
-                db)
+        self.__sheet = ProductSheet()
+        self.__db = Database('data/next/0_input/')
+
+    def productId(self):
+        return self.__sheet.productId()
+
+    def pageNumber(self):
+        return self.__sheet.pageNumber
 
     def process(self, inputImg):
         super().process(inputImg)
@@ -398,14 +400,16 @@ class RecognizeText(ProcessingStep):
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255,
                 cv.THRESH_BINARY)
 
-        names, units, prices = zip(*[(p._description.upper(), p._unit.upper(),
-            str(p._price).upper()) for p
-            in self._sheet._database._products.values()])
-        memberIds = [m._id for m in self._sheet._database._members.values()]
+        names, units, prices = zip(*[
+            (p.description.upper(),
+             str(p.amount).upper()+p.unit.upper(),
+             helpers.formatPrice(p.grossSalesPrice()).upper())
+            for p in self.__db.products.values()])
+        memberIds = [m.id for m in self.__db.members.values()]
         self._log.debug("names={}, units={}, prices={}, memberIds={}", names,
                 units, prices, memberIds)
         self._recognizedBoxTexts = {}
-        for box in self._sheet._boxes.values():
+        for box in self.__sheet.boxes():
             if box.name == "nameBox":
                 box.text, box.confidence = self.recognizeBoxText(box, names)
             elif box.name == "unitBox":
@@ -425,7 +429,7 @@ class RecognizeText(ProcessingStep):
             if box.confidence < self.confidenceThreshold:
                 box.bgColor = (0, 0, 80)
 
-        self._outputImg = self._sheet.createImg()
+        self._outputImg = self.__sheet.createImg()
 
     """
     Returns (text, confidence) among candidateTexts
@@ -466,6 +470,9 @@ class RecognizeText(ProcessingStep):
         confidence = 1 - minDist / secondDist
         return confidence, strings[dists.index(minDist)]
 
+    def storeSheet(self, outputDir):
+        self.__sheet.store(outputDir)
+
     def writeOutput(self):
         cv.imwrite("{}/{}_0_grayImg.jpg".format(self._outputPath, self._name), self._grayImg)
         cv.imwrite("{}/{}_1_output.jpg".format(self._outputPath, self._name), self._outputImg)
@@ -484,16 +491,15 @@ def processFile(inputFile, outputDir):
         p.process(img)
         p.writeOutput()
         img = p._outputImg
-    recognizer._sheet.store(outputDir)
-    cv.imwrite("{}{}_{}_normalized_scan.jpg".format(outputDir,
-        slugify.slugify(recognizer._sheet._boxes['nameBox'].text),
-        recognizer._sheet._boxes['pageNumberBox'].text), fit._outputImg)
+    recognizer.storeSheet(outputDir)
+    cv.imwrite(f'{outputDir}{recognizer.productId()}_{recognizer.pageNumber()}_normalized_scan.jpg',
+            fit._outputImg)
 
 def main():
-    accountingDir = 'data/accounting_2019-09-26/'
-    outputDir = '{}1_products/'.format(accountingDir)
+    accountingDir = 'data/next/'
+    outputDir = '{}2_taggedProductSheets/'.format(accountingDir)
     helpers.recreateDir(outputDir)
-    for (dirPath, dirNames, fileNames) in walk('{}0_scans/'.format(accountingDir)):
+    for (dirPath, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         for f in fileNames:
             processFile(dirPath + f, outputDir)
         break

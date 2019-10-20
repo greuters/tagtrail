@@ -23,7 +23,7 @@ import decimal
 import itertools
 import random
 import csv
-from helpers import Log
+import helpers
 from abc import ABC, abstractmethod
 from PIL import ImageFont, Image, ImageDraw
 import slugify
@@ -31,7 +31,7 @@ random.seed()
 
 class ProductSheet(ABC):
     # Sheet Dimensions
-    pageMargin = 10 # mm
+    pageFrame = 10 # mm
     layoutMargin = 15 # mm
     xRes = 2480 # px
     yRes = 3508 # px
@@ -55,28 +55,26 @@ class ProductSheet(ABC):
         return self.dataColCount*self.dataRowCount
 
     @classmethod
-    def getPageMarginPts(self):
-        return (self.pointFromMM(self.pageMargin, self.pageMargin),
-                self.pointFromMM(self.sheetW-self.pageMargin, self.sheetH-self.pageMargin))
+    def getPageFramePts(self):
+        return (self.pointFromMM(self.pageFrame, self.pageFrame),
+                self.pointFromMM(self.sheetW-self.pageFrame, self.sheetH-self.pageFrame))
 
     @classmethod
     def pointFromMM(self, u, v):
         return (round(u / self.sheetW * self.xRes),
                 round(v / self.sheetH * self.yRes))
 
-    def __init__(self, name, unit, price, pageNumber, quantity, database=None,
-            testMode=False):
-        self.quantity=quantity
+    def __init__(self, database=None, testMode=False):
         self._database=database
         self.testMode=testMode
-        self._boxes={}
-        self._log=Log()
+        self.__boxes={}
+        self._log=helpers.Log()
         self._box_to_pos={}
         self._pos_to_box={}
 
-        # Page margin (for easier OCR)
-        p0, p1 = self.getPageMarginPts()
-        self._boxes["marginBox"] = Box("marginBox", p0, p1, (235,235,235), lineW=20)
+        # Frame around page (for easier OCR)
+        p0, p1 = self.getPageFramePts()
+        self.__boxes["frameBox"] = Box("frameBox", p0, p1, (235,235,235), lineW=20)
 
         # Header
         u0 = self.layoutMargin
@@ -87,8 +85,7 @@ class ProductSheet(ABC):
                 "nameBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
-                self.dataBgColors[1],
-                name), 0, 0)
+                self.dataBgColors[1]), 0, 0)
 
         u0 = u1
         u1 = u0+self.unitW
@@ -96,8 +93,7 @@ class ProductSheet(ABC):
                 "unitBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
-                self.dataBgColors[1],
-                unit), 0, 1)
+                self.dataBgColors[1]), 0, 1)
 
         u0 = u1
         u1 = u0+self.priceW
@@ -105,8 +101,7 @@ class ProductSheet(ABC):
                 "priceBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
-                self.dataBgColors[1],
-                price), 0, 2)
+                self.dataBgColors[1]), 0, 2)
 
         u0 = u1
         u1 = u0+self.pageNumberW
@@ -114,8 +109,7 @@ class ProductSheet(ABC):
                 "pageNumberBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
-                self.dataBgColors[1],
-                str(pageNumber)), 0, 3)
+                self.dataBgColors[1]), 0, 3)
 
         # Data
         for (row, col) in itertools.product(range(0,self.dataRowCount),
@@ -123,13 +117,13 @@ class ProductSheet(ABC):
             v0 = self.layoutMargin + self.headerH//2 + (row+1)*self.dataColH
             color = self.dataBgColors[row % 2]
             num = row*self.dataColCount + col
-            if num == self.quantity:
-                break
             u0 = self.layoutMargin + col*self.dataRowW
             if self.testMode:
-                if self._database:
-                    text = list(self._database._members.values())[random.randint(0,
-                        len(self._database._members)-1)]._id
+                if random.randint(0, self.maxQuantity()) < 3*num:
+                    text = ""
+                elif self._database:
+                    text = list(self._database.members.values())[random.randint(0,
+                        len(self._database.members)-1)].id
                 else:
                     text = "Test"
                 textRotation = random.randrange(-8,8)
@@ -146,8 +140,47 @@ class ProductSheet(ABC):
                     textRotation=textRotation
                     ), row+1, col)
 
+    @property
+    def name(self):
+        return self.__boxes['nameBox'].text
+
+    @name.setter
+    def name(self, name):
+        self.__boxes['nameBox'].text = name
+        self.__boxes['nameBox'].confidence = 1
+
+    def productId(self):
+        return slugify.slugify(self.__boxes['nameBox'].text)
+
+    @property
+    def amountAndUnit(self):
+        return self.__boxes['unitBox'].text
+
+    @amountAndUnit.setter
+    def amountAndUnit(self, amountAndUnit):
+        self.__boxes['unitBox'].text = amountAndUnit
+        self.__boxes['unitBox'].confidence = 1
+
+    @property
+    def grossSalesPrice(self):
+        return helpers.priceFromFormatted(self.__boxes['priceBox'].text)
+
+    @grossSalesPrice.setter
+    def grossSalesPrice(self, grossSalesPrice):
+        self.__boxes['priceBox'].text = grossSalesPrice
+        self.__boxes['priceBox'].confidence = 1
+
+    @property
+    def pageNumber(self):
+        return self.__boxes['pageNumberBox'].text
+
+    @pageNumber.setter
+    def pageNumber(self, pageNumber):
+        self.__boxes['pageNumberBox'].text = pageNumber
+        self.__boxes['pageNumberBox'].confidence = 1
+
     def addBox(self, box, row, col):
-        self._boxes[box.name]=box
+        self.__boxes[box.name]=box
         pos = (row, col)
         self._box_to_pos[box]=pos
         self._pos_to_box[pos]=box
@@ -155,6 +188,12 @@ class ProductSheet(ABC):
     def sortedPositions(self):
         return sorted(self._pos_to_box.keys(), key = lambda pos:
                 pos[0]*ProductSheet.dataRowCount + pos[1])
+
+    def boxByName(self, name):
+        return self.__boxes[name]
+
+    def boxes(self):
+        return self.__boxes.values()
 
     def sortedBoxes(self):
         return [self._pos_to_box[pos] for pos in self.sortedPositions()]
@@ -181,13 +220,24 @@ class ProductSheet(ABC):
         else:
             return None
 
+    def tagsAndConfidences(self):
+        return [(box.text, box.confidence) for box in self.__boxes.values() if
+            box.name.find("dataBox") != -1]
+
+    def confidentTags(self):
+        return [tag for (tag, conf) in self.tagsAndConfidences() if conf == 1]
+
+    def unconfidentTags(self):
+        return [tag for (tag, conf) in self.tagsAndConfidences() if conf != 1]
+
     def createImg(self):
         img = np.full((self.yRes, self.xRes, 3), 255, np.uint8)
-        for box in self._boxes.values():
+        for box in self.__boxes.values():
             box.draw(img)
         return img
 
     def load(self, path):
+        self._log.info(f'Loading {path}')
         skipCnt=1
         csvDelimiter = ';'
         quotechar = '"'
@@ -201,26 +251,24 @@ class ProductSheet(ABC):
                     continue
                 self._log.debug("row={}", row)
                 boxName, text, confidence = row[0], row[1], float(row[2])
-                if boxName == "marginBox":
+                if boxName == "frameBox":
                     continue
                 elif boxName.find("dataBox") != -1:
                     numDataBoxes += 1
                 elif boxName not in ("nameBox", "unitBox", "priceBox", "pageNumberBox"):
                     self._log.warn("skipped unexpected box, row = {}", row)
                     continue
-                self._boxes[boxName].name = boxName
-                self._boxes[boxName].text = text
-                self._boxes[boxName].confidence = confidence
+                self.__boxes[boxName].name = boxName
+                self.__boxes[boxName].text = text
+                self.__boxes[boxName].confidence = confidence
 
     def store(self, path):
-        filePath = "{}{}_{}.csv".format(path,
-                slugify.slugify(self._boxes['nameBox'].text),
-                self._boxes['pageNumberBox'].text)
-        self._log.info("storing sheet {}".format(filePath))
+        filePath = f'{path}{self.productId()}_{self.pageNumber}.csv'
+        self._log.info(f'storing sheet {filePath}')
         with open(filePath, "w+") as fout:
-            fout.write("{};{};{}\n" .format("boxName", "text", "confidence"))
-            for box in self._boxes.values():
-                fout.write("{};{};{}\n".format(box.name, box.text, box.confidence))
+            fout.write(f'boxName;text;confidence\n')
+            for box in self.boxes():
+                fout.write(f'{box.name};{box.text};{box.confidence}\n')
 
 class Box(ABC):
     fontColor = 'black'
@@ -242,7 +290,7 @@ class Box(ABC):
         self.lineW = lineW
         self.lineColor = lineColor
         self.textRotation = textRotation
-        self._log = Log()
+        self._log = helpers.Log()
 
     def draw(self, img):
         cv.rectangle(img, self.pt1, self.pt2, self.bgColor, -1)

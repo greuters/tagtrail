@@ -26,6 +26,7 @@ from sheets import ProductSheet
 from database import Database
 from helpers import Log
 import random
+import traceback
 
 class AutocompleteEntry(ttk.Combobox):
     def __init__(self, box, possibleValues, releaseFocus, *args, **kwargs):
@@ -86,7 +87,10 @@ class AutocompleteEntry(ttk.Combobox):
         if self.text == '':
             self.destroyListBox()
         else:
-            words = self.comparison(self.text)
+            if self.text.strip() == '':
+                words = self._possibleValues
+            else:
+                words = self.comparison(self.text)
             self._log.debug('possible words = {}', words)
             if not words:
                 self.text = self._previousValue
@@ -182,25 +186,28 @@ class AutocompleteEntry(ttk.Combobox):
 class InputSheet(ProductSheet):
     validationProbability = 0.05
 
-    def __init__(self, name, unit, price, quantity, root, aspectRatio,
+    def __init__(self, root, aspectRatio,
             database, path):
-        super().__init__(name, unit, price, 0, quantity)
+        super().__init__()
         self.load(path)
         self.originalPath = path
 
         self._box_to_widget = {}
         self.validationBoxTexts = {}
-        for box in self._boxes.values():
+        for box in self.boxes():
             if box.name == "nameBox":
-                choices = [v._description for v in database._products.values()]
+                choices = list(sorted([p.description
+                    for p in database.products.values()]))
             elif box.name == "unitBox":
-                choices = []
+                choices = list(sorted([p.amountAndUnit
+                    for p in database.products.values()]))
             elif box.name == "priceBox":
-                choices = []
+                choices = list(sorted([str(p.grossSalesPrice())
+                    for p in database.products.values()]))
             elif box.name == "pageNumberBox":
-                choices = [str(x) for x in range(100)]
+                choices = [str(x) for x in range(1, 100)]
             elif box.name.find("dataBox") != -1:
-                choices = database._members.keys()
+                choices = list(sorted(database.members.keys()))
             else:
                 continue
 
@@ -227,7 +234,7 @@ class InputSheet(ProductSheet):
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             self._box_to_widget[box] = entry
 
-        self._box_to_widget[self._boxes['nameBox']].focus_set()
+        self._box_to_widget[self.boxByName('nameBox')].focus_set()
 
     def switchFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
@@ -264,7 +271,7 @@ class InputSheet(ProductSheet):
     def getValidationScore(self):
         numCorrect = 0
         numValidated = 0
-        for box in self._boxes.values():
+        for box in self.boxes():
             if box.name in self.validationBoxTexts and box.confidence == 1:
                 numValidated += 1
                 if self.validationBoxTexts[box.name] == box.text:
@@ -275,20 +282,20 @@ class InputSheet(ProductSheet):
 class Gui:
     scanPostfix = '_normalized_scan.jpg'
 
-    def __init__(self, dataPath, memberFilePath, productFilePath):
+    def __init__(self, accountingDataPath):
         # TODO: add second dataPath - for each csv, check if the corresponding
         # csv existed in the last accounting. if a box has a (validated, assert
         # confidence = 1) non '' text, override the ocr suggestion and set
         # confidence to 1
         self.log = Log()
-        self.dataPath = dataPath
-        self.memberFilePath = memberFilePath
-        self.productFilePath = productFilePath
-        self.db = Database(self.memberFilePath, self.productFilePath)
+        self.accountingDataPath = accountingDataPath
+        self.productPath = f'{self.accountingDataPath}2_taggedProductSheets/'
+        self.db = Database(f'{self.accountingDataPath}0_input/')
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
 
         self.root = Tk()
+        self.root.report_callback_exception = self.reportCallbackException
         self.buttonCanvasWidth=200
         self.width=self.root.winfo_screenwidth()
         self.height=self.root.winfo_screenheight()
@@ -305,16 +312,20 @@ class Gui:
             self.csvPath, self.scanPath = next(self.pairToSanitizeGenerator)
         except StopIteration:
             messagebox.showinfo('Nothing to do',
-                'No file needing sanitation in input path {}'.format(dataPath))
+                f'No file needing sanitation in input path {self.productPath}')
             self.root.destroy()
         else:
             self.loadProductSheet()
 
+    def reportCallbackException(self, exception, value, tb):
+        traceback.print_exception(exception, value, tb)
+        messagebox.showerror('Abort Accounting', value)
+
     def nextPairToSanitize(self):
-        # assuming each product is stored in dataPath as a pair of
+        # assuming each product is stored in productPath as a pair of
         # ({productName}_{page}.csv, {productName}_{page}_normalized_scan.jpg)
         csvFiles = None
-        for (_, _, fileNames) in os.walk(self.dataPath):
+        for (_, _, fileNames) in os.walk(self.productPath):
             csvFiles = sorted(filter(lambda f: os.path.splitext(f)[1] ==
                 '.csv', fileNames))
             scanFiles = sorted(filter(lambda f: f.find(self.scanPostfix)
@@ -329,13 +340,12 @@ class Gui:
             scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
             if scanFile in scanFiles:
                 # check if this csv needs sanitation
-                sheet = ProductSheet("not", "known", "yet", 0,
-                        ProductSheet.maxQuantity(), self.db)
-                sheet.load(self.dataPath + csvFile)
+                sheet = ProductSheet()
+                sheet.load(self.productPath + csvFile)
                 if list(filter(lambda box: box.confidence < 1,
-                    sheet._boxes.values())):
+                    sheet.boxes())):
                     foundPairToSanitize = True
-                    yield (self.dataPath + csvFile, self.dataPath + scanFile)
+                    yield (self.productPath + csvFile, self.productPath + scanFile)
             else:
                 self.log.warn('{} omitted, corresponding scan is missing'
                         .format(csvFile))
@@ -370,23 +380,33 @@ class Gui:
 
     def saveAndReloadDB(self, event=None):
         self.save()
-        self.db = Database(self.memberFilePath, self.productFilePath)
+        self.db = Database(f'{self.accountingDataPath}0_input/')
         self.loadProductSheet()
         return "break"
 
     def save(self):
+        if not self.inputSheet.name:
+            raise ValueError('Unable to store sheet, name is missing')
+        if not self.inputSheet.amountAndUnit:
+            raise ValueError('Unable to store sheet, amountAndUnit is missing')
+        if not self.inputSheet.grossSalesPrice:
+            raise ValueError('Unable to store sheet, grossSalesPrice is missing')
+        if not self.inputSheet.pageNumber:
+            raise ValueError('Unable to store sheet, pageNumber is missing')
+
         numCorrect, numValidated = self.inputSheet.getValidationScore()
         self.numCorrectValidatedBoxes += numCorrect
         self.numValidatedValidatedBoxes += numValidated
-        self.log.info('sheet validation score: {} out of {} validated texts were correct',
-                numCorrect, numValidated)
-        self.log.info('total validation score: {} out of {} validated texts were correct',
-                self.numCorrectValidatedBoxes, self.numValidatedValidatedBoxes)
+        self.log.info(f'sheet validation score: {numCorrect} ' + \
+                f'out of {numValidated} validated texts were correct')
+        self.log.info(f'total validation score: ' + \
+                f'{self.numCorrectValidatedBoxes} out of ' + \
+                f'{self.numValidatedValidatedBoxes} validated texts were correct')
         os.remove(self.csvPath)
-        self.inputSheet.store(self.dataPath)
-        os.rename(self.scanPath, "{}{}_{}{}".format(self.dataPath,
-            slugify.slugify(self.inputSheet._boxes['nameBox'].text),
-            self.inputSheet._boxes['pageNumberBox'].text,
+        self.inputSheet.store(self.productPath)
+        os.rename(self.scanPath, "{}{}_{}{}".format(self.productPath,
+            self.inputSheet.productId(),
+            self.inputSheet.pageNumber,
             self.scanPostfix))
         self.destroyCanvas()
 
@@ -417,8 +437,7 @@ class Gui:
                width=canvas_w,
                height=canvas_h)
         self.inputCanvas.place(x=canvas_w, y=0)
-        self.inputSheet = InputSheet("not", "known", "yet", ProductSheet.maxQuantity(),
-                self.inputCanvas, aspectRatio, self.db, self.csvPath)
+        self.inputSheet = InputSheet(self.inputCanvas, aspectRatio, self.db, self.csvPath)
 
         # Additional buttons
         self.buttonCanvas = Frame(self.root,
@@ -476,8 +495,5 @@ if __name__ == '__main__':
     # TODO: check that only valid member ids and product ids are stored for new
     # tags (that are not in previous accounting)
     # product files need to have product ids in file names
-    dataFilePath = 'data/database/{}'
-    gui = Gui('data/accounting_2019-09-26/1_products/',
-            dataFilePath.format('mitglieder.csv'),
-            dataFilePath.format('produkte.csv'))
+    gui = Gui('data/next/')
     gui.root.mainloop()

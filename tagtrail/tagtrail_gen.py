@@ -28,27 +28,32 @@
 
 import cv2 as cv
 import slugify
+import helpers
+import math
 from database import Database
 from sheets import ProductSheet
-from helpers import Log
 
-def generateSheet(dataFilePath, sheetName, db):
-    log = Log()
-    if sheetName in db._products:
-        product = db._products[sheetName]
-        pageNumber = 0
-        for (q0, q1) in [(s, min(s+ProductSheet.maxQuantity(), product._quantity)-1) for s in
-                range(0, product._quantity, ProductSheet.maxQuantity())]:
-            pageNumber += 1
-            sheet1 = ProductSheet(product._description, product._unit,
-                    helpers.formatPrice(product._price), pageNumber, q1-q0+1, db, True)
-            path = dataFilePath.format("sheets/{}_{}.jpg".format(sheetName,
-                pageNumber))
-            cv.imwrite(path, sheet1.createImg())
-            log.info("generate sheet {}".format(path))
+def generateSheet(sheetPath, sheetName, db):
+    log = helpers.Log()
+    if sheetName in db.products:
+        product = db.products[sheetName]
+        numPages = math.ceil(product.previousQuantity /
+                ProductSheet.maxQuantity())
+        for pageNumber in range(1, numPages+1):
+            sheet = ProductSheet(db, True)
+            sheet.name = product.description
+            sheet.amountAndUnit = product.amountAndUnit
+            sheet.grossSalesPrice = helpers.formatPrice(product.grossSalesPrice())
+            sheet.pageNumber = str(pageNumber)
+            path = f'{sheetPath}{sheetName}_{pageNumber}.jpg'
 
-    elif sheetDescription in db._members:
-        member = db._members[sheetDescription]
+            if cv.imwrite(path, sheet.createImg()) is True:
+                log.info(f'generated sheet {path}')
+            else:
+                raise ValueError(f'failed to generate sheet at {path}')
+
+    elif sheetDescription in db.members:
+        member = db.members[sheetDescription]
         # TODO: implement TagSheet
     else:
         log.error("nothing to do here, sheet {} not found".format(sheetName))
@@ -56,12 +61,13 @@ def generateSheet(dataFilePath, sheetName, db):
 def main():
     # TODO add commandline arguments to generate all products, all members or
     # individual
-    dataFilePath = 'data/{}'
-    db = Database(dataFilePath.format('database/mitglieder.csv'),
-            dataFilePath.format('database/produkte.csv'))
+    accountingPath = 'data/next/'
+    sheetPath= f'{accountingPath}1_emptyProductSheets/'
+    db = Database(f'{accountingPath}0_input/')
 
-    for productId in db._products:
-        generateSheet(dataFilePath, productId, db)
+    helpers.recreateDir(sheetPath)
+    for productId, product in db.products.items():
+        generateSheet(sheetPath, productId, db)
 
 if __name__== "__main__":
     main()
