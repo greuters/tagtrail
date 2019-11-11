@@ -499,6 +499,7 @@ def main():
     accountingDir = 'data/next/'
     outputDir = '{}2_taggedProductSheets/'.format(accountingDir)
     helpers.recreateDir(outputDir)
+    helpers.recreateDir('data/tmp')
     for (dirPath, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         for f in fileNames:
             processFile(dirPath + f, outputDir)
