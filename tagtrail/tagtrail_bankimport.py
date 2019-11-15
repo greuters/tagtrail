@@ -15,6 +15,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import argparse
 import re
 import os
 import shutil
@@ -30,7 +31,6 @@ class EnrichedDatabase(database.Database):
 
     def __init__(self,
             accountingDataPath,
-            previousAccountingDate,
             accountingDate):
 
         super().__init__(f'{accountingDataPath}0_input/')
@@ -38,22 +38,27 @@ class EnrichedDatabase(database.Database):
         self.accountingDataPath = accountingDataPath
         self.inputTransactionsPath = self.accountingDataPath + \
                 '0_input/export_Transactions_' + \
-                helpers.DateUtility.strftime(previousAccountingDate,
+                helpers.DateUtility.strftime(self.previousAccountingDate,
                         database.PostfinanceTransactionList.filenameDateFormat) + '_' + \
                 helpers.DateUtility.strftime(toDate,
                         database.PostfinanceTransactionList.filenameDateFormat) + '.csv'
         self.unprocessedTransactionsPath = self.accountingDataPath + \
                 '5_output/unprocessed_Transactions_' + \
-                helpers.DateUtility.strftime(previousAccountingDate) + '_' + \
+                helpers.DateUtility.strftime(self.previousAccountingDate) + '_' + \
                 helpers.DateUtility.strftime(toDate) + '.csv'
         self.paymentTransactionsPath = f'{self.accountingDataPath}4_gnucash/paymentTransactions.csv'
+        if not os.path.isfile(self.inputTransactionsPath):
+            raise ValueError(
+                    f'Missing required file {self.inputTransactionsPath}.\n')
+
         if not os.path.isfile(self.unprocessedTransactionsPath):
+            helpers.recreateDir(f'{self.accountingDataPath}/4_gnucash/', self.log)
+            helpers.recreateDir(f'{self.accountingDataPath}/5_output/', self.log)
             self.log.info("copy {} to {}".format(self.inputTransactionsPath, self.unprocessedTransactionsPath))
             shutil.copy(self.inputTransactionsPath, self.unprocessedTransactionsPath)
-            helpers.recreateDir(f'{self.accountingDataPath}/4_gnucash/', self.log)
 
         self.postfinanceTransactions = self.loadPostfinanceTransactions(
-                previousAccountingDate, toDate)
+                self.previousAccountingDate, toDate)
 
     def loadPostfinanceTransactions(self, fromDate, toDate):
         loadedTransactions = database.Database.readCsv(
@@ -72,21 +77,24 @@ class EnrichedDatabase(database.Database):
             self.log.debug(f'inferred memberId {transaction.memberId}')
         return loadedTransactions
 
+    @property
+    def previousAccountingDate(self):
+        return self.members.accountingDate
+
+
 class Gui:
     # TODO load from config
     giroAccount = 'Girokonto'
 
     def __init__(self,
             accountingDataPath,
-            previousAccountingDate,
             accountingDate):
 
         self.log = helpers.Log()
         self.accountingDataPath = accountingDataPath
-        self.previousAccountingDate = previousAccountingDate
         self.accountingDate = accountingDate
         self.db = EnrichedDatabase(self.accountingDataPath,
-                self.previousAccountingDate, self.accountingDate)
+                self.accountingDate)
 
         self.root = tkinter.Tk()
         self.root.report_callback_exception = self.reportCallbackException
@@ -102,6 +110,7 @@ class Gui:
         self.root.bind("<Right>", self.switchInputFocus)
         self.loadInputCanvas()
         self.loadButtonCanvas()
+        self.root.mainloop()
 
     def loadInputCanvas(self):
         # input canvas - one entry per transaction
@@ -208,7 +217,7 @@ class Gui:
     def saveAndReloadDB(self, event=None):
         self.save()
         self.db = EnrichedDatabase(self.accountingDataPath,
-                self.previousAccountingDate, self.accountingDate)
+                self.db.previousAccountingDate, self.accountingDate)
         self.inputCanvas.destroy()
         self.loadInputCanvas()
         return "break"
@@ -275,11 +284,18 @@ class Gui:
             return event
         return 'break'
 
-if __name__ == '__main__':
-    # TODO: check that only valid member ids and product ids are stored for new
-    # tags (that are not in previous accounting)
-    # product files need to have product ids in file names
-    previousAccountingDate = datetime.date(2019, 9, 26)
-    accountingDate = datetime.date(2019, 10, 4)
-    gui = Gui('data/next/', previousAccountingDate, accountingDate)
-    gui.root.mainloop()
+if __name__== "__main__":
+    parser = argparse.ArgumentParser(
+        description='Load transactions exported from Postfinance, ' + \
+                'recognize payments from members and store unprocessed ' + \
+                'transactions for manual entry to GnuCash.')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--accountingDate',
+            dest='accountingDate',
+            type=helpers.DateUtility.strptime,
+            default=helpers.DateUtility.todayStr(),
+            help="Date of the new accounting, fmt='YYYY-mm-dd'",
+            )
+    args = parser.parse_args()
+    Gui(args.accountingDir, args.accountingDate)

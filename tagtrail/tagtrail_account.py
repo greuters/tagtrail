@@ -15,6 +15,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import argparse
 from abc import ABC, abstractmethod
 import helpers
 import gui_components
@@ -369,13 +370,34 @@ class EnrichedDatabase(database.Database):
     def previousAccountingDate(self):
         return self.members.accountingDate
 
+def main(accountingDir, renamedAccountingDir, accountingDate, nextAccountingDir):
+    newDir = renamedAccountingDir.format(accountingDate = accountingDate)
+    if accountingDir != newDir:
+        shutil.move(accountingDir, newDir)
+    Gui(newDir, nextAccountingDir, accountingDate)
+
 if __name__ == '__main__':
-    dataPath = 'data/'
-    accountingDate = helpers.DateUtility.strptime('2019-10-04')
-    originalPath = f'{dataPath}next/'
-    newPath = f'{dataPath}next/'
-    #originalPath = f'{dataPath}next/'
-    #newPath = f'{dataPath}accounting_{accountingDate}/'
-    if originalPath != newPath:
-        shutil.move(originalPath, newPath)
-    Gui(newPath, f'{dataPath}next2/', accountingDate)
+    parser = argparse.ArgumentParser(
+        description='Load payments and tagged product sheets to create a ' + \
+            'bill for each member, provide transaction files ready to be ' + \
+            'imported to GnuCash and prepare for the next accounting.')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--accountingDate',
+            dest='accountingDate',
+            type=helpers.DateUtility.strptime,
+            default=helpers.DateUtility.todayStr(),
+            help="Date of the new accounting, fmt='YYYY-mm-dd'",
+            )
+    parser.add_argument('--renamedAccountingDir',
+            dest='renamedAccountingDir',
+            default='data/accounting_{accountingDate}',
+            help="New name to rename accountingDir to. {accountingDate} " + \
+                 "will be replaced by the value of the 'accountingDate' argument.")
+    parser.add_argument('--nextAccountingDir',
+            dest='nextAccountingDir',
+            default='data/next/',
+            help='Name of the top-level tagtrail directory to be created for the next accounting.')
+
+    args = parser.parse_args()
+    main(args.accountingDir, args.renamedAccountingDir, args.accountingDate, args.nextAccountingDir)

@@ -15,6 +15,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import argparse
 import slugify
 import tkinter
 from tkinter import ttk
@@ -168,6 +169,8 @@ class Gui:
             self.root.destroy()
         else:
             self.loadProductSheet()
+
+        self.root.mainloop()
 
     def reportCallbackException(self, exception, value, tb):
         traceback.print_exception(exception, value, tb)
@@ -343,9 +346,16 @@ class Gui:
         self.__focusAreaBorderRect = self.scanCanvas.create_rectangle(x, y,
                 x+width, y+height)
 
-if __name__ == '__main__':
+if __name__== "__main__":
+    parser = argparse.ArgumentParser(
+        description='Go through all tags recognized by tagtrail_ocr, ' + \
+                'completing missing tags and validating recognized ones.')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--tmpDir', dest='tmpDir', default='data/tmp/',
+            help='Directory to put temporary files in')
+    args = parser.parse_args()
     # TODO: check that only valid member ids and product ids are stored for new
     # tags (that are not in previous accounting)
     # product files need to have product ids in file names
-    gui = Gui('data/next/')
-    gui.root.mainloop()
+    Gui(args.accountingDir)

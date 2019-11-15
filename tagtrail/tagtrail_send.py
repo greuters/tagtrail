@@ -15,6 +15,8 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import getpass
+import argparse
 from abc import ABC, abstractmethod
 from string import Template
 import helpers
@@ -30,24 +32,30 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 
 class MailSender(ABC):
-    debuggingMode = True
+    # TODO load from config
+    mailUser = 'info@speichaer.ch'
+    mailHost = 'mail.cyon.ch'
+    smtpPort = 465
+    imapPort = 993
+    invoiceIban = 'CH 123 123 123'
+    liquidityThreshold = 100
+
 
     def __init__(self,
-            liquidityThreshold,
-            invoiceIBAN,
-            accessCode,
             accountingPath,
-            db):
-        self.liquidityThreshold = liquidityThreshold
-        self.invoiceIBAN = invoiceIBAN
+            accessCode,
+            accountantName,
+            mailPassword,
+            testRecipient = None
+            ):
         self.accessCode = accessCode
         self.log = helpers.Log(helpers.Log.LEVEL_DEBUG)
         self.billPath = accountingPath + '3_bills/'
         self.templatePath = accountingPath + '0_input/templates/'
-        self.db = db
+        self.db = database.Database(f'{accountingPath}0_input/')
         self.bills = [database.Database.readCsv(
             f'{self.billPath}{member.id}.csv', database.Bill)
-            for member in db.members.values()]
+            for member in self.db.members.values()]
 
         self.emailTemplate = self.readTemplate(self.templatePath+'email.txt')
         self.invoiceAboveThresholdTemplate = self.readTemplate(
@@ -55,10 +63,9 @@ class MailSender(ABC):
         self.invoiceBelowThresholdTemplate = self.readTemplate(
                 self.templatePath+'invoice_below_threshold.txt')
 
-        self.accountantName = input('Accountant name: ')
-        self.mail_user = 'info@speichaer.ch'
-        self.mail_pass = input('Password for {}: '.format(self.mail_user))
-        self.mail_host = 'mail.cyon.ch'
+        self.accountantName = accountantName
+        self.mailPassword = mailPassword
+        self.testRecipient = testRecipient
 
     def readTemplate(self, filename):
         with open(filename, 'r', encoding='utf-8') as template_file:
@@ -66,18 +73,15 @@ class MailSender(ABC):
         return Template(template_file_content)
 
     def sendBills(self):
-        if self.debuggingMode:
-            testEmail = input('Test account to send emails to: ')
-
         for bill in self.bills:
             invoiceTextTemplate = self.invoiceAboveThresholdTemplate \
                     if self.liquidityThreshold < bill.currentBalance() else \
                     self.invoiceBelowThresholdTemplate
 
             for email in self.db.members[bill.memberId].emails:
-                if self.debuggingMode:
-                    self.log.info(f'would send email to {email}, replaced by {testEmail}: ')
-                    email = testEmail
+                if not self.testRecipient is None:
+                    self.log.info(f'would send email to {email}, replaced by {self.testRecipient}: ')
+                    email = self.testRecipient
 
                 name = self.db.members[bill.memberId].name
                 self.log.info('Sending email to {}, {}'.format(email, name))
@@ -86,7 +90,7 @@ class MailSender(ABC):
                                 LIQUIDITY_THRESHOLD=helpers.formatPrice(self.liquidityThreshold, 'CHF'),
                                 ACCESS_CODE=self.accessCode,
                                 MEMBER_ID=bill.memberId,
-                                INVOICE_IBAN=self.invoiceIBAN),
+                                INVOICE_IBAN=self.invoiceIban),
                             MEMBER_NAME=name,
                             BILL=str(bill),
                             TOTAL_PAYMENTS=helpers.formatPrice(bill.totalPayments, 'CHF'),
@@ -95,10 +99,10 @@ class MailSender(ABC):
                             CURRENT_ACCOUNTING_DATE=bill.currentAccountingDate,
                             CURRENT_BALANCE=helpers.formatPrice(bill.currentBalance(), 'CHF'),
                             LIQUIDITY_THRESHOLD=helpers.formatPrice(self.liquidityThreshold, 'CHF'),
-                            INVOICE_IBAN=self.invoiceIBAN,
+                            INVOICE_IBAN=self.invoiceIban,
                             MEMBER_ID=bill.memberId,
                             ACCESS_CODE=self.accessCode,
-                            REPLY_TO_ADDRESS=self.mail_user,
+                            REPLY_TO_ADDRESS=self.mailUser,
                             ACCOUNTANT_NAME=self.accountantName
                             )
 
@@ -109,7 +113,7 @@ class MailSender(ABC):
 
     def sendEmail(self, to, subject, body, path, attachmentName):
         message = MIMEMultipart()
-        message["From"] = self.mail_user
+        message["From"] = self.mailUser
         message["To"] = to
         message["Subject"] = subject
         message.attach(MIMEText(body, "plain"))
@@ -127,22 +131,40 @@ class MailSender(ABC):
         text = message.as_string()
 
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(self.mail_host, 465, context=context) as server:
-            result = server.login(self.mail_user, self.mail_pass)
-            server.sendmail(self.mail_user, to, text)
+        with smtplib.SMTP_SSL(self.mailHost, self.smtpPort, context=context) as server:
+            result = server.login(self.mailUser, self.mailPassword)
+            server.sendmail(self.mailUser, to, text)
 
-        imap = imaplib.IMAP4_SSL(self.mail_host, 993)
-        imap.login(self.mail_user, self.mail_pass)
+        imap = imaplib.IMAP4_SSL(self.mailHost, self.imapPort)
+        imap.login(self.mailUser, self.mailPassword)
         imap.append('INBOX.Sent', '\\Seen', imaplib.Time2Internaldate(time.time()), text.encode('utf8'))
         imap.logout()
 
 
-
 if __name__ == '__main__':
-    accountingDate = '2019-11-03'
-    accountingPath = 'data/next/'
-    #accountingPath = f'data/accounting_{accountingDate}/'
+    parser = argparse.ArgumentParser(
+        description='Send an email containing their bill to each member.')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/accounting_YYYY-mm-dd/')
+    parser.add_argument('accessCode',
+            help="New access code to be sent to members",)
+    parser.add_argument('accountantName',
+            help="Name of the person responsible for this accounting.")
+    parser.add_argument('-p, --password',
+            dest='password',
+            help=f'password for {MailSender.mailUser}. If not passed, it will be requested.')
+    parser.add_argument('--testRecipient',
+            dest='testRecipient',
+            help='If given, mails are sent to this email address instead of the real receivers.')
+    args = parser.parse_args()
 
-    db = database.Database(f'{accountingPath}0_input/')
-    sender = MailSender(100, 'CH 123 123 123', '1234#', accountingPath, db)
-    sender.sendBills()
+    if args.password:
+        password = args.password
+    else:
+        password = getpass.getpass()
+
+    MailSender(args.accountingDir,
+            args.accessCode,
+            args.accountantName,
+            password,
+            args.testRecipient).sendBills()

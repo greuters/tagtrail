@@ -25,7 +25,7 @@
 
 
 """
-
+import argparse
 import cv2 as cv
 import slugify
 import helpers
@@ -33,7 +33,7 @@ import math
 from database import Database
 from sheets import ProductSheet
 
-def generateSheet(sheetPath, sheetName, db):
+def generateSheet(sheetDir, sheetName, db):
     log = helpers.Log()
     if sheetName in db.products:
         product = db.products[sheetName]
@@ -45,7 +45,7 @@ def generateSheet(sheetPath, sheetName, db):
             sheet.amountAndUnit = product.amountAndUnit
             sheet.grossSalesPrice = helpers.formatPrice(product.grossSalesPrice())
             sheet.pageNumber = str(pageNumber)
-            path = f'{sheetPath}{sheetName}_{pageNumber}.jpg'
+            path = f'{sheetDir}{sheetName}_{pageNumber}.jpg'
 
             if cv.imwrite(path, sheet.createImg()) is True:
                 log.info(f'generated sheet {path}')
@@ -58,16 +58,24 @@ def generateSheet(sheetPath, sheetName, db):
     else:
         log.error("nothing to do here, sheet {} not found".format(sheetName))
 
-def main():
-    # TODO add commandline arguments to generate all products, all members or
-    # individual
-    accountingPath = 'data/next/'
-    sheetPath= f'{accountingPath}1_emptyProductSheets/'
-    db = Database(f'{accountingPath}0_input/')
+def main(accountingDir):
+    sheetDir= f'{accountingDir}1_emptySheets/'
+    productSheetDir = f'{sheetDir}products/'
+    tagSheetDir = f'{sheetDir}members/'
+    helpers.recreateDir(sheetDir)
+    helpers.recreateDir(productSheetDir)
+    helpers.recreateDir(tagSheetDir)
 
-    helpers.recreateDir(sheetPath)
+    db = Database(f'{accountingDir}0_input/')
+
     for productId, product in db.products.items():
-        generateSheet(sheetPath, productId, db)
+        generateSheet(productSheetDir, productId, db)
+
+    # TODO generate TagSheets
 
 if __name__== "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Generate empty product and tag sheets')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/next/')
+    args = parser.parse_args()
+    main(args.accountingDir)

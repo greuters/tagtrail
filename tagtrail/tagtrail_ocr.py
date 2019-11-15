@@ -15,7 +15,7 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
+import argparse
 import cv2 as cv
 import numpy as np
 import itertools
@@ -34,11 +34,11 @@ from os import walk
 class ProcessingStep(ABC):
     def __init__(self,
             name,
-            outputPath = 'data/tmp',
+            outputDir = 'data/tmp/',
             log = helpers.Log()):
         self._name = name
         self._log = log
-        self._outputPath = outputPath
+        self._outputDir = outputDir
         super().__init__()
 
     @abstractmethod
@@ -47,7 +47,7 @@ class ProcessingStep(ABC):
         self._outputImg = inputImg
 
     def writeOutput(self):
-        cv.imwrite("{}/{}.jpg".format(self._outputPath, self._name), self._outputImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}.jpg', self._outputImg)
 
 class RotationStep(ProcessingStep):
     drawLineLength = 1000
@@ -110,14 +110,14 @@ class RotationStep(ProcessingStep):
 class RotateSheet(RotationStep):
     def __init__(self,
                  name,
-                 outputPath = 'data/tmp',
+                 outputDir = 'data/tmp/',
                  log = helpers.Log(),
                  minLineLength = 200,
                  rotPrecision = np.pi/720,
                  maxLineGap = 5,
                  voteThreshold = 10,
                  kernelSize = 2):
-        super().__init__(name, outputPath, log)
+        super().__init__(name, outputDir, log)
         self._minLineLength = minLineLength
         self._rotPrecision = rotPrecision
         self._maxLineGap = maxLineGap
@@ -184,23 +184,24 @@ class RotateSheet(RotationStep):
                 borderValue=(255, 255, 255))
 
     def writeOutput(self):
-        cv.imwrite("{}/{}_0_input.jpg".format(self._outputPath, self._name), self._inputImg)
-        cv.imwrite("{}/{}_1_gray.jpg".format(self._outputPath, self._name), self._grayImg)
-        cv.imwrite("{}/{}_2_canny.jpg".format(self._outputPath, self._name), self._cannyImg)
-        cv.imwrite("{}/{}_3_closed.jpg".format(self._outputPath, self._name), self._closedImg)
-        cv.imwrite("{}/{}_4_dilated.jpg".format(self._outputPath, self._name), self._dilatedImg)
-        cv.imwrite("{}/{}_5_houghlines.jpg".format(self._outputPath, self._name), self._linesImg)
-        cv.imwrite("{}/{}_6_output.jpg".format(self._outputPath, self._name), self._outputImg)
+        prefix = f'{self._outputDir}/{self._name}'
+        cv.imwrite(f'{self._outputDir}/{self._name}_0_input.jpg', self._inputImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}_1_gray.jpg', self._grayImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}_2_canny.jpg', self._cannyImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}_3_closed.jpg', self._closedImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}_4_dilated.jpg', self._dilatedImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}_5_houghlines.jpg', self._linesImg)
+        cv.imwrite(f'{self._outputDir}/{self._name}_6_output.jpg', self._outputImg)
 
 class RotateLabel(RotationStep):
     threshold = 127
 
     def __init__(self,
                  name,
-                 outputPath = 'data/tmp',
+                 outputDir = 'data/tmp/',
                  log = helpers.Log(),
                  kernelSize = 10):
-        super().__init__(name, outputPath, log)
+        super().__init__(name, outputDir, log)
         self._kernelSize = kernelSize
 
     def process(self, inputImg):
@@ -262,24 +263,16 @@ class RotateLabel(RotationStep):
                 flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
 
     def writeOutput(self):
-        cv.imwrite("{}/{}_0_input.jpg".format(self._outputPath, self._name),
-                self._inputImg)
-        cv.imwrite("{}/{}_1_gray.jpg".format(self._outputPath, self._name),
-                self._grayImg)
-        cv.imwrite("{}/{}_2_threshold.jpg".format(self._outputPath,
-            self._name), self._thresholdImg)
-        cv.imwrite("{}/{}_3_closed.jpg".format(self._outputPath,
-            self._name), self._closedImg)
-        cv.imwrite("{}/{}_4_dilated.jpg".format(self._outputPath,
-            self._name), self._dilatedImg)
-        cv.imwrite("{}/{}_5_labeled.jpg".format(self._outputPath,
-            self._name), self._labeledImg)
-        cv.imwrite("{}/{}_6_selected.jpg".format(self._outputPath,
-            self._name), self._selectedImg)
-        cv.imwrite("{}/{}_7_line.jpg".format(self._outputPath, self._name),
-                self._linesImg)
-        cv.imwrite("{}/{}_8_output.jpg".format(self._outputPath, self._name),
-                self._outputImg)
+        prefix = f'{self._outputDir}/{self._name}'
+        cv.imwrite(f'{prefix}_0_input.jpg', self._inputImg)
+        cv.imwrite(f'{prefix}_1_gray.jpg', self._grayImg)
+        cv.imwrite(f'{prefix}_2_threshold.jpg', self._thresholdImg)
+        cv.imwrite(f'{prefix}_3_closed.jpg', self._closedImg)
+        cv.imwrite(f'{prefix}_4_dilated.jpg', self._dilatedImg)
+        cv.imwrite(f'{prefix}_5_labeled.jpg', self._labeledImg)
+        cv.imwrite(f'{prefix}_6_selected.jpg', self._selectedImg)
+        cv.imwrite(f'{prefix}_7_line.jpg', self._linesImg)
+        cv.imwrite(f'{prefix}_8_output.jpg', self._outputImg)
 
 # identify main Sheet area
 class FindMargins(ProcessingStep):
@@ -298,10 +291,11 @@ class FindMargins(ProcessingStep):
         self._blackCountTotal, _ = np.bincount(self._thresholdImg.flatten(), minlength=2)
 
     def writeOutput(self):
-        cv.imwrite("{}/{}_0_gray.jpg".format(self._outputPath, self._name), self._grayImg*255)
-        cv.imwrite("{}/{}_1_threshold.jpg".format(self._outputPath, self._name), self._thresholdImg*255)
-        cv.imwrite("{}/{}_2_frames.jpg".format(self._outputPath, self._name), self._frameImg)
-        cv.imwrite("{}/{}_3_output.jpg".format(self._outputPath, self._name), self._outputImg)
+        prefix = f'{self._outputDir}/{self._name}'
+        cv.imwrite(f'{prefix}_0_gray.jpg', self._grayImg*255)
+        cv.imwrite(f'{prefix}_1_threshold.jpg', self._thresholdImg*255)
+        cv.imwrite(f'{prefix}_2_frames.jpg', self._frameImg)
+        cv.imwrite(f'{prefix}_3_output.jpg', self._outputImg)
 
     def updateRect(self,x0,y0,x1,y1,drawRect=False):
         # positives = blackPixels
@@ -362,7 +356,7 @@ class FindMarginsByContour(FindMargins):
 
     def writeOutput(self):
         super().writeOutput()
-        cv.imwrite("{}/{}_1a_closing.jpg".format(self._outputPath, self._name), self._closingImg*255)
+        cv.imwrite(f'{self._outputDir}/{self._name}_1a_closing.jpg', self._closingImg*255)
 
 class FitToSheet(ProcessingStep):
     (frameP0, frameP1) = ProductSheet.getPageFramePts()
@@ -375,8 +369,9 @@ class FitToSheet(ProcessingStep):
         self._outputImg = cv.copyMakeBorder(self._resizedImg,yMargin,yMargin,xMargin,xMargin,cv.BORDER_CONSTANT,value=(255,255,255))
 
     def writeOutput(self):
-        cv.imwrite("{}/{}_0_resizedImg.jpg".format(self._outputPath, self._name), self._resizedImg)
-        cv.imwrite("{}/{}_1_output.jpg".format(self._outputPath, self._name), self._outputImg)
+        prefix = f'{self._outputDir}/{self._name}'
+        cv.imwrite(f'{prefix}_0_resizedImg.jpg', self._resizedImg)
+        cv.imwrite(f'{prefix}_1_output.jpg', self._outputImg)
 
 class RecognizeText(ProcessingStep):
     threshold = 127
@@ -448,7 +443,7 @@ class RecognizeText(ProcessingStep):
         p.writeOutput()
         img = p._outputImg
 
-        filename = "{}/label_{}.jpg".format(self._outputPath, box.name)
+        filename = "{}/label_{}.jpg".format(self._outputDir, box.name)
         cv.imwrite(filename, img)
         ocrText = pytesseract.image_to_string(PIL.Image.open(filename),
                 config="--psm 7")
@@ -474,8 +469,9 @@ class RecognizeText(ProcessingStep):
         self.__sheet.store(outputDir)
 
     def writeOutput(self):
-        cv.imwrite("{}/{}_0_grayImg.jpg".format(self._outputPath, self._name), self._grayImg)
-        cv.imwrite("{}/{}_1_output.jpg".format(self._outputPath, self._name), self._outputImg)
+        prefix = f'{self._outputDir}/{self._name}'
+        cv.imwrite('{prefix}_0_grayImg.jpg', self._grayImg)
+        cv.imwrite('{prefix}_1_output.jpg', self._outputImg)
 
 def processFile(inputFile, outputDir):
     print('Processing file: ', inputFile)
@@ -495,15 +491,21 @@ def processFile(inputFile, outputDir):
     cv.imwrite(f'{outputDir}{recognizer.productId()}_{recognizer.pageNumber()}_normalized_scan.jpg',
             fit._outputImg)
 
-def main():
-    accountingDir = 'data/next/'
-    outputDir = '{}2_taggedProductSheets/'.format(accountingDir)
+def main(accountingDir, tmpDir):
+    outputDir = f'{accountingDir}2_taggedProductSheets/'
     helpers.recreateDir(outputDir)
-    helpers.recreateDir('data/tmp')
-    for (dirPath, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
+    helpers.recreateDir(tmpDir)
+    for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         for f in fileNames:
-            processFile(dirPath + f, outputDir)
+            processFile(parentDir + f, outputDir)
         break
 
 if __name__== "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description='Recognize tags on all input scans, storing them as CSV files')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--tmpDir', dest='tmpDir', default='data/tmp/',
+            help='Directory to put temporary files in')
+    args = parser.parse_args()
+    main(args.accountingDir, args.tmpDir)
