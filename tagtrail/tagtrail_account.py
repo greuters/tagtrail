@@ -15,14 +15,15 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from functools import partial
-from tkinter import *
 from abc import ABC, abstractmethod
 import helpers
+import gui_components
 from sheets import ProductSheet
 import database
+import tkinter
 from tkinter import messagebox
 import traceback
+import datetime
 import os
 import shutil
 import csv
@@ -162,68 +163,46 @@ class TagCollector(ABC):
                     f'{productId} pages have different prices, {prices}')
         return productSheets
 
-class Checkbar(Frame):
-   def __init__(self, parent=None, title='', picks=[], available=True, side=TOP,
-           anchor=CENTER):
-        Frame.__init__(self, parent)
-        Label(self, text=title).grid(row=0, column=0)
-        self.vars = []
-        numCols = 5
-        for idx, pick in enumerate(picks):
-            row = int(idx / numCols)
-            col = idx - row * numCols + 1
-            var = IntVar()
-            chk = Checkbutton(self, text=pick, variable=var)
-            if available:
-                var.set(1)
-            else:
-                var.set(0)
-                chk.config(state=DISABLED)
-            chk.grid(row=row, column=col, sticky=W)
-            self.vars.append(var)
-
-   def state(self):
-       return map((lambda var: var.get()), self.vars)
-
 class Gui:
-    def __init__(self, accountingDataPath, nextAccountingDataPath, accountingDate, db):
+    def __init__(self, accountingDataPath, nextAccountingDataPath, accountingDate):
         self.log = helpers.Log()
         self.accountingDate = accountingDate
         self.accountingDataPath = accountingDataPath
         self.nextAccountingDataPath = nextAccountingDataPath
-        self.db = db
 
-        self.root = Tk()
+        self.root = tkinter.Tk()
         self.root.report_callback_exception = self.reportCallbackException
         self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
 
-        self.productSheetSelection = Checkbar(self.root,
+        self.db = EnrichedDatabase(accountingDataPath, accountingDate)
+
+        self.productSheetSelection = gui_components.Checkbar(self.root,
                 'Accounted pages to keep:',
                 self.db.productPagePaths, True)
-        self.productSheetSelection.pack(side=TOP, fill=BOTH, expand=YES, padx=5, pady=5)
-        self.productSheetSelection.config(relief=GROOVE, bd=2)
+        self.productSheetSelection.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
+        self.productSheetSelection.config(relief=tkinter.GROOVE, bd=2)
 
         missingProducts = sorted([
             p.id for p in self.db.products.values()
             if '{}_1.csv'.format(p.id) not in
             self.db.productPagePaths
             ])
-        mp = Checkbar(self.root, 'Missing products:', missingProducts, False)
-        mp.pack(side=TOP, fill=BOTH, expand=YES, padx=5, pady=5)
-        mp.config(relief=GROOVE, bd=2)
+        mp = gui_components.Checkbar(self.root, 'Missing products:', missingProducts, False)
+        mp.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
+        mp.config(relief=tkinter.GROOVE, bd=2)
 
-        buttonFrame = Frame(self.root)
-        buttonFrame.pack(side=BOTTOM, pady=5)
-        cancelButton = Button(buttonFrame, text='Cancel',
+        buttonFrame = tkinter.Frame(self.root)
+        buttonFrame.pack(side=tkinter.BOTTOM, pady=5)
+        cancelButton = tkinter.Button(buttonFrame, text='Cancel',
                 command=self.root.quit)
-        cancelButton.pack(side=LEFT)
+        cancelButton.pack(side=tkinter.LEFT)
         cancelButton.bind('<Return>', lambda _: self.root.quit())
-        saveButton = Button(buttonFrame, text='Save and Quit',
+        saveButton = tkinter.Button(buttonFrame, text='Save and Quit',
                 command=self.saveAndQuit)
-        saveButton.pack(side=RIGHT)
+        saveButton.pack(side=tkinter.RIGHT)
         saveButton.bind('<Return>', lambda _: self.saveAndQuit())
         saveButton.focus_set()
-        self.root.mainloop()
+        tkinter.mainloop()
 
     def reportCallbackException(self, exception, value, tb):
         traceback.print_exception(exception, value, tb)
@@ -246,7 +225,6 @@ class Gui:
 
     def writeGnuCashFiles(self):
         destPath = f'{self.accountingDataPath}/4_gnucash/'
-        helpers.recreateDir(destPath, self.log)
         database.Database.writeCsv(f'{destPath}accounts.csv', self.db.accounts)
         database.Database.writeCsv(f'{destPath}purchaseTransactions.csv',
                 self.db.purchaseTransactions)
@@ -257,7 +235,6 @@ class Gui:
         helpers.recreateDir(self.nextAccountingDataPath, self.log)
         helpers.recreateDir(f'{self.nextAccountingDataPath}0_input', self.log)
         helpers.recreateDir(f'{self.nextAccountingDataPath}0_input/scans', self.log)
-        helpers.recreateDir(f'{self.accountingDataPath}5_output/', self.log)
         self.writeMemberCSV()
         self.writeProductsCSVs()
         self.copyAccountedSheets()
@@ -278,11 +255,11 @@ class Gui:
                 self.db.products.copyForNextAccounting(self.accountingDate))
 
     def copyAccountedSheets(self):
-        productSheetsToKeep = list(zip(*filter(
-            lambda pair: pair[0] == 1,
-            zip(self.productSheetSelection.state(),
-                self.db.productPagePaths)
-            )))[1]
+        productSheetsToKeep = [path for selected, path in
+                zip(self.productSheetSelection.state(),
+                    self.db.productPagePaths)
+                if selected == 1]
+        self.log.debug(f'productSheetsToKeep = {productSheetsToKeep}')
 
         destPath = self.nextAccountingDataPath+'0_input/accounted_products/'
         helpers.recreateDir(destPath, self.log)
@@ -297,8 +274,6 @@ class EnrichedDatabase(database.Database):
     merchandiseValueAccount = 'Warenwert'
     margin = 'Marge'
     marginAccount = 'Marge'
-    payment = 'Einzahlung'
-    giroAccount = 'Girokonto'
 
     def __init__(self, accountingDataPath, accountingDate):
         self.log = helpers.Log()
@@ -306,7 +281,6 @@ class EnrichedDatabase(database.Database):
         self.accountingDate = accountingDate
         super().__init__(f'{accountingDataPath}0_input/')
 
-        payments = self.loadPayments()
         tagCollector = TagCollector(
                 self.accountingDataPath+'0_input/accounted_products/',
                 self.accountingDataPath+'2_taggedProductSheets/',
@@ -318,27 +292,49 @@ class EnrichedDatabase(database.Database):
             product.soldQuantity = tagCollector.numNewTags(productId,
                     list(self.members.keys()))
 
-        self.bills = self.createBills(tagCollector, payments)
+        self.paymentTransactions = self.loadPaymentTransactions()
+        self.bills = self.createBills(tagCollector)
         self.productPagePaths = tagCollector.currentProductPagePaths()
         self.accounts = database.MemberAccountDict(
                 {m.id: database.MemberAccount(m.id) for m in self.members.values()})
         self.purchaseTransactions = self.createPurchaseTransactions()
-        self.paymentTransactions = self.createPaymentTransactions(payments)
 
-    def loadPayments(self):
-        # TODO: parse postFinance CSV
-        # file:
-        # export_Transactions_{self.previousAccountingDate}_{self.accountingDate}.csv
-        return {member.id: 0 for member in self.members.values()}
+    def loadPaymentTransactions(self):
+        toDate = self.accountingDate-datetime.timedelta(days=1)
+        unprocessedTransactionsPath = self.accountingDataPath + \
+                '5_output/unprocessed_Transactions_' + \
+                helpers.DateUtility.strftime(self.previousAccountingDate) + '_' + \
+                helpers.DateUtility.strftime(toDate) + '.csv'
 
-    def createBills(self, tagCollector, paymentsPerMember):
+        if not os.path.isfile(unprocessedTransactionsPath):
+            raise Exception(
+                f"{unprocessedTransactionsPath} does not exist.\n" + \
+                "Run tagtrail_bankimport before tagtrail_account!")
+
+        unprocessedPayments = [t.notificationText for t in
+                database.Database.readCsv(unprocessedTransactionsPath,
+                    database.PostfinanceTransactionList)
+                 if not t.creditAmount is None]
+        if unprocessedPayments != []:
+            messagebox.showwarning('Unprocessed payments exist',
+                'Following payments will not be documented for our members:\n\n'
+                + '\n\n'.join(unprocessedPayments) + '\n\n'
+                + 'Run tagtrail_bankimport again if you want to correct this.')
+
+        return database.Database.readCsv(
+                self.accountingDataPath+'4_gnucash/paymentTransactions.csv',
+                database.GnucashTransactionList)
+
+    def createBills(self, tagCollector):
         bills = {}
         for member in self.members.values():
             bill = database.Bill(member.id,
                     self.members.accountingDate,
                     self.accountingDate,
                     member.balance,
-                    paymentsPerMember[member.id])
+                    sum([transaction.amount for transaction in
+                        self.paymentTransactions
+                        if transaction.sourceAccount == member.id]))
             for productId in tagCollector.newTagsPerProduct.keys():
                 numTags = tagCollector.numNewTags(productId, [member.id])
                 if numTags != 0:
@@ -353,44 +349,33 @@ class EnrichedDatabase(database.Database):
         return bills
 
     def createPurchaseTransactions(self):
-        return database.TransactionDict({
-            **{self.merchandiseValue+bill.memberId:
-                database.Transaction(self.merchandiseValue+bill.memberId,
-                f'{self.merchandiseValue} accounted on {self.accountingDate}',
-                bill.totalPurchasePrice(),
-                self.merchandiseValueAccount,
-                bill.memberId)
-                for bill in self.bills.values()},
-            **{self.margin+bill.memberId:
-                database.Transaction(self.margin+bill.memberId,
-                f'{self.margin} accounted on {self.accountingDate}',
-                bill.totalGrossSalesPrice()-bill.totalPurchasePrice(),
-                self.marginAccount,
-                bill.memberId)
-                for bill in self.bills.values()}
-            })
+        return database.GnucashTransactionList(
+                *([database.GnucashTransaction(
+                    f'{self.merchandiseValue} accounted on {self.accountingDate}',
+                    bill.totalPurchasePrice(),
+                    self.merchandiseValueAccount,
+                    bill.memberId,
+                    self.accountingDate) for bill in self.bills.values()]
+                +
+                [database.GnucashTransaction(
+                    f'{self.margin} accounted on {self.accountingDate}',
+                    bill.totalGrossSalesPrice()-bill.totalPurchasePrice(),
+                    self.marginAccount,
+                    bill.memberId,
+                    self.accountingDate) for bill in self.bills.values()])
+                )
 
-    def createPaymentTransactions(self, payments):
-        return database.TransactionDict({
-            bill.memberId:
-                database.Transaction(bill.memberId,
-                # TODO: better description
-                f'{self.payment} accounted on {self.accountingDate}',
-                payments[bill.memberId],
-                bill.memberId,
-                self.giroAccount)
-                for bill in self.bills.values()})
-
+    @property
+    def previousAccountingDate(self):
+        return self.members.accountingDate
 
 if __name__ == '__main__':
     dataPath = 'data/'
-    accountingDate = '2019-11-03'
+    accountingDate = helpers.DateUtility.strptime('2019-10-04')
     originalPath = f'{dataPath}next/'
     newPath = f'{dataPath}next/'
     #originalPath = f'{dataPath}next/'
     #newPath = f'{dataPath}accounting_{accountingDate}/'
     if originalPath != newPath:
         shutil.move(originalPath, newPath)
-
-    db = EnrichedDatabase(newPath, accountingDate)
-    Gui(newPath, f'{dataPath}next2/', accountingDate, db)
+    Gui(newPath, f'{dataPath}next2/', accountingDate)

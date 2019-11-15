@@ -20,10 +20,32 @@ from abc import ABC, abstractmethod
 import shutil
 import os
 import datetime
+import time
 import re
 
-def today():
-    return datetime.date.today().strftime('%Y-%m-%d')
+class DateUtility:
+    dateFormat = '%Y-%m-%d'
+
+    @classmethod
+    def today(cls):
+        return datetime.date.today()
+
+    @classmethod
+    def todayStr(cls):
+        return DateUtility.today().strftime(cls.dateFormat)
+
+    @classmethod
+    def strftime(cls, date, dateFormat = None):
+        if dateFormat is None:
+            dateFormat = cls.dateFormat
+        return date.strftime(dateFormat)
+
+    @classmethod
+    def strptime(cls, dateStr, dateFormat = None):
+        if dateFormat is None:
+            dateFormat = cls.dateFormat
+        t = time.strptime(dateStr, cls.dateFormat)
+        return datetime.date(t.tm_year, t.tm_mon, t.tm_mday)
 
 def readPrefixRow(prefix, row):
     if len(row) < 2:

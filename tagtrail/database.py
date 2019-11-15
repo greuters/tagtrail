@@ -28,41 +28,18 @@ from abc import ABC, abstractmethod
 from functools import partial
 import csv
 import helpers
+import datetime
 import slugify
 import copy
-from collections import UserDict
+import re
+from collections import UserDict, UserList
 
 class Database(ABC):
     """
     Simple in-memory data storage for all entities which
     are relevant during a single accounting run.
-
-    Data is read from simple CSV files with fixed format:
-        .. note::
-            the following format descriptions use
-            ";" as :py::attr:`.csvDelimiter`
-            and "," as :py::attr:`.colInternalDelimiter`
-
-        * Expected member format:
-            =========  ============  =================
-            memberId;  names;        emails
-            _________  ____________  _________________
-            MIR     ;  Name1,Name2;  mail1, mail2, ...
-            =========  ============  =================
-
-        * Expected product format:
-            ===================  =====  =========
-            description;         unit;  grossPrice
-            ___________________  _____  _________
-            Organic brown rice;  500g;  5.50 CHF
-            ===================  =====  =========
-
     """
-    csvDelimiter = ';'
-    "Delimiter between csv columns. default value: ';'"
-    colInternalDelimiter = ','
-    quotechar = '"'
-    newline = ''
+
     log = helpers.Log()
 
     def __init__(self,
@@ -77,14 +54,37 @@ class Database(ABC):
         self.products = Database.readCsv(self.productFilePath, ProductDict)
 
     @classmethod
-    def readCsv(cls, path, databaseDictClass):
-        with open(path, newline=cls.newline) as csvfile:
-            reader = csv.reader(csvfile, delimiter=cls.csvDelimiter,
-                    quotechar=cls.quotechar)
-            prefixRows = databaseDictClass.prefixRows()
-            columnHeaders = databaseDictClass.columnHeaders()
+    def readCsv(cls, path, containerClass):
+        """
+        containerClass must be DatabaseDict or DatabaseList
+        """
+        def addDbObjectToDict(dbObject, dbObjects):
+            if dbObject.id in dbObjects:
+                raise ValueError(f'duplicate key {dbObject.id} in {path}')
+            dbObjects[dbObject.id] = dbObject
+
+        def addDbObjectToList(dbObject, dbObjects):
+            dbObjects.append(dbObject)
+
+        with open(path, newline=containerClass.newline, encoding=containerClass.encoding) as csvfile:
+            reader = csv.reader(csvfile, delimiter=containerClass.csvDelimiter,
+                    quotechar=containerClass.quotechar)
+            prefixRows = containerClass.prefixRows()
+            columnHeaders = containerClass.columnHeaders()
             prefixValues = []
-            databaseObjects = {}
+            if issubclass(containerClass, DatabaseDict):
+                databaseObjects = {}
+                addDbObject = addDbObjectToDict
+                instantiateContainer = lambda prefixValues, databaseObjects: \
+                        containerClass(*prefixValues, **databaseObjects)
+            elif issubclass(containerClass, DatabaseList):
+                databaseObjects = []
+                addDbObject = addDbObjectToList
+                instantiateContainer = lambda prefixValues, databaseObjects: \
+                        containerClass(*prefixValues, *databaseObjects)
+            else:
+                raise TypeError('containerClass must be a DatabaseDict or DatabaseList')
+
             for cnt, row in enumerate(reader):
                 if cnt<len(prefixRows):
                     prefixValues.append(
@@ -95,38 +95,48 @@ class Database(ABC):
                             raise ValueError(
                             f"expectedHeader '{expectedHeader}' != actualHeader '{actualHeader}'")
                 else:
-
                     cls.log.debug("row={}", row)
                     vals = []
                     for val in row:
-                        if val.find(cls.colInternalDelimiter) == -1:
+                        if containerClass.colInternalDelimiter is None or \
+                        val.find(containerClass.colInternalDelimiter) == -1:
                             vals.append(val)
                         else:
-                            vals.append([v.strip() for v in val.split(cls.colInternalDelimiter)])
-                    dbObject = databaseDictClass.databaseObjectFromCsvRow(vals)
-                    if dbObject.id in databaseObjects:
-                        raise ValueError(f'duplicate key {dbObject.id} in {path}')
-                    databaseObjects[dbObject.id] = dbObject
-            return databaseDictClass(*prefixValues, **databaseObjects)
+                            vals.append([v.strip() for v in val.split(containerClass.colInternalDelimiter)])
+                    cls.log.debug(f'vals={vals}')
+                    dbObject = containerClass.databaseObjectFromCsvRow(vals)
+                    if not dbObject:
+                        continue
+                    addDbObject(dbObject, databaseObjects)
+
+            return instantiateContainer(prefixValues, databaseObjects)
 
     @classmethod
-    def writeCsv(cls, path, databaseDict):
-        with open(path, "w+") as fout:
-            for prefix, val in zip(databaseDict.prefixRows(),
-                    databaseDict.prefixValues()):
+    def writeCsv(cls, path, containerClass):
+        with open(path, "w+", newline=containerClass.newline, encoding=containerClass.encoding) as fout:
+            for prefix, val in zip(containerClass.prefixRows(),
+                    containerClass.prefixValues()):
                 fout.write("{};{}\n".format(prefix, val))
 
-            fout.write(";".join(databaseDict.columnHeaders())+"\n")
-            for row in databaseDict.csvRows():
-                assert(len(row) == len(databaseDict.columnHeaders()))
+            fout.write(";".join(containerClass.columnHeaders())+"\n")
+            for row in containerClass.csvRows():
+                assert(len(row) == len(containerClass.columnHeaders()))
                 fout.write(";".join(row)+"\n")
 
 class DatabaseObject(ABC):
     def __init__(self,
             objId):
+        if not isinstance(objId, str):
+            raise TypeError('objId must be a string')
         self.id = objId
 
 class DatabaseDict(UserDict):
+    csvDelimiter = ';'
+    colInternalDelimiter = ','
+    quotechar = '"'
+    newline = ''
+    encoding = 'latin-1'
+
     @classmethod
     def prefixRows(cls):
         raise NotImplementedError
@@ -161,6 +171,30 @@ class DatabaseDict(UserDict):
                     'a different key than its id, but {key} != {value.id}.')
         super().__setitem__(key, value)
 
+class DatabaseList(UserList):
+    csvDelimiter = ';'
+    colInternalDelimiter = ','
+    quotechar = '"'
+    newline = ''
+    encoding = 'latin-1'
+
+    @classmethod
+    def prefixRows(cls):
+        raise NotImplementedError
+
+    @classmethod
+    def columnHeaders(cls):
+        raise NotImplementedError
+
+    @classmethod
+    def databaseObjectFromCsvRow(cls, rowValues):
+        raise NotImplementedError
+
+    def prefixValues(self):
+        raise NotImplementedError
+
+    def csvRows(self):
+        raise NotImplementedError
 
 class Member(DatabaseObject):
     def __init__(self,
@@ -195,9 +229,9 @@ class MemberDict(DatabaseDict):
             **kwargs
             ):
         super().__init__(kwargs)
-        if not isinstance(accountingDate, str):
-            raise TypeError(f'accountingDate is not a string: {accountingDate}')
-        self.accountingDate = accountingDate
+        self.accountingDate = accountingDate \
+                if isinstance(accountingDate, datetime.date) else \
+                helpers.DateUtility.strptime(accountingDate)
 
     @classmethod
     def prefixRows(cls):
@@ -347,8 +381,6 @@ class Product(DatabaseObject):
         return self.previousQuantity+self.addedQuantity-self.soldQuantity
 
     def grossSalesPrice(self):
-        print(f'purchasePrice={self.purchasePrice}')
-        print(f'grossSalesPrice={helpers.roundPriceCH(self.purchasePrice * (1 + Product.marginPercentage))}')
         return helpers.roundPriceCH(self.purchasePrice * (1 + Product.marginPercentage))
 
 class ProductDict(DatabaseDict):
@@ -501,9 +533,13 @@ class Bill(DatabaseDict):
             ):
         super().__init__(kwargs)
         self.memberId = memberId
-        self.previousAccountingDate = previousAccountingDate
+        self.previousAccountingDate = previousAccountingDate \
+                if isinstance(previousAccountingDate, datetime.date) else \
+                helpers.DateUtility.strptime(previousAccountingDate)
         self.previousBalance = float(previousBalance)
-        self.currentAccountingDate = currentAccountingDate
+        self.currentAccountingDate = currentAccountingDate \
+                if isinstance(currentAccountingDate, datetime.date) else \
+                helpers.DateUtility.strptime(currentAccountingDate)
         self.totalPayments = float(totalPayments)
         self.setCorrection(float(correctionTransaction), correctionJustification)
         if currentExpectedBalance and \
@@ -619,7 +655,6 @@ class Bill(DatabaseDict):
         text += '\n' + self.textRepresentationFooter.format(
                 helpers.formatPrice(self.totalGrossSalesPrice()),
                 self.totalGCo2e())
-        print(text)
         return text
 
 class MemberAccount(DatabaseObject):
@@ -659,30 +694,30 @@ class MemberAccountDict(DatabaseDict):
                 '', '', '', '', self.currency, 'CURRENCY', 'F', 'F', 'F']
                 for a in self.values()]
 
-class Transaction(DatabaseObject):
+class GnucashTransaction:
     def __init__(self,
-            transactionId,
             description,
             amount,
             sourceAccount,
-            targetAccount
+            targetAccount,
+            date
             ):
-        super().__init__(transactionId)
         self.description = description
         self.amount = amount
         self.sourceAccount = sourceAccount
         self.targetAccount = targetAccount
+        self.date = date
 
-class TransactionDict(DatabaseDict):
+class GnucashTransactionList(DatabaseList):
+    colInternalDelimiter=None
+
     """
     Configured for import to GnuCash
     """
     def __init__(self,
-            currentAccountingDate,
-            **kwargs
+            *args
             ):
-        super().__init__(kwargs)
-        self.currentAccountingDate = currentAccountingDate
+        super().__init__(args)
 
     @classmethod
     def prefixRows(cls):
@@ -693,15 +728,161 @@ class TransactionDict(DatabaseDict):
         return ['Date', 'Description', 'Account', 'Withdrawal', 'Transfer Account']
 
     @classmethod
-    def containedDatabaseObjectCls(cls):
-        return Transaction
-
-    databaseObjectFromCsvRow = None # write-only CSV
+    def databaseObjectFromCsvRow(cls, rowValues):
+        return GnucashTransaction(
+                date = helpers.DateUtility.strptime(rowValues[0]),
+                description = rowValues[1],
+                sourceAccount = rowValues[2],
+                amount = float(rowValues[3]),
+                targetAccount = rowValues[4])
 
     def prefixValues(self):
         return []
 
     def csvRows(self):
-        return [[self.currentAccountingDate, w.description, w.sourceAccount,
-                w.amount, w.targetAccount]
-                for w in self.values()]
+        return [[helpers.DateUtility.strftime(t.date), t.description, t.sourceAccount,
+                helpers.formatPrice(t.amount), t.targetAccount]
+                for t in self]
+
+class PostfinanceTransaction:
+    messagePrefix = 'MITTEILUNGEN:'
+    def __init__(self,
+            bookingDate,
+            notificationText,
+            creditAmount,
+            debitAmount,
+            value,
+            balance
+            ):
+        if (creditAmount is None) == (debitAmount is None):
+            raise ValueError('one and only one of ' + \
+                    f"creditAmount='{creditAmount}' and " + \
+                    f"debitAmount='{debitAmount}'" + \
+                    "must be given")
+        if not isinstance(bookingDate, datetime.date):
+            raise TypeError('bookingDate must be a datetime.date')
+        self.bookingDate = bookingDate
+        self.notificationText = notificationText
+        self.creditAmount = creditAmount
+        self.debitAmount = debitAmount
+        self.value = value
+        self.balance = balance
+        self.memberId = None
+
+    def inferMemberId(self, possibleIds):
+        """
+        Try to receive memberId from notificationText, best effort recall but
+        precise.
+
+        We assume the notificationText consists of
+        '.*' + self.messagePrefix + '\s*' + 'memberId' + ['\s+' + '.*']*
+
+        If no memberId can be retrieved, or the memberId is not in possibleIds,
+        None is returned. If a memberId is returned, you can assume it is the
+        correct one.
+        """
+        match = re.split(self.messagePrefix+'\s*', self.notificationText)
+        if match is None or len(match) != 2:
+            return None
+        else:
+            messageAndBehind = match[1]
+            messageMatch = re.split('\s', messageAndBehind)
+            if messageMatch is None or not messageMatch[0] in possibleIds:
+                return None
+            else:
+                return messageMatch[0]
+
+    def mostLikelyMemberId(self, possibleIds):
+        """
+        Select the most likely memberId among possibleIds.
+
+        If no single most likely candidate is found, None is returned.
+        """
+        mostLikelyMemberId = None
+        for memberId in possibleIds:
+            if self.notificationText.upper().find(memberId.upper()) != -1:
+                if mostLikelyMemberId is None:
+                    mostLikelyMemberId = memberId
+                else:
+                    return None
+        return mostLikelyMemberId
+
+class PostfinanceTransactionList(DatabaseList):
+    colInternalDelimiter=None
+
+    # TODO move to config
+    expectedCurrency = 'CHF'
+    expectedAccount = 'CH12345600231'
+
+    dateFormat = '%Y-%m-%d'
+    filenameDateFormat = '%Y%m%d'
+    expectedEntryType = 'All bookings'
+    """
+    Configured to read standard transaction export from PostFinance
+    TODO: hint for programmers, this class needs to be adapted/replaced to
+    import payments from different bank
+    """
+    def __init__(self,
+            dateFrom,
+            dateTo,
+            entryType,
+            account,
+            currency,
+            *args
+            ):
+        if entryType != self.expectedEntryType:
+            raise ValueError('unexpected entry type ' + \
+                    f"'{entryType}', should be '{self.expectedEntryType}'")
+        if account != self.expectedAccount:
+            raise ValueError('unexpected account ' + \
+                    f"'{account}', should be '{self.expectedAccount}'")
+        if currency != self.expectedCurrency:
+            raise ValueError('unexpected currency ' + \
+                    f"'{currency}', should be '{self.expectedCurrency}'")
+        super().__init__(args)
+        self.dateFrom = helpers.DateUtility.strptime(dateFrom, self.dateFormat)
+        self.dateTo = helpers.DateUtility.strptime(dateTo, self.dateFormat)
+
+    @classmethod
+    def prefixRows(cls):
+        return ['Date from:', 'Date to:', 'Entry type:', 'Account:',
+                'Currency:']
+
+    @classmethod
+    def columnHeaders(cls):
+        return ['Booking date', 'Notification text',
+                f'Credit in {cls.expectedCurrency}',
+                f'Debit in {cls.expectedCurrency}', 'Value',
+                f'Balance in {cls.expectedCurrency}']
+
+    @classmethod
+    def databaseObjectFromCsvRow(cls, rowValues):
+        if rowValues in [
+                [],
+                ['Disclaimer:'],
+                ['This is not a document created by PostFinance Ltd. PostFinance Ltd is not responsible for the content.']
+                ]:
+            return None
+        return PostfinanceTransaction(
+                bookingDate = helpers.DateUtility.strptime(rowValues[0],
+                    cls.dateFormat),
+                notificationText = rowValues[1],
+                creditAmount = None if rowValues[2] == '' else float(rowValues[2]),
+                debitAmount = None if rowValues[3] == '' else float(rowValues[3]),
+                value = rowValues[4],
+                balance = rowValues[5]
+                )
+
+    def prefixValues(self):
+        return [self.dateFrom, self.dateTo, self.expectedEntryType,
+                self.expectedAccount, self.expectedCurrency]
+
+    def csvRows(self):
+        return [[helpers.DateUtility.strftime(t.bookingDate, self.dateFormat),
+            t.notificationText,
+            '' if t.creditAmount is None else helpers.formatPrice(t.creditAmount),
+            '' if t.debitAmount is None else helpers.formatPrice(t.debitAmount),
+            t.value, t.balance]
+                for t in self]
+
+

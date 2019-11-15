@@ -16,7 +16,7 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import slugify
-from tkinter import *
+import tkinter
 from tkinter import ttk
 from tkinter import messagebox
 import re
@@ -27,161 +27,7 @@ from database import Database
 from helpers import Log
 import random
 import traceback
-
-class AutocompleteEntry(ttk.Combobox):
-    def __init__(self, box, possibleValues, releaseFocus, *args, **kwargs):
-        Entry.__init__(self, *args, **kwargs)
-        self.box = box
-        self._possibleValues = possibleValues
-        self._releaseFocus = releaseFocus
-        self._log = Log()
-        self._previousValue = ""
-        self._listBox = None
-        self.__var = self["textvariable"]
-        if self.__var == '':
-            self.__var = self["textvariable"] = StringVar()
-
-        # setting text, but avoid loosing initial confidence
-        initConfidence = box.confidence
-        self.text = box.text
-        self.confidence = initConfidence
-
-        self.__var.trace('w', self.varTextChanged)
-        self.bind("<Return>", self.selection)
-        self.bind("<Up>", self.up)
-        self.bind("<Down>", self.down)
-        self.bind("<Left>", self.handleReleaseFocus)
-        self.bind("<Right>", self.handleReleaseFocus)
-        self.bind("<BackSpace>", self.backspace)
-        self.bind("<Tab>", self.handleReleaseFocus)
-
-    def up(self, event):
-        if self._listBox:
-            self.changeListBoxSelection(-1)
-        else:
-            return self._releaseFocus(event)
-
-    def down(self, event):
-        if self._listBox:
-            self.changeListBoxSelection(1)
-        else:
-            return self._releaseFocus(event)
-
-    def handleReleaseFocus(self, event):
-        if self._listBox:
-            return "break"
-        else:
-            return self._releaseFocus(event)
-
-    def selection(self, event):
-        if self._listBox:
-            self.text = self._listBox.get(ACTIVE)
-            self.box.text = self.text
-            self.icursor(END)
-            self.destroyListBox()
-        return self._releaseFocus(event)
-
-    def varTextChanged(self, name, index, mode):
-        self._log.debug('changed var = {}', self.text)
-        self.confidence = 0
-        if self.text == '':
-            self.destroyListBox()
-        else:
-            if self.text.strip() == '':
-                words = self._possibleValues
-            else:
-                words = self.comparison(self.text)
-            self._log.debug('possible words = {}', words)
-            if not words:
-                self.text = self._previousValue
-            else:
-                longestCommonPrefix = self.longestCommonPrefix(words)
-                self._log.debug('longestCommonPrefix(words) = {}', self.longestCommonPrefix(words))
-                if longestCommonPrefix != self.text.upper():
-                    self.delete(0, END)
-                    self.insert(0, longestCommonPrefix)
-
-                if len(words) == 1:
-                        self.destroyListBox()
-
-                else:
-                    if not self._listBox:
-                        self._listBox = Listbox(self.master)
-                        self._listBox.place(x=self.winfo_x(), y=self.winfo_y()+self.winfo_height())
-
-                    self._listBox.delete(0, END)
-                    for w in words:
-                        self._listBox.insert(END,w)
-
-        self._previousValue = self.text
-
-    def backspace(self, event):
-        if self.text == '':
-            self.destroyListBox()
-        else:
-            word = self.text
-            numOptions = len(self.comparison(word))
-            prefixes = [word[0:i] for i in range(len(word)+1)]
-            for p in sorted(prefixes, reverse=True):
-                if len(p) == 0 or numOptions < len(self.comparison(p)):
-                    self.text = p
-                    break
-        return "break"
-
-    def focus_set(self):
-        super().focus_set()
-        self.icursor(END)
-
-    # precondition: _listBox exists
-    def changeListBoxSelection(self, indexIncrement):
-        if self._listBox.curselection() == ():
-            previousIndex = 0
-        else:
-            previousIndex = int(self._listBox.curselection()[0])
-        newIndex = min(max(previousIndex+indexIncrement, 0),
-                self._listBox.size()-1)
-
-        self._listBox.selection_clear(first=previousIndex)
-        self._listBox.selection_set(first=newIndex)
-        self._listBox.activate(newIndex)
-
-    def destroyListBox(self):
-        if self._listBox:
-            self._listBox.destroy()
-            self._listBox = None
-
-    def longestCommonPrefix(self, words):
-        word = words[0].upper()
-        prefixes = [word[0:i] for i in range(len(word)+1)]
-        for p in sorted(prefixes, reverse=True):
-            isPrefix = [(w.upper().find(p) == 0) for w in words]
-            if len(p) == 0 or False not in isPrefix:
-                return p
-
-    def comparison(self, word):
-        if not self._possibleValues:
-            return [word]
-        return [w for w in self._possibleValues if w.upper().find(word.upper()) == 0]
-
-    @property
-    def text(self):
-        return self.__var.get()
-
-    @text.setter
-    def text(self, text):
-        self.__var.set(text)
-
-    @property
-    def confidence(self):
-        return self.box.confidence
-
-    @confidence.setter
-    def confidence(self, confidence):
-        self.box.confidence = confidence
-        if confidence < 1:
-            self.config({"background": 'red'})
-        else:
-            self.config({"background": 'green'})
+import gui_components
 
 class InputSheet(ProductSheet):
     validationProbability = 0.05
@@ -230,8 +76,9 @@ class InputSheet(ProductSheet):
             x1, y1 = x1*aspectRatio, y1*aspectRatio
             (x2, y2) = box.pt2
             x2, y2 = x2*aspectRatio, y2*aspectRatio
-            entry = AutocompleteEntry(box, choices, self.switchFocus, root)
+            entry = gui_components.AutocompleteEntry(box.text, box.confidence, choices, self.switchFocus, root)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
+            entry.box = box
             self._box_to_widget[box] = entry
 
         self._box_to_widget[self.boxByName('nameBox')].focus_set()
@@ -243,12 +90,17 @@ class InputSheet(ProductSheet):
             if event.keysym in ["Return", "Tab"]:
                 if event.keysym == "Return":
                     event.widget.confidence=1
+                event.widget.box.text = event.widget.text
+                event.widget.box.confidence = event.widget.confidence
 
                 nextBox = self.nextUnclearBox(event.widget.box)
                 if nextBox:
                     self._box_to_widget[nextBox].focus_set()
 
             elif event.keysym in ["Up", "Down", "Left", "Right"]:
+                event.widget.box.text = event.widget.text
+                event.widget.box.confidence = event.widget.confidence
+
                 neighbourBox = self.neighbourBox(event.widget.box, event.keysym)
                 if neighbourBox:
                     self._box_to_widget[neighbourBox].focus_set()
@@ -294,7 +146,7 @@ class Gui:
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
 
-        self.root = Tk()
+        self.root = tkinter.Tk()
         self.root.report_callback_exception = self.reportCallbackException
         self.buttonCanvasWidth=200
         self.width=self.root.winfo_screenwidth()
@@ -424,31 +276,31 @@ class Gui:
         canvas_w, canvas_h = int(o_w * aspectRatio), int(o_h * aspectRatio)
         self.scannedImg = self.scannedImg.resize((canvas_w, canvas_h), Image.BILINEAR)
         self.scannedImg = ImageTk.PhotoImage(self.scannedImg)
-        self.scanCanvas = Canvas(self.root,
+        self.scanCanvas = tkinter.Canvas(self.root,
                width=canvas_w,
                height=canvas_h)
         self.scanCanvas.place(x=0, y=0)
-        self.scanCanvas.create_image(0,0, anchor=NW, image=self.scannedImg)
+        self.scanCanvas.create_image(0,0, anchor=tkinter.NW, image=self.scannedImg)
         self.__focusAreaImage = None
         self.__focusAreaBorderRect = None
 
         # Input mask to correct product sheet
-        self.inputCanvas = Canvas(self.root,
+        self.inputCanvas = tkinter.Canvas(self.root,
                width=canvas_w,
                height=canvas_h)
         self.inputCanvas.place(x=canvas_w, y=0)
         self.inputSheet = InputSheet(self.inputCanvas, aspectRatio, self.db, self.csvPath)
 
         # Additional buttons
-        self.buttonCanvas = Frame(self.root,
+        self.buttonCanvas = tkinter.Frame(self.root,
                width=self.buttonCanvasWidth,
                height=canvas_h)
         self.buttonCanvas.place(x=2*canvas_w, y=0)
         self.buttons = {}
-        self.buttons['saveAndContinue'] = Button(self.buttonCanvas, text='Save and continue',
+        self.buttons['saveAndContinue'] = tkinter.Button(self.buttonCanvas, text='Save and continue',
             command=self.saveAndContinue)
         self.buttons['saveAndContinue'].bind('<Return>', self.saveAndContinue)
-        self.buttons['saveAndReloadDB'] = Button(self.buttonCanvas,
+        self.buttons['saveAndReloadDB'] = tkinter.Button(self.buttonCanvas,
             text='Save and reload current',
             command=self.saveAndReloadDB)
         self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
@@ -464,7 +316,7 @@ class Gui:
         focused = self.root.focus_displayof()
         if not focused:
             return event
-        elif isinstance(focused, AutocompleteEntry):
+        elif isinstance(focused, gui_components.AutocompleteEntry):
             if focused.confidence == 1 and event.keysym in ('Tab', 'Return'):
                 self.buttons['saveAndContinue'].focus_set()
             else:
