@@ -135,7 +135,7 @@ class DatabaseDict(UserDict):
     colInternalDelimiter = ','
     quotechar = '"'
     newline = ''
-    encoding = 'latin-1'
+    encoding = 'utf-8'
 
     @classmethod
     def prefixRows(cls):
@@ -809,6 +809,7 @@ class PostfinanceTransaction:
 
 class PostfinanceTransactionList(DatabaseList):
     colInternalDelimiter=None
+    encoding = 'latin-1'
 
     # TODO move to config
     expectedCurrency = 'CHF'
