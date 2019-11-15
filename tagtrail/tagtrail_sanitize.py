@@ -352,8 +352,6 @@ if __name__== "__main__":
                 'completing missing tags and validating recognized ones.')
     parser.add_argument('accountingDir',
             help='Top-level tagtrail directory to process, usually data/next/')
-    parser.add_argument('--tmpDir', dest='tmpDir', default='data/tmp/',
-            help='Directory to put temporary files in')
     args = parser.parse_args()
     # TODO: check that only valid member ids and product ids are stored for new
     # tags (that are not in previous accounting)

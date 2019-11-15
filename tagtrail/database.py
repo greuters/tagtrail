@@ -249,7 +249,12 @@ class MemberDict(DatabaseDict):
     def databaseObjectFromCsvRow(cls, rowValues):
         memberId = rowValues[0]
         name = rowValues[1] if isinstance(rowValues[1], str) else ", ".join(rowValues[1])
-        emails = rowValues[2] if isinstance(rowValues[2], list) else [rowValues[2]]
+        if isinstance(rowValues[2], list):
+            emails = rowValues[2]
+        elif rowValues[2] != '':
+            emails = [rowValues[2]]
+        else:
+            emails = []
         balance = rowValues[3] if rowValues[3] else 0
         return Member(memberId, name, emails, float(balance))
 
@@ -524,8 +529,8 @@ class Bill(DatabaseDict):
             currentAccountingDate,
             previousBalance,
             totalPayments,
-            correctionTransaction = 0,
-            correctionJustification = '',
+            correctionTransaction,
+            correctionJustification,
             expectedTotalPrice = None,
             currentExpectedBalance = None,
             expectedTotalGCo2e = None,
@@ -743,6 +748,47 @@ class GnucashTransactionList(DatabaseList):
         return [[helpers.DateUtility.strftime(t.date), t.description, t.sourceAccount,
                 helpers.formatPrice(t.amount), t.targetAccount]
                 for t in self]
+
+class CorrectionTransaction(DatabaseObject):
+    def __init__(self,
+            memberId,
+            amount,
+            justification):
+        super().__init__(memberId)
+        self.amount = amount
+        self.justification = justification
+
+class CorrectionTransactionDict(DatabaseDict):
+    """
+    As simple as possible, to allow the user to store correction transactions.
+    """
+    def __init__(self,
+            *args
+            ):
+        super().__init__(args)
+
+    @classmethod
+    def prefixRows(cls):
+        return []
+
+    @classmethod
+    def columnHeaders(cls):
+        return ['memberId', 'Amount', 'Justification']
+
+    @classmethod
+    def databaseObjectFromCsvRow(cls, rowValues):
+        return CorrectionTransaction(
+                memberId = rowValues[0],
+                amount = float(rowValues[1]),
+                justification = rowValues[2])
+
+    def prefixValues(self):
+        return []
+
+    def csvRows(self):
+        return [[t.id, helpers.formatPrice(t.amount), t.justification]
+                for t in self]
+
 
 class PostfinanceTransaction:
     messagePrefix = 'MITTEILUNGEN:'

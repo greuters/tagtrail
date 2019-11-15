@@ -15,7 +15,23 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-def main():
+import argparse
+import helpers
+import tagtrail_gen
+import tagtrail_ocr
+import tagtrail_sanitize
+import tagtrail_bankimport
+import tagtrail_account
+import tagtrail_send
+
+
+def checkPreconditions():
+    correctionTransactions = database.Database.readCsv(
+            self.accountingDataPath+'0_input/correctionTransactions.csv',
+            database.CorrectionTransactionDict)
+
+
+def main(accountingDir, accountingDate, accessCode, accountantName, password):
     # preconditions:
     # 1. gnucash_transactions_currentDate.csv exported from GnuCash
     #    => new members that are not in transactions are ok, highlight and ask
@@ -30,8 +46,6 @@ def main():
     #    * date needs to be today on the date tagtrail is run
     #    * export all transactions of Member accounts with standard settings
     # 2. scans
-    # 3. members.csv, at least one email per member is mandatory else user
-    #    is informed and it is skipped; accounting date has to be present
     # 4. products.csv:
     #    => need description, unit (validate, if not able to validate, warn
     #    user but ok. gCo2e cannot be calculated without), netprice
@@ -89,10 +103,46 @@ def main():
     # done and ready for the next accounting
     # the whole program needs to be reentrant, asking if compute-heavy stuff
     # should be redone
-    print('to do')
+    log = helpers.Log()
+    log.info('Invoking tagtrail_gen')
+    tagtrail_gen.main(accountingDir)
+    log.info('Invoking tagtrail_ocr')
+    tagtrail_ocr.main(accountingDir, 'data/tmp/')
+    log.info('Invoking tagtrail_sanitize')
+    tagtrail_sanitize.Gui(accountingDir)
+    log.info('Invoking tagtrail_bankimport')
+    tagtrail_bankimport.Gui(accountingDir, accountingDate)
+    log.info('Invoking tagtrail_account')
+    renamedAccountingDir = f'data/accounting_{accountingDate}/'
+    tagtrail_account.main(accountingDir, renamedAccountingDir, accountingDate,
+            'data/next/')
+    log.info('Invoking tagtrail_send')
+    tagtrail_send.MailSender(renamedAccountingDir,
+            accessCode,
+            accountantName,
+            password).sendBills()
 
     # postprocessing:
     # lead user through additional manual steps they need to do
 
-if __name__ == '__main__':
-    main()
+if __name__== "__main__":
+    parser = argparse.ArgumentParser(
+        description='Recognize tags on all input scans, storing them as CSV files')
+    parser.add_argument('accountingDir',
+            help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--accountingDate',
+            dest='accountingDate',
+            type=helpers.DateUtility.strptime,
+            default=helpers.DateUtility.todayStr(),
+            help="Date of the new accounting, fmt='YYYY-mm-dd'",
+            )
+    parser.add_argument('accessCode',
+            help="New access code to be sent to members",)
+    parser.add_argument('accountantName',
+            help="Name of the person responsible for this accounting.")
+    parser.add_argument('-p, --password',
+            dest='password',
+            help=f'password for {tagtrail_send.MailSender.mailUser}. If not passed, it will be requested.')
+    args = parser.parse_args()
+    main(args.accountingDir, args.accountingDate, args.accessCode,
+            args.accountantName, args.password)

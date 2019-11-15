@@ -203,7 +203,7 @@ class Gui:
         saveButton.pack(side=tkinter.RIGHT)
         saveButton.bind('<Return>', lambda _: self.saveAndQuit())
         saveButton.focus_set()
-        tkinter.mainloop()
+        self.root.mainloop()
 
     def reportCallbackException(self, exception, value, tb):
         traceback.print_exception(exception, value, tb)
@@ -239,6 +239,8 @@ class Gui:
         self.writeMemberCSV()
         self.writeProductsCSVs()
         self.copyAccountedSheets()
+        database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/correctionTransactions.csv',
+                database.CorrectionTransactionDict())
         shutil.copytree(f'{self.accountingDataPath}0_input/templates',
                 f'{self.nextAccountingDataPath}0_input/templates')
 
@@ -293,6 +295,9 @@ class EnrichedDatabase(database.Database):
             product.soldQuantity = tagCollector.numNewTags(productId,
                     list(self.members.keys()))
 
+        self.correctionTransactions = database.Database.readCsv(
+                self.accountingDataPath+'0_input/correctionTransactions.csv',
+                database.CorrectionTransactionDict)
         self.paymentTransactions = self.loadPaymentTransactions()
         self.bills = self.createBills(tagCollector)
         self.productPagePaths = tagCollector.currentProductPagePaths()
@@ -335,7 +340,9 @@ class EnrichedDatabase(database.Database):
                     member.balance,
                     sum([transaction.amount for transaction in
                         self.paymentTransactions
-                        if transaction.sourceAccount == member.id]))
+                        if transaction.sourceAccount == member.id]),
+                    self.correctionTransactions[member.id].amount if member.id in self.correctionTransactions else 0,
+                    self.correctionTransactions[member.id].description if member.id in self.correctionTransactions else '')
             for productId in tagCollector.newTagsPerProduct.keys():
                 numTags = tagCollector.numNewTags(productId, [member.id])
                 if numTags != 0:

@@ -49,11 +49,11 @@ class EnrichedDatabase(database.Database):
         self.paymentTransactionsPath = f'{self.accountingDataPath}4_gnucash/paymentTransactions.csv'
         if not os.path.isfile(self.inputTransactionsPath):
             raise ValueError(
-                    f'Missing required file {self.inputTransactionsPath}.\n')
+                    f'Missing required file {self.inputTransactionsPath}\n')
 
         if not os.path.isfile(self.unprocessedTransactionsPath):
-            helpers.recreateDir(f'{self.accountingDataPath}/4_gnucash/', self.log)
-            helpers.recreateDir(f'{self.accountingDataPath}/5_output/', self.log)
+            helpers.recreateDir(f'{self.accountingDataPath}4_gnucash/', self.log)
+            helpers.recreateDir(f'{self.accountingDataPath}5_output/', self.log)
             self.log.info("copy {} to {}".format(self.inputTransactionsPath, self.unprocessedTransactionsPath))
             shutil.copy(self.inputTransactionsPath, self.unprocessedTransactionsPath)
 

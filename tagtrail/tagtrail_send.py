@@ -64,7 +64,10 @@ class MailSender(ABC):
                 self.templatePath+'invoice_below_threshold.txt')
 
         self.accountantName = accountantName
-        self.mailPassword = mailPassword
+        if mailPassword:
+            self.mailPassword = mailPassword
+        else:
+            self.mailPassword = getpass.getpass()
         self.testRecipient = testRecipient
 
     def readTemplate(self, filename):
@@ -73,6 +76,16 @@ class MailSender(ABC):
         return Template(template_file_content)
 
     def sendBills(self):
+        billedMembersWithoutEmails = [bill.memberId for bill in self.bills
+                if self.db.members[bill.memberId].emails == []]
+        if billedMembersWithoutEmails != []:
+            answer = input('Bills cannot be sent to these members, ' + \
+                  'as they have no email:\n' + \
+                  f'{",".join(billedMembersWithoutEmails)}\n' + \
+                    'Continue (yes/no)? ')
+            if answer != 'yes':
+                return
+
         for bill in self.bills:
             invoiceTextTemplate = self.invoiceAboveThresholdTemplate \
                     if self.liquidityThreshold < bill.currentBalance() else \
@@ -158,13 +171,8 @@ if __name__ == '__main__':
             help='If given, mails are sent to this email address instead of the real receivers.')
     args = parser.parse_args()
 
-    if args.password:
-        password = args.password
-    else:
-        password = getpass.getpass()
-
     MailSender(args.accountingDir,
             args.accessCode,
             args.accountantName,
-            password,
+            args.password,
             args.testRecipient).sendBills()
