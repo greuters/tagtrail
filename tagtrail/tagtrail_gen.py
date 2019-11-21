@@ -33,14 +33,14 @@ import math
 from database import Database
 from sheets import ProductSheet
 
-def generateSheet(sheetDir, sheetName, db):
+def generateSheet(sheetDir, sheetName, db, addTestTags):
     log = helpers.Log()
     if sheetName in db.products:
         product = db.products[sheetName]
         numPages = math.ceil(product.previousQuantity /
-                ProductSheet.maxQuantity())
-        for pageNumber in range(1, numPages+1):
-            sheet = ProductSheet(db, True)
+                ProductSheet.maxQuantity())+1
+        for pageNumber in range(1, numPages):
+            sheet = ProductSheet(db, addTestTags)
             sheet.name = product.description
             sheet.amountAndUnit = product.amountAndUnit
             sheet.grossSalesPrice = helpers.formatPrice(product.grossSalesPrice())
@@ -58,7 +58,7 @@ def generateSheet(sheetDir, sheetName, db):
     else:
         log.error("nothing to do here, sheet {} not found".format(sheetName))
 
-def main(accountingDir):
+def main(accountingDir, addTestTags):
     sheetDir= f'{accountingDir}1_emptySheets/'
     productSheetDir = f'{sheetDir}products/'
     tagSheetDir = f'{sheetDir}members/'
@@ -69,7 +69,7 @@ def main(accountingDir):
     db = Database(f'{accountingDir}0_input/')
 
     for productId, product in db.products.items():
-        generateSheet(productSheetDir, productId, db)
+        generateSheet(productSheetDir, productId, db, addTestTags)
 
     # TODO generate TagSheets
 
@@ -77,5 +77,8 @@ if __name__== "__main__":
     parser = argparse.ArgumentParser(description='Generate empty product and tag sheets')
     parser.add_argument('accountingDir',
             help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--addTestTags',
+            action='store_true',
+            help='Already add some tags on the generated product sheets for testing purposes')
     args = parser.parse_args()
-    main(args.accountingDir)
+    main(args.accountingDir, args.addTestTags)
