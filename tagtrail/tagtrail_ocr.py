@@ -377,10 +377,12 @@ class RecognizeText(ProcessingStep):
     threshold = 127
     confidenceThreshold = 0.5
     def __init__(self,
-            name):
-        super().__init__(name)
+            name,
+            outputDir):
+        super().__init__(name, outputDir)
         self.__sheet = ProductSheet()
         self.__db = Database('data/next/0_input/')
+
 
     def productId(self):
         return self.__sheet.productId()
@@ -473,14 +475,14 @@ class RecognizeText(ProcessingStep):
         cv.imwrite('{prefix}_0_grayImg.jpg', self._grayImg)
         cv.imwrite('{prefix}_1_output.jpg', self._outputImg)
 
-def processFile(inputFile, outputDir):
+def processFile(inputFile, outputDir, tmpDir):
     print('Processing file: ', inputFile)
     processors=[]
-    processors.append(RotateSheet("0_rotateSheet"))
-    processors.append(FindMarginsByContour("1_findMargins"))
-    fit = FitToSheet("2_fitToSheet")
+    processors.append(RotateSheet("0_rotateSheet", tmpDir))
+    processors.append(FindMarginsByContour("1_findMargins", tmpDir))
+    fit = FitToSheet("2_fitToSheet", tmpDir)
     processors.append(fit)
-    recognizer = RecognizeText("3_recognizeText")
+    recognizer = RecognizeText("3_recognizeText", tmpDir)
     processors.append(recognizer)
     img = cv.imread(inputFile)
     for p in processors:
@@ -497,7 +499,8 @@ def main(accountingDir, tmpDir):
     helpers.recreateDir(tmpDir)
     for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         for f in fileNames:
-            processFile(parentDir + f, outputDir)
+            helpers.recreateDir(tmpDir+f)
+            processFile(parentDir + f, outputDir, tmpDir + f + '/')
         break
 
 if __name__== "__main__":

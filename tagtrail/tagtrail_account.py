@@ -30,6 +30,10 @@ import shutil
 import csv
 import copy
 
+# TODO: handle tags for non-existing products (i.e. somebody "bought" something
+# that should not have been there any more) => should be accounted as negative
+# SCHWUND
+
 class TagCollector(ABC):
     """
     TagCollector reads all sanitized product sheets and compares them to
