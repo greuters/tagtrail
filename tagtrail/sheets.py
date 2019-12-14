@@ -31,8 +31,12 @@ random.seed()
 
 class ProductSheet(ABC):
     # Sheet Dimensions
-    pageFrame = 10 # mm
-    layoutMargin = 15 # mm
+    topPageFrame = 20 # mm
+    bottomPageFrame = 15 # mm
+    leftPageFrame = 15 # mm
+    rightPageFrame = 15 # mm
+    topMargin = 25 # mm
+    leftMargin = 20 # mm
     xRes = 2480 # px
     yRes = 3508 # px
     sheetW = 210 # mm
@@ -40,14 +44,14 @@ class ProductSheet(ABC):
 
     # Layout (all widths/heights in mm)
     headerH = 15
-    nameW = 100
+    nameW = 85
     unitW = 30
     priceW = 30
-    pageNumberW = 20
+    pageNumberW = 25
     dataBgColors = [[220, 220, 220], [190, 190, 190]]
-    dataColCount = 6
-    dataRowCount = 16
-    dataRowW = 30
+    dataColCount = 5
+    dataRowCount = 15
+    dataRowW = 34
     dataColH = 15
 
     @classmethod
@@ -56,8 +60,9 @@ class ProductSheet(ABC):
 
     @classmethod
     def getPageFramePts(self):
-        return (self.pointFromMM(self.pageFrame, self.pageFrame),
-                self.pointFromMM(self.sheetW-self.pageFrame, self.sheetH-self.pageFrame))
+        return (self.pointFromMM(self.leftPageFrame, self.topPageFrame),
+                self.pointFromMM(self.sheetW-self.rightPageFrame,
+                    self.sheetH-self.bottomPageFrame))
 
     @classmethod
     def pointFromMM(self, u, v):
@@ -74,11 +79,11 @@ class ProductSheet(ABC):
 
         # Frame around page (for easier OCR)
         p0, p1 = self.getPageFramePts()
-        self.__boxes["frameBox"] = Box("frameBox", p0, p1, (235,235,235), lineW=20)
+        self.__boxes["frameBox"] = Box("frameBox", p0, p1, (255,255,255), lineW=20)
 
         # Header
-        u0 = self.layoutMargin
-        v0 = self.layoutMargin
+        u0 = self.leftMargin
+        v0 = self.topMargin
         u1 = u0+self.nameW
         v1 = v0+self.headerH
         self.addBox(Box(
@@ -114,10 +119,10 @@ class ProductSheet(ABC):
         # Data
         for (row, col) in itertools.product(range(0,self.dataRowCount),
                 range(0,self.dataColCount)):
-            v0 = self.layoutMargin + self.headerH//2 + (row+1)*self.dataColH
+            v0 = self.topMargin + self.headerH//2 + (row+1)*self.dataColH
             color = self.dataBgColors[row % 2]
             num = row*self.dataColCount + col
-            u0 = self.layoutMargin + col*self.dataRowW
+            u0 = self.leftMargin + col*self.dataRowW
             if self.testMode:
                 if random.randint(0, self.maxQuantity()) < 3*num:
                     text = ""

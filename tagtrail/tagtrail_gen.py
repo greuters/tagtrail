@@ -43,8 +43,8 @@ def generateSheet(sheetDir, sheetName, db, addTestTags):
             sheet = ProductSheet(db, addTestTags)
             sheet.name = product.description
             sheet.amountAndUnit = product.amountAndUnit
-            sheet.grossSalesPrice = helpers.formatPrice(product.grossSalesPrice())
-            sheet.pageNumber = str(pageNumber)
+            sheet.grossSalesPrice = f'{helpers.formatPrice(product.grossSalesPrice())} CHF'
+            sheet.pageNumber = f'Blatt {str(pageNumber)}'
             path = f'{sheetDir}{sheetName}_{pageNumber}.jpg'
 
             if cv.imwrite(path, sheet.createImg()) is True:
