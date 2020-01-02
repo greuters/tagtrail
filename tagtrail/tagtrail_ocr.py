@@ -41,15 +41,19 @@ class ProcessingStep(ABC):
         self._outputDir = outputDir
         super().__init__()
 
+    @property
+    def prefix(self):
+        return f'{self._outputDir}{self._name}'
+
     @abstractmethod
     def process(self, inputImg):
         self._log.info("#ProcessStep: {}".format(self._name))
         self._outputImg = inputImg
 
     def writeOutput(self):
-        cv.imwrite(f'{self._outputDir}/{self._name}.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}.jpg', self._outputImg)
 
-class RotationStep(ProcessingStep):
+class LineBasedStep(ProcessingStep):
     drawLineLength = 1000
 
     @abstractmethod
@@ -95,6 +99,8 @@ class RotationStep(ProcessingStep):
     def drawLinePts(self, pt0, pt1):
         cv.line(self._linesImg, pt0, pt1, (255,0,0), 2)
 
+    # pt0 = (x0, y0)
+    # v0 = (dx, dy)
     def drawLinePtAndVec(self, pt0, v0):
         (pt0, pt1) = self.ptAndVecToPts(pt0, v0)
         self.drawLinePts(pt0, pt1)
@@ -107,7 +113,50 @@ class RotationStep(ProcessingStep):
         b = np.sin(theta)
         self.drawLinePtAndVec((a*rho, b*rho), (-b, a))
 
-class RotateSheet(RotationStep):
+class SplitSheets(ProcessingStep):
+    def __init__(self,
+                 name,
+                 outputDir = 'data/tmp/',
+                 log = helpers.Log(),
+                 sheet0 = (220, 260, 1310, 1840), # x0, y0, x1, y1
+                 sheet1 = (1700, 260, 2800, 1840), # x0, y0, x1, y1
+                 sheet2 = (220, 2270, 1310, 3820), # x0, y0, x1, y1
+                 sheet3 = (1700, 2270, 2800, 3820), # x0, y0, x1, y1
+                 backgroundColorMin = (0, 00, 0), # hsv
+                 backgroundColorMax = (180, 255, 150), # hsv
+                 backgroundThreshold = 0.6
+                 ):
+        super().__init__(name, outputDir, log)
+        self._sheets = [sheet0, sheet1, sheet2, sheet3]
+        self._backgroundColorMin = backgroundColorMin
+        self._backgroundColorMax = backgroundColorMax
+        self._backgroundThreshold = backgroundThreshold
+
+    def process(self, inputImg):
+        super().process(inputImg)
+
+        self._inputImg = inputImg
+        self._outputImg = np.copy(inputImg)
+
+        self._outputSheetImgs = []
+        for x0, y0, x1, y1 in self._sheets:
+            sheetImg = np.copy(self._inputImg[y0:y1, x0:x1, :])
+            hsv = cv.cvtColor(sheetImg, cv.COLOR_BGR2HSV)
+            backgroundMask = cv.inRange(hsv, np.array(self._backgroundColorMin),
+                    np.array(self._backgroundColorMax))
+            numBackgroundPixels = backgroundMask.sum().sum()
+            numPixelsTotal = (x1-x0) * (y1-y0)
+            if self._backgroundThreshold < numBackgroundPixels / numPixelsTotal:
+                self._outputSheetImgs.append(sheetImg)
+                self._outputImg[y0:y1, x0:x1, :] = 0
+
+    def writeOutput(self):
+        cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
+        for idx, sheetImg in enumerate(self._outputSheetImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_sheetImg.jpg', sheetImg)
+        cv.imwrite(f'{self.prefix}_{len(self._outputSheetImgs)}_outputImg.jpg', self._outputImg)
+
+class RotateSheet(LineBasedStep):
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
@@ -152,7 +201,7 @@ class RotateSheet(RotationStep):
             cv.putText(self._linesImg, "{}".format(alpha*180/np.pi), (x1, y1),
                     cv.FONT_HERSHEY_SIMPLEX, 3, 5, cv.LINE_AA)
 
-        # 3. discard votes for buckets that didn't get enough
+        # 3. discard votes for buckets that didn't get enough votes
         buckets = [numVotes if numVotes>self._voteThreshold else 0 for numVotes in buckets]
         self._log.debug(["numVotes={}, angle={}".format(v, idx*self._rotPrecision*180/np.pi)
             for idx, v in enumerate(buckets) if v>0])
@@ -177,43 +226,55 @@ class RotateSheet(RotationStep):
         correctionAngleDeg = angle * 180 / np.pi
         self._log.debug("correctionAngleDeg={}".format(correctionAngleDeg))
 
-        # 5. align inputImg
+        # determine background fill color - average color of all pixels that
+        # are bright enough to be considered background
+        hsv = cv.cvtColor(self._inputImg, cv.COLOR_BGR2HSV)
+        mask = cv.inRange(hsv, np.array((0, 0, 100)),
+                np.array(np.array((180, 255, 255))))
+        self._fillColorPixels = cv.bitwise_and(self._inputImg, self._inputImg, mask=mask)
+        bValues = self._fillColorPixels[:,:,0]
+        gValues = self._fillColorPixels[:,:,1]
+        rValues = self._fillColorPixels[:,:,2]
+        fillColor = (bValues.sum() / (bValues != 0).sum(),
+                gValues.sum() / (gValues != 0).sum(),
+                rValues.sum() / (rValues != 0).sum())
+
+        # 6. align inputImg
         rows,cols,_ = inputImg.shape
         rotMatrix = cv.getRotationMatrix2D((cols/2, rows/2), correctionAngleDeg, 1)
         self._outputImg = cv.warpAffine(inputImg, rotMatrix, (cols, rows), borderMode=cv.BORDER_CONSTANT,
-                borderValue=(255, 255, 255))
+                borderValue=fillColor)
 
     def writeOutput(self):
-        prefix = f'{self._outputDir}/{self._name}'
-        cv.imwrite(f'{self._outputDir}/{self._name}_0_input.jpg', self._inputImg)
-        cv.imwrite(f'{self._outputDir}/{self._name}_1_gray.jpg', self._grayImg)
-        cv.imwrite(f'{self._outputDir}/{self._name}_2_canny.jpg', self._cannyImg)
-        cv.imwrite(f'{self._outputDir}/{self._name}_3_closed.jpg', self._closedImg)
-        cv.imwrite(f'{self._outputDir}/{self._name}_4_dilated.jpg', self._dilatedImg)
-        cv.imwrite(f'{self._outputDir}/{self._name}_5_houghlines.jpg', self._linesImg)
-        cv.imwrite(f'{self._outputDir}/{self._name}_6_output.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
+        cv.imwrite(f'{self.prefix}_1_gray.jpg', self._grayImg)
+        cv.imwrite(f'{self.prefix}_2_canny.jpg', self._cannyImg)
+        cv.imwrite(f'{self.prefix}_3_closed.jpg', self._closedImg)
+        cv.imwrite(f'{self.prefix}_4_dilated.jpg', self._dilatedImg)
+        cv.imwrite(f'{self.prefix}_5_houghlines.jpg', self._linesImg)
+        cv.imwrite(f'{self.prefix}_7_fillColorPixels.jpg', self._fillColorPixels)
+        cv.imwrite(f'{self.prefix}_8_output.jpg', self._outputImg)
 
-class RotateLabel(RotationStep):
+class RotateLabel(LineBasedStep):
     threshold = 127
 
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
                  log = helpers.Log(),
-                 kernelSize = 10):
+                 kernelSize = 12):
         super().__init__(name, outputDir, log)
         self._kernelSize = kernelSize
 
     def process(self, inputImg):
         super().process(inputImg)
         self._inputImg = inputImg
-        self._linesImg = np.copy(inputImg)
         gray = cv.cvtColor(self._inputImg, cv.COLOR_BGR2GRAY)
         self._grayImg = cv.bitwise_not(gray)
         self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
 
-        kernel = cv.getStructuringElement(cv.MORPH_RECT, (self._kernelSize,
-            self._kernelSize))
+        kernel = cv.getStructuringElement(cv.MORPH_RECT,
+                (int(self._kernelSize*1.5), self._kernelSize))
         self._closedImg = cv.morphologyEx(self._thresholdImg, cv.MORPH_CLOSE, kernel)
         self._dilatedImg = cv.dilate(self._closedImg, kernel, 1)
         numComponents, self._labeledImg = cv.connectedComponents(self._dilatedImg)
@@ -226,7 +287,7 @@ class RotateLabel(RotationStep):
 
         # assume the 2nd biggest component to be the actual text
         self._selectedImg = np.where(self._labeledImg ==
-                components[1][0], 255, 0)
+                components[1][0], 255.0, 0.0)
 
         # prepare labeled components for graphical output
         if numComponents > 1:
@@ -237,25 +298,28 @@ class RotateLabel(RotationStep):
         self._selectedImg = cv.copyMakeBorder(
                 self._selectedImg, 20, 20, 20, 20,
                 cv.BORDER_CONSTANT, value=(0, 0, 0))
-        coords = np.column_stack(np.where(self._selectedImg > 0))
+        self._selectedImg = cv.dilate(self._selectedImg, kernel, 1)
+
+        self._linesImg = np.copy(self._selectedImg)
+        coords = np.column_stack(np.where(self._selectedImg > 0.0))
         # fit line and compute rotation angle
-        #coords = np.column_stack(np.where(self._thresholdImg > 0))
-        #(vx, vy, x0, y0) = cv.fitLine(coords, cv.DIST_L2, 0, 0.01, 0.01)
-        #self.drawLinePtAndVec((x0, y0), (vx, -vy))
-        #alpha=self.minAngleToGridPtAndVec((x0, y0), (vx, -vy))
-        #print(alpha)
-        #angle=alpha * 180 / np.pi
-        #self._log.info("rotation angle = {:.2f}", angle)
+        (vy, vx, y0, x0) = cv.fitLine(coords, cv.DIST_L2, 0, 0.01, 0.01)
+        cv.circle(self._linesImg, (x0, y0), 10, (0,255,0), 2)
+        cv.circle(self._linesImg, (x0+20*vx, y0+20*vy), 5, (255,0,0), 2)
+        self.drawLinePtAndVec((x0, y0), (vx, vy))
+        alpha=self.minAngleToGridPtAndVec((x0, y0), (vx, vy))
+        self._log.debug("minAngleToGridPtAndVec = {:.2f}", alpha)
+        angle=alpha * 180 / np.pi
+        self._log.debug("rotation angle = {:.2f}", angle)
 
-        # fit minimal bounding rectangle
-        angle = cv.minAreaRect(coords)[-1]
-        if angle < -45:
-                angle = -(90 + angle)
-        else:
-                angle = -angle
-        self._log.info("rotation angle = {:.2f}", angle)
+        # rotate line image for verification
+        (h, w) = self._linesImg.shape[:2]
+        center = (w // 2, h // 2)
+        M = cv.getRotationMatrix2D(center, angle, 1.0)
+        self._linesRotatedImg = cv.warpAffine(self._linesImg, M, (w, h),
+                flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
 
-        # rotate
+        # rotate inputImg
         (h, w) = self._inputImg.shape[:2]
         center = (w // 2, h // 2)
         M = cv.getRotationMatrix2D(center, angle, 1.0)
@@ -263,100 +327,119 @@ class RotateLabel(RotationStep):
                 flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
 
     def writeOutput(self):
-        prefix = f'{self._outputDir}/{self._name}'
-        cv.imwrite(f'{prefix}_0_input.jpg', self._inputImg)
-        cv.imwrite(f'{prefix}_1_gray.jpg', self._grayImg)
-        cv.imwrite(f'{prefix}_2_threshold.jpg', self._thresholdImg)
-        cv.imwrite(f'{prefix}_3_closed.jpg', self._closedImg)
-        cv.imwrite(f'{prefix}_4_dilated.jpg', self._dilatedImg)
-        cv.imwrite(f'{prefix}_5_labeled.jpg', self._labeledImg)
-        cv.imwrite(f'{prefix}_6_selected.jpg', self._selectedImg)
-        cv.imwrite(f'{prefix}_7_line.jpg', self._linesImg)
-        cv.imwrite(f'{prefix}_8_output.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
+        cv.imwrite(f'{self.prefix}_1_gray.jpg', self._grayImg)
+        cv.imwrite(f'{self.prefix}_2_threshold.jpg', self._thresholdImg)
+        cv.imwrite(f'{self.prefix}_3_closed.jpg', self._closedImg)
+        cv.imwrite(f'{self.prefix}_4_dilated.jpg', self._dilatedImg)
+        cv.imwrite(f'{self.prefix}_5_labeled.jpg', self._labeledImg)
+        cv.imwrite(f'{self.prefix}_6_selected.jpg', self._selectedImg)
+        cv.imwrite(f'{self.prefix}_7_line.jpg', self._linesImg)
+        cv.imwrite(f'{self.prefix}_8_lineRotated.jpg', self._linesRotatedImg)
+        cv.imwrite(f'{self.prefix}_9a_input.jpg', self._inputImg)
+        cv.imwrite(f'{self.prefix}_9b_output.jpg', self._outputImg)
 
-# identify main Sheet area
-class FindMargins(ProcessingStep):
-    threshold = 240
-    precisionWeight = 0.5
+class FindMarginsByLines(LineBasedStep):
+    class Corner:
+        def __init__(self, x, y):
+            self.points = []
+            self.addPoint(x, y)
 
-    @abstractmethod
+        def addPoint(self, x, y):
+            self.points.append((x, y))
+            xSum, ySum = 0, 0
+            for x0, y0 in self.points:
+                xSum += x0
+                ySum += y0
+            self.x = int(round(xSum / len(self.points)))
+            self.y = int(round(ySum / len(self.points)))
+
+        def distanceToPoint(self, x, y):
+            return math.sqrt(pow(x-self.x, 2) + pow(y-self.y, 2))
+
+    threshold = 180
+    def __init__(self,
+                 name,
+                 outputDir = 'data/tmp/',
+                 log = helpers.Log(),
+                 minLineLength = 800,
+                 rotPrecision = np.pi/4,
+                 maxLineGap = 1,
+                 kernelSize = 9):
+        super().__init__(name, outputDir, log)
+        self._minLineLength = minLineLength
+        self._rotPrecision = rotPrecision
+        self._maxLineGap = maxLineGap
+        self._cornerRadius = 6
+        self._kernelSize = kernelSize
+
     def process(self, inputImg):
         super().process(inputImg)
-        self._x0, self._y0 = 0, 0
-        self._x1, self._y1, _ = inputImg.shape
         self._frameImg = np.copy(inputImg)
-        self._grayImg = cv.cvtColor(inputImg, cv.COLOR_BGR2GRAY)
+        self._grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
+        self._cannyImg = cv.Canny(self._grayImg,50,150,apertureSize = 3)
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, (self._kernelSize,
+            self._kernelSize))
+        self._closedImg = self._cannyImg #cv.morphologyEx(self._cannyImg, cv.MORPH_CLOSE, kernel)
+        self._closingImg = cv.dilate(self._closedImg, kernel, 1)
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 1,
-                cv.THRESH_BINARY)
-        self._blackCountTotal, _ = np.bincount(self._thresholdImg.flatten(), minlength=2)
+                cv.THRESH_BINARY_INV)
+
+        self._linesImg = np.copy(inputImg)
+        lines = cv.HoughLinesP(self._closingImg, 1, self._rotPrecision, 1,
+                minLineLength=self._minLineLength, maxLineGap=self._maxLineGap)
+
+        # map the end points of each line we found to a candidate corner
+        corners = []
+        def mapToCorner(x, y):
+            foundCorner = False
+            for c in corners:
+                if c.distanceToPoint(x, y) < self._cornerRadius:
+                    c.addPoint(x, y)
+                    foundCorner = True
+                    break
+            if not foundCorner:
+                corners.append(FindMarginsByLines.Corner(x, y))
+
+        for line in lines:
+            x1,y1,x2,y2 = line[0]
+            mapToCorner(x1, y1)
+            mapToCorner(x2, y2)
+            self.drawLinePts((x1, y1), (x2, y2))
+
+        # select the top left and bottom right corner - they probably span the
+        # frame printed on each product sheet
+        if len(corners) < 2:
+            raise AssertionError('failed to find enough corner candidates')
+        height, width, _ = self._linesImg.shape
+        topLeft, topLeftDist = corners[0], width+height
+        bottomRight, bottomRightDist = topLeft, topLeftDist
+        for c in corners:
+            cv.circle(self._linesImg, (c.x, c.y), self._cornerRadius, (0,255,0), 2)
+            if c.distanceToPoint(0, 0) < topLeftDist:
+                topLeft = c
+                topLeftDist = c.distanceToPoint(0, 0)
+            if c.distanceToPoint(width, height) < bottomRightDist:
+                bottomRight = c
+                bottomRightDist = c.distanceToPoint(width, height)
+
+        # draw corners and selected rectangle, crop output image
+        cv.circle(self._frameImg, (topLeft.x, topLeft.y), self._cornerRadius, (0,255,0), 2)
+        cv.circle(self._frameImg, (bottomRight.x, bottomRight.y), self._cornerRadius, (0,255,0), 2)
+        x0, y0 = topLeft.x, topLeft.y
+        x1, y1 = bottomRight.x, bottomRight.y
+        cv.rectangle(self._frameImg, (x0, y0), (x1, y1), (255,0,0), 9)
+        self._outputImg=inputImg[y0:y1, x0:x1]
 
     def writeOutput(self):
-        prefix = f'{self._outputDir}/{self._name}'
-        cv.imwrite(f'{prefix}_0_gray.jpg', self._grayImg*255)
-        cv.imwrite(f'{prefix}_1_threshold.jpg', self._thresholdImg*255)
-        cv.imwrite(f'{prefix}_2_frames.jpg', self._frameImg)
-        cv.imwrite(f'{prefix}_3_output.jpg', self._outputImg)
-
-    def updateRect(self,x0,y0,x1,y1,drawRect=False):
-        # positives = blackPixels
-        blackCount, _ = np.bincount(self._thresholdImg[y0:y1,x0:x1].flatten(), minlength=2)
-        self._log.debug("x0={}, y0={}, x1={}, y1={}".format(x0, y0, x1, y1))
-        self._log.debug(blackCount)
-        self._log.debug(self._thresholdImg[y0:y1,x0:x1].flatten())
-        if blackCount == 0:
-            self._log.debug("score=0")
-            return 0
-        precision=blackCount / ((x1-x0)*(y1-y0))
-        recall=blackCount / self._blackCountTotal
-        betaSquared = self.precisionWeight * self.precisionWeight
-        score=(1+betaSquared)*(precision*recall)/(betaSquared*precision + recall)
-        #score=2*(precision*recall)/(precision + recall)
-        self._log.debug("precision={}, recall={}, score={}".format(precision, recall, score))
-        if drawRect:
-            cv.rectangle(self._frameImg,(x0,y0),(x1,y1),(0,255,255),5)
-
-        if score>self._maxScore:
-            self._log.info("new maxScore={}".format(score))
-            self._log.info("bestRect (x0, y0), (x1, y1) = ({}, {}), ({}, {})",
-                    x0, y0, x1, y1)
-            self._maxScore = score
-            self._x0,self._y0,self._x1,self._y1 = x0,y0,x1,y1
-
-class FindMarginsByContour(FindMargins):
-    localOptimizationRange = 15
-
-    def process(self, inputImg):
-        super().process(inputImg)
-        kernel = cv.getStructuringElement(cv.MORPH_RECT, (15,15))
-        self._closingImg = cv.morphologyEx(self._thresholdImg, cv.MORPH_CLOSE, kernel)
-        self._blackCountTotal, _ = np.bincount(self._closingImg.flatten(), minlength=2)
-        contours, _ = cv.findContours(self._closingImg, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-
-        # first pass - find the best contour
-        self._maxScore = 0
-        for cnt in contours:
-            x,y,w,h=cv.boundingRect(cnt)
-            self.updateRect(x, y, x+w, y+h, True)
-        cv.rectangle(self._frameImg,(self._x0,self._y0),(self._x1,self._y1),(0,0,255),9)
-
-        # second pass - try to find an optimum locally
-        # optimizing one variable at a time for performance reasons
-        optimizationRange = [x for x in range(-self.localOptimizationRange, self.localOptimizationRange) if x != 0]
-        for dx in optimizationRange:
-            self.updateRect(self._x0+dx,self._y0,self._x1,self._y1, True)
-        for dy in optimizationRange:
-            self.updateRect(self._x0,self._y0+dy,self._x1,self._y1, True)
-        for dx in optimizationRange:
-            self.updateRect(self._x0,self._y0,self._x1+dx,self._y1, True)
-        for dy in optimizationRange:
-            self.updateRect(self._x0,self._y0,self._x1,self._y1+dy, True)
-        cv.rectangle(self._frameImg,(self._x0,self._y0),(self._x1,self._y1),(255,0,0),9)
-
-        self._outputImg=inputImg[self._y0:self._y1,self._x0:self._x1]
-
-    def writeOutput(self):
-        super().writeOutput()
-        cv.imwrite(f'{self._outputDir}/{self._name}_1a_closing.jpg', self._closingImg*255)
+        cv.imwrite(f'{self.prefix}_0_gray.jpg', self._grayImg)
+        cv.imwrite(f'{self.prefix}_01_canny.jpg', self._cannyImg)
+        cv.imwrite(f'{self.prefix}_02_closed.jpg', self._closedImg)
+        cv.imwrite(f'{self.prefix}_03_closing.jpg', self._closingImg)
+        cv.imwrite(f'{self.prefix}_1_threshold.jpg', self._thresholdImg*255)
+        cv.imwrite(f'{self.prefix}_2_linesImg.jpg', self._linesImg)
+        cv.imwrite(f'{self.prefix}_3_frames.jpg', self._frameImg)
+        cv.imwrite(f'{self.prefix}_4_output.jpg', self._outputImg)
 
 class FitToSheet(ProcessingStep):
     (frameP0, frameP1) = ProductSheet.getPageFramePts()
@@ -369,20 +452,23 @@ class FitToSheet(ProcessingStep):
         self._outputImg = cv.copyMakeBorder(self._resizedImg,yMargin,yMargin,xMargin,xMargin,cv.BORDER_CONSTANT,value=(255,255,255))
 
     def writeOutput(self):
-        prefix = f'{self._outputDir}/{self._name}'
-        cv.imwrite(f'{prefix}_0_resizedImg.jpg', self._resizedImg)
-        cv.imwrite(f'{prefix}_1_output.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_0_resizedImg.jpg', self._resizedImg)
+        cv.imwrite(f'{self.prefix}_1_output.jpg', self._outputImg)
 
 class RecognizeText(ProcessingStep):
     threshold = 127
     confidenceThreshold = 0.5
     def __init__(self,
             name,
-            outputDir):
-        super().__init__(name, outputDir)
+            outputDir,
+            db,
+            sheetName,
+            log = helpers.Log()
+            ):
+        super().__init__(name, outputDir, log)
+        self.__db = db
         self.__sheet = ProductSheet()
-        self.__db = Database('data/next/0_input/')
-
+        self.__sheet.name = sheetName
 
     def productId(self):
         return self.__sheet.productId()
@@ -395,7 +481,7 @@ class RecognizeText(ProcessingStep):
         self._inputImg = inputImg
         self._grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255,
-                cv.THRESH_BINARY)
+                cv.THRESH_BINARY_INV)
 
         names, units, prices = zip(*[
             (p.description.upper(),
@@ -416,8 +502,6 @@ class RecognizeText(ProcessingStep):
             elif box.name == "pageNumberBox":
                 box.text, box.confidence = self.recognizeBoxText(box, map(str,
                     range(0,100)))
-                if box.text == '':
-                    box.text = '0'
             elif box.name.find("dataBox") != -1:
                 box.text, box.confidence = self.recognizeBoxText(box, memberIds)
             else:
@@ -435,21 +519,27 @@ class RecognizeText(ProcessingStep):
         (x0,y0),(x1,y1)=box.pt1,box.pt2
         m=20
         thresholdImg = self._thresholdImg[y0+m:y1-m,x0+m:x1-m]
-        if np.max(thresholdImg) - np.min(thresholdImg) < 10:
+        # assume empty box if not enough components are recognized
+        numComponents, labeledImg = cv.connectedComponents(thresholdImg)
+        labeledImg = labeledImg / numComponents * 255
+        cv.imwrite(f'{self.prefix}_0_{box.name}_1_thresholdImg.jpg', thresholdImg)
+        cv.imwrite(f'{self.prefix}_0_{box.name}_2_labeledImg.jpg', labeledImg)
+        self._log.debug(f'{box.name} has numComponents={numComponents}')
+        if numComponents < 3:
+            box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
         kernel = cv.getStructuringElement(cv.MORPH_RECT, (2,2))
         inputImg = cv.erode(self._inputImg[y0+m:y1-m,x0+m:x1-m], kernel, 1)
-        p = RotateLabel("{}_{}_rotation".format(self._name, box.name), log=self._log)
+        p = RotateLabel(f'_0_{box.name}_3_rotation', self.prefix, log=self._log)
         p.process(inputImg)
         p.writeOutput()
         img = p._outputImg
 
-        filename = "{}/label_{}.jpg".format(self._outputDir, box.name)
+        filename = f'{self.prefix}_0_{box.name}_4_ocrImage.jpg'
         cv.imwrite(filename, img)
         ocrText = pytesseract.image_to_string(PIL.Image.open(filename),
                 config="--psm 7")
-        #os.remove(filename)
 
         confidence, text = self.findClosestString(ocrText.upper(), candidateTexts)
         self._log.info("(ocrText, confidence, text) = ({}, {}, {})", ocrText, confidence, text)
@@ -471,20 +561,32 @@ class RecognizeText(ProcessingStep):
         self.__sheet.store(outputDir)
 
     def writeOutput(self):
-        prefix = f'{self._outputDir}/{self._name}'
-        cv.imwrite('{prefix}_0_grayImg.jpg', self._grayImg)
-        cv.imwrite('{prefix}_1_output.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_1_grayImg.jpg', self._grayImg)
+        cv.imwrite(f'{self.prefix}_2_thresholdImg.jpg', self._thresholdImg)
+        cv.imwrite(f'{self.prefix}_3_output.jpg', self._outputImg)
 
-def processFile(inputFile, outputDir, tmpDir):
+def processFile(database, inputFile, outputDir, tmpDir):
     print('Processing file: ', inputFile)
+    split = SplitSheets("0_splitSheets", tmpDir)
+    split.process(cv.imread(inputFile))
+    split.writeOutput()
+    for idx, sheetImg in enumerate(split._outputSheetImgs):
+        sheetName = f'{inputFile}_sheet{idx}'
+        sheetDir = f'{tmpDir}sheet_{idx}'
+        helpers.recreateDir(sheetDir)
+        processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')
+
+def processSheet(database, sheetImg, sheetName, outputDir, tmpDir):
+    print('Processing sheet: ', sheetName)
     processors=[]
-    processors.append(RotateSheet("0_rotateSheet", tmpDir))
-    processors.append(FindMarginsByContour("1_findMargins", tmpDir))
-    fit = FitToSheet("2_fitToSheet", tmpDir)
+    processors.append(RotateSheet("1_rotateSheet", tmpDir))
+    processors.append(FindMarginsByLines("2_findMarginsByLines", tmpDir))
+    fit = FitToSheet("3_fitToSheet", tmpDir)
     processors.append(fit)
-    recognizer = RecognizeText("3_recognizeText", tmpDir)
+    recognizer = RecognizeText("4_recognizeText", tmpDir, database, sheetName)
     processors.append(recognizer)
-    img = cv.imread(inputFile)
+
+    img = sheetImg
     for p in processors:
         p.process(img)
         p.writeOutput()
@@ -497,10 +599,11 @@ def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
     helpers.recreateDir(outputDir)
     helpers.recreateDir(tmpDir)
+    db = Database(f'{accountingDir}0_input/')
     for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         for f in fileNames:
             helpers.recreateDir(tmpDir+f)
-            processFile(parentDir + f, outputDir, tmpDir + f + '/')
+            processFile(db, parentDir + f, outputDir, tmpDir + f + '/')
         break
 
 if __name__== "__main__":
