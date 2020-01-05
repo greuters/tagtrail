@@ -114,6 +114,12 @@ class LineBasedStep(ProcessingStep):
         self.drawLinePtAndVec((a*rho, b*rho), (-b, a))
 
 class SplitSheets(ProcessingStep):
+    # TODO: improve like that:
+    # 1. cover background with black paper / color
+    # 2. for each sheet, crop whole area, using relative coordinates to cope with
+    # any resolution (as long as aspect ratio remains
+    # 3. dilate generously, erode even a bit more, to get rid of text / lines
+    # 4. take rotated min bounding box of biggest component as the sheet img
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
@@ -124,8 +130,7 @@ class SplitSheets(ProcessingStep):
                  sheet3 = (1700, 2270, 2800, 3820), # x0, y0, x1, y1
                  backgroundColorMin = (0, 00, 0), # hsv
                  backgroundColorMax = (180, 255, 150), # hsv
-                 backgroundThreshold = 0.6
-                 ):
+                 backgroundThreshold = 0.6):
         super().__init__(name, outputDir, log)
         self._sheets = [sheet0, sheet1, sheet2, sheet3]
         self._backgroundColorMin = backgroundColorMin
@@ -138,22 +143,27 @@ class SplitSheets(ProcessingStep):
         self._inputImg = inputImg
         self._outputImg = np.copy(inputImg)
 
+        self._backgroundMasks = []
         self._outputSheetImgs = []
         for x0, y0, x1, y1 in self._sheets:
             sheetImg = np.copy(self._inputImg[y0:y1, x0:x1, :])
             hsv = cv.cvtColor(sheetImg, cv.COLOR_BGR2HSV)
             backgroundMask = cv.inRange(hsv, np.array(self._backgroundColorMin),
                     np.array(self._backgroundColorMax))
-            numBackgroundPixels = backgroundMask.sum().sum()
+            self._backgroundMasks.append(backgroundMask)
+            numBackgroundPixels = backgroundMask.sum().sum() / 255
             numPixelsTotal = (x1-x0) * (y1-y0)
-            if self._backgroundThreshold < numBackgroundPixels / numPixelsTotal:
+            self._log.debug(f'backgroundPercentage = {numBackgroundPixels / numPixelsTotal}')
+            if numBackgroundPixels / numPixelsTotal < self._backgroundThreshold:
                 self._outputSheetImgs.append(sheetImg)
                 self._outputImg[y0:y1, x0:x1, :] = 0
 
     def writeOutput(self):
         cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
+        for idx, backgroundMask in enumerate(self._backgroundMasks):
+            cv.imwrite(f'{self.prefix}_0_{idx}_backgroundMask.jpg', backgroundMask)
         for idx, sheetImg in enumerate(self._outputSheetImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_sheetImg.jpg', sheetImg)
+            cv.imwrite(f'{self.prefix}_1_{idx}_sheetImg.jpg', sheetImg)
         cv.imwrite(f'{self.prefix}_{len(self._outputSheetImgs)}_outputImg.jpg', self._outputImg)
 
 class RotateSheet(LineBasedStep):
@@ -175,7 +185,7 @@ class RotateSheet(LineBasedStep):
 
     def process(self, inputImg):
         super().process(inputImg)
-        # 1. find all lines in the image, using some filters to improve results
+
         self._inputImg = inputImg
         self._grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
         self._cannyImg = cv.Canny(self._grayImg,50,150,apertureSize = 3)
@@ -184,12 +194,32 @@ class RotateSheet(LineBasedStep):
         self._closedImg = cv.morphologyEx(self._cannyImg, cv.MORPH_CLOSE, kernel)
         self._dilatedImg = cv.dilate(self._closedImg, kernel, 1)
         self._linesImg = np.copy(inputImg)
+
         lines = cv.HoughLinesP(self._dilatedImg, 1, self._rotPrecision, 1,
                 minLineLength=self._minLineLength, maxLineGap=self._maxLineGap)
 
-        # 2. for each line, vote for the smallest correction angle that would
-        #    make it align to the vertical or horizontal axis (discretized to a
-        #    certain number of buckets)
+        if lines is None:
+            rotationAngle = 0
+        else:
+            rotationAngle = self.computeRotationAngle(lines)
+
+        fillColor = self.determineBackgroundFillColor()
+
+        # align inputImg
+        rows,cols,_ = inputImg.shape
+        rotMatrix = cv.getRotationMatrix2D((cols/2, rows/2), rotationAngle, 1)
+        self._outputImg = cv.warpAffine(inputImg, rotMatrix, (cols, rows),
+                borderMode=cv.BORDER_REPLICATE)
+
+    def computeRotationAngle(self, lines):
+        """
+        Compute a rotation angle which aligns the given lines to the x/y-axis
+        as good as possible.
+        """
+
+        # for each line, vote for the smallest correction angle that would
+        # make it align to the vertical or horizontal axis (discretized to a
+        # certain number of buckets)
         numBuckets = int(2*np.pi/self._rotPrecision)
         buckets = np.zeros(numBuckets)
         for line in lines:
@@ -201,13 +231,13 @@ class RotateSheet(LineBasedStep):
             cv.putText(self._linesImg, "{}".format(alpha*180/np.pi), (x1, y1),
                     cv.FONT_HERSHEY_SIMPLEX, 3, 5, cv.LINE_AA)
 
-        # 3. discard votes for buckets that didn't get enough votes
+        # discard votes for buckets that didn't get enough votes
         buckets = [numVotes if numVotes>self._voteThreshold else 0 for numVotes in buckets]
         self._log.debug(["numVotes={}, angle={}".format(v, idx*self._rotPrecision*180/np.pi)
             for idx, v in enumerate(buckets) if v>0])
 
-        # 4. compute the weighted average of all correction angles still in the game
-        #    Caution! these are angles, so we average them on the unit circle
+        # compute the weighted average of all correction angles still in the game
+        # Caution! these are angles, so we average them on the unit circle
         angles = [idx*self._rotPrecision for idx, _ in enumerate(buckets)]
         if sum(buckets)==0:
             self._log.warn("""not enough votes for any correction angle found,
@@ -225,9 +255,11 @@ class RotateSheet(LineBasedStep):
             self._log.debug(["angle={}, weight={}".format(a, w) for a, w in zip(angles, weights) if w > 0.0])
         correctionAngleDeg = angle * 180 / np.pi
         self._log.debug("correctionAngleDeg={}".format(correctionAngleDeg))
+        return correctionAngleDeg
 
-        # determine background fill color - average color of all pixels that
-        # are bright enough to be considered background
+    def determineBackgroundFillColor(self):
+        # determine average color of all pixels that are bright enough to be
+        # considered background
         hsv = cv.cvtColor(self._inputImg, cv.COLOR_BGR2HSV)
         mask = cv.inRange(hsv, np.array((0, 0, 100)),
                 np.array(np.array((180, 255, 255))))
@@ -235,15 +267,9 @@ class RotateSheet(LineBasedStep):
         bValues = self._fillColorPixels[:,:,0]
         gValues = self._fillColorPixels[:,:,1]
         rValues = self._fillColorPixels[:,:,2]
-        fillColor = (bValues.sum() / (bValues != 0).sum(),
+        return (bValues.sum() / (bValues != 0).sum(),
                 gValues.sum() / (gValues != 0).sum(),
                 rValues.sum() / (rValues != 0).sum())
-
-        # 6. align inputImg
-        rows,cols,_ = inputImg.shape
-        rotMatrix = cv.getRotationMatrix2D((cols/2, rows/2), correctionAngleDeg, 1)
-        self._outputImg = cv.warpAffine(inputImg, rotMatrix, (cols, rows), borderMode=cv.BORDER_CONSTANT,
-                borderValue=fillColor)
 
     def writeOutput(self):
         cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
@@ -286,8 +312,8 @@ class RotateLabel(LineBasedStep):
         self._log.debug('components (label, size) = {}', list(components))
 
         # assume the 2nd biggest component to be the actual text
-        self._selectedImg = np.where(self._labeledImg ==
-                components[1][0], 255.0, 0.0)
+        textLabel = components[1][0] if numComponents > 1 else components[0][0]
+        self._selectedImg = np.where(self._labeledImg == textLabel , 255.0, 0.0)
 
         # prepare labeled components for graphical output
         if numComponents > 1:
@@ -456,19 +482,22 @@ class FitToSheet(ProcessingStep):
         cv.imwrite(f'{self.prefix}_1_output.jpg', self._outputImg)
 
 class RecognizeText(ProcessingStep):
-    threshold = 127
     confidenceThreshold = 0.5
+    nextFallbackPageNumber = 0
+
     def __init__(self,
             name,
             outputDir,
             db,
-            sheetName,
+            fallbackSheetName,
             log = helpers.Log()
             ):
         super().__init__(name, outputDir, log)
         self.__db = db
         self.__sheet = ProductSheet()
-        self.__sheet.name = sheetName
+        self.__fallbackSheetName = fallbackSheetName
+        self.__fallbackPageNumber = self.nextFallbackPageNumber
+        RecognizeText.nextFallbackPageNumber += 1
 
     def productId(self):
         return self.__sheet.productId()
@@ -480,7 +509,9 @@ class RecognizeText(ProcessingStep):
         super().process(inputImg)
         self._inputImg = inputImg
         self._grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
-        _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255,
+        threshold = np.average(self._grayImg) * 0.8
+        print(f'average = {np.average(self._grayImg)}')
+        _, self._thresholdImg = cv.threshold(self._grayImg, threshold, 255,
                 cv.THRESH_BINARY_INV)
 
         names, units, prices = zip(*[
@@ -494,14 +525,26 @@ class RecognizeText(ProcessingStep):
         self._recognizedBoxTexts = {}
         for box in self.__sheet.boxes():
             if box.name == "nameBox":
-                box.text, box.confidence = self.recognizeBoxText(box, names)
+                name, confidence = self.recognizeBoxText(box, names)
+                if name == '' or confidence == 0:
+                    box.text, box.confidence = self.__fallbackSheetName, 0
+                else:
+                    box.text, box.confidence = name, confidence
             elif box.name == "unitBox":
                 box.text, box.confidence = self.recognizeBoxText(box, units)
+                if box.text == '':
+                    box.confidence = 0
             elif box.name == "priceBox":
                 box.text, box.confidence = self.recognizeBoxText(box, prices)
+                if box.text == '':
+                    box.confidence = 0
             elif box.name == "pageNumberBox":
-                box.text, box.confidence = self.recognizeBoxText(box, map(str,
+                pageNumber, confidence = self.recognizeBoxText(box, map(str,
                     range(0,100)))
+                if pageNumber == '' or confidence == 0:
+                    box.text, box.confidence = str(self.__fallbackPageNumber), 0
+                else:
+                    box.text, box.confidence = pageNumber, confidence
             elif box.name.find("dataBox") != -1:
                 box.text, box.confidence = self.recognizeBoxText(box, memberIds)
             else:
@@ -525,7 +568,7 @@ class RecognizeText(ProcessingStep):
         cv.imwrite(f'{self.prefix}_0_{box.name}_1_thresholdImg.jpg', thresholdImg)
         cv.imwrite(f'{self.prefix}_0_{box.name}_2_labeledImg.jpg', labeledImg)
         self._log.debug(f'{box.name} has numComponents={numComponents}')
-        if numComponents < 3:
+        if numComponents < 4:
             box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
@@ -571,7 +614,8 @@ def processFile(database, inputFile, outputDir, tmpDir):
     split.process(cv.imread(inputFile))
     split.writeOutput()
     for idx, sheetImg in enumerate(split._outputSheetImgs):
-        sheetName = f'{inputFile}_sheet{idx}'
+        sheetName = f'{os.path.split(inputFile)[1]}_sheet{idx}'
+        print(f'sheetName = {sheetName}')
         sheetDir = f'{tmpDir}sheet_{idx}'
         helpers.recreateDir(sheetDir)
         processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')

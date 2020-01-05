@@ -66,6 +66,7 @@ class Database(ABC):
         def addDbObjectToList(dbObject, dbObjects):
             dbObjects.append(dbObject)
 
+        cls.log.debug(f'reading csv file {path}')
         with open(path, newline=containerClass.newline, encoding=containerClass.encoding) as csvfile:
             reader = csv.reader(csvfile, delimiter=containerClass.csvDelimiter,
                     quotechar=containerClass.quotechar)
@@ -520,8 +521,9 @@ class BillPosition(DatabaseObject):
 
 class Bill(DatabaseDict):
     # TODO load from config
-    textRepresentationHeader = 'Produkt: #Kleberli x Einheitspreis [CHF] = Total [CHF], Klimapreis [gCO2e]'
-    textRepresentationFooter = 'Total: {} CHF, {} gCO2e'
+    # TODO add climate price when ready
+    textRepresentationHeader = 'Produkt: #Kleberli x Einheitspreis [CHF] = Total [CHF]' #, Klimapreis [gCO2e]'
+    textRepresentationFooter = 'Total: {} CHF' #, {} gCO2e'
 
     def __init__(self,
             memberId,
@@ -582,7 +584,7 @@ class Bill(DatabaseDict):
         return self.__correctionJustification
 
     def setCorrection(self, transaction, justification):
-        if (transaction == 0) != (justification is ''):
+        if (transaction != 0) and (justification is ''):
             raise ValueError('if a correction transaction is made, ' + \
                     'a justification has to be given. ' + \
                     f'transaction={transaction}, justification={justification}')
@@ -651,15 +653,16 @@ class Bill(DatabaseDict):
     def __str__(self):
         text = self.textRepresentationHeader + '\n'
         for p in self.values():
-            text += '{}: {} x {} = {}, {}\n'.format(
+            text += '{}: {} x {} = {}\n'.format(
                     p.description,
                     p.numTags,
                     helpers.formatPrice(p.unitGrossSalesPrice),
                     helpers.formatPrice(p.totalGrossSalesPrice()),
-                    p.gCo2e)
+                    #p.gCo2e
+                    )
         text += '\n' + self.textRepresentationFooter.format(
-                helpers.formatPrice(self.totalGrossSalesPrice()),
-                self.totalGCo2e())
+                helpers.formatPrice(self.totalGrossSalesPrice()))
+                #self.totalGCo2e())
         return text
 
 class MemberAccount(DatabaseObject):
@@ -763,9 +766,9 @@ class CorrectionTransactionDict(DatabaseDict):
     As simple as possible, to allow the user to store correction transactions.
     """
     def __init__(self,
-            *args
+            **kwargs
             ):
-        super().__init__(args)
+        super().__init__(kwargs)
 
     @classmethod
     def prefixRows(cls):
@@ -774,6 +777,10 @@ class CorrectionTransactionDict(DatabaseDict):
     @classmethod
     def columnHeaders(cls):
         return ['memberId', 'Amount', 'Justification']
+
+    @classmethod
+    def containedDatabaseObjectCls(cls):
+        return CorrectionTransaction
 
     @classmethod
     def databaseObjectFromCsvRow(cls, rowValues):
@@ -788,7 +795,6 @@ class CorrectionTransactionDict(DatabaseDict):
     def csvRows(self):
         return [[t.id, helpers.formatPrice(t.amount), t.justification]
                 for t in self]
-
 
 class PostfinanceTransaction:
     messagePrefix = 'MITTEILUNGEN:'
@@ -859,7 +865,7 @@ class PostfinanceTransactionList(DatabaseList):
 
     # TODO move to config
     expectedCurrency = 'CHF'
-    expectedAccount = 'CH12345600231'
+    expectedAccount = 'CH3609000000890399940'
 
     dateFormat = '%Y-%m-%d'
     filenameDateFormat = '%Y%m%d'
@@ -907,7 +913,10 @@ class PostfinanceTransactionList(DatabaseList):
         if rowValues in [
                 [],
                 ['Disclaimer:'],
-                ['This is not a document created by PostFinance Ltd. PostFinance Ltd is not responsible for the content.']
+                ['Disclaimer:', '', '', '', '', ''],
+                ['This is not a document created by PostFinance Ltd. PostFinance Ltd is not responsible for the content.'],
+                ['This is not a document created by PostFinance Ltd. PostFinance Ltd is not responsible for the content.',
+                    '', '', '', '', '']
                 ]:
             return None
         return PostfinanceTransaction(

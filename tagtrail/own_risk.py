@@ -112,5 +112,5 @@ if __name__ == '__main__':
     appropriate diff tool and to keep a regular backup.
     """)
     if input('Proceed (y/n)?:') == 'y':
-        gnucashFilePath = 'data/Tagtrail_Accounting.gnucash'
+        gnucashFilePath = 'data/gnucash/Tagtrail_Accounting.gnucash'
         completeMappings(gnucashFilePath)

@@ -37,7 +37,7 @@ class MailSender(ABC):
     mailHost = 'mail.cyon.ch'
     smtpPort = 465
     imapPort = 993
-    invoiceIban = 'CH 123 123 123'
+    invoiceIban = 'CH3609000000890399940'
     liquidityThreshold = 100
 
 
@@ -62,6 +62,8 @@ class MailSender(ABC):
                 self.templatePath+'invoice_above_threshold.txt')
         self.invoiceBelowThresholdTemplate = self.readTemplate(
                 self.templatePath+'invoice_below_threshold.txt')
+        self.correctionTextTemplate = self.readTemplate(
+                self.templatePath+'correction.txt')
 
         self.accountantName = accountantName
         if mailPassword:
@@ -90,6 +92,10 @@ class MailSender(ABC):
             invoiceTextTemplate = self.invoiceAboveThresholdTemplate \
                     if self.liquidityThreshold < bill.currentBalance() else \
                     self.invoiceBelowThresholdTemplate
+            correctionText = '' if bill.correctionTransaction == 0 else \
+                    self.correctionTextTemplate.substitute(
+                    CORRECTION_TRANSACTION=helpers.formatPrice(bill.correctionTransaction, 'CHF'),
+                    CORRECTION_JUSTIFICATION=bill.correctionJustification)
 
             for email in self.db.members[bill.memberId].emails:
                 if not self.testRecipient is None:
@@ -106,7 +112,9 @@ class MailSender(ABC):
                                 INVOICE_IBAN=self.invoiceIban),
                             MEMBER_NAME=name,
                             BILL=str(bill),
+                            TOTAL_GROSS_SALES_PRICE=helpers.formatPrice(bill.totalGrossSalesPrice(), 'CHF'),
                             TOTAL_PAYMENTS=helpers.formatPrice(bill.totalPayments, 'CHF'),
+                            CORRECTION_TEXT=correctionText,
                             PREVIOUS_ACCOUNTING_DATE=bill.previousAccountingDate,
                             PREVIOUS_BALANCE=helpers.formatPrice(bill.previousBalance, 'CHF'),
                             CURRENT_ACCOUNTING_DATE=bill.currentAccountingDate,

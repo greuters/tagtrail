@@ -69,6 +69,7 @@ class AutocompleteEntry(ttk.Combobox):
         return self.__releaseFocus(event)
 
     def varTextChanged(self, name, index, mode):
+        self.__var.set(self.__var.get().upper())
         self.__log.debug('changed var = {}', self.text)
         self.confidence = 0
         if self.text == '':
@@ -156,7 +157,7 @@ class AutocompleteEntry(ttk.Combobox):
 
     @text.setter
     def text(self, text):
-        self.__var.set(text)
+        self.__var.set(text.upper())
 
     @property
     def confidence(self):

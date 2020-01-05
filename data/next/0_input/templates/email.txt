@@ -1,21 +1,19 @@
 LiebeR ${MEMBER_NAME}
 
-Du hast folgende Produkte bezogen:
-
-${BILL}
-
-Und Zahlungen über Total ${TOTAL_PAYMENTS} sind bei uns eingegangen.
+Du hast Produkte im Wert von ${TOTAL_GROSS_SALES_PRICE} bezogen und
+Zahlungen über Total ${TOTAL_PAYMENTS} sind bei uns eingegangen.
+${CORRECTION_TEXT}
 
 Dein Kontostand am ${PREVIOUS_ACCOUNTING_DATE} betrug ${PREVIOUS_BALANCE},
 dein neuer Kontostand am ${CURRENT_ACCOUNTING_DATE} beträgt damit ${CURRENT_BALANCE}.
 
 ${INVOICE_TEXT}
 
-Die Scans der Produktblätter, auf denen unsere Abrechnungen basieren findest du
-unter TODO: google docs directory
-
 Bei Fragen zu dieser Abrechnung oder Unstimmigkeiten, melde dich bitte direkt per Mail an
 ${REPLY_TO_ADDRESS}
 
 Liebe Grüße aus deinem Selbstbedienungsladen,
 ${ACCOUNTANT_NAME} für die Speichär-Betriebsgruppe
+
+Bezogene Produkte:
+${BILL}

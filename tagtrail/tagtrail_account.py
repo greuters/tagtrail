@@ -346,7 +346,7 @@ class EnrichedDatabase(database.Database):
                         self.paymentTransactions
                         if transaction.sourceAccount == member.id]),
                     self.correctionTransactions[member.id].amount if member.id in self.correctionTransactions else 0,
-                    self.correctionTransactions[member.id].description if member.id in self.correctionTransactions else '')
+                    self.correctionTransactions[member.id].justification if member.id in self.correctionTransactions else '')
             for productId in tagCollector.newTagsPerProduct.keys():
                 numTags = tagCollector.numNewTags(productId, [member.id])
                 if numTags != 0:
@@ -402,7 +402,7 @@ if __name__ == '__main__':
             )
     parser.add_argument('--renamedAccountingDir',
             dest='renamedAccountingDir',
-            default='data/accounting_{accountingDate}',
+            default='data/accounting_{accountingDate}/',
             help="New name to rename accountingDir to. {accountingDate} " + \
                  "will be replaced by the value of the 'accountingDate' argument.")
     parser.add_argument('--nextAccountingDir',

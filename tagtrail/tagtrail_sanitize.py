@@ -25,7 +25,7 @@ import os
 from PIL import ImageTk,Image
 from sheets import ProductSheet
 from database import Database
-from helpers import Log
+from helpers import Log, formatPrice
 import random
 import traceback
 import gui_components
@@ -43,14 +43,15 @@ class InputSheet(ProductSheet):
         self.validationBoxTexts = {}
         for box in self.boxes():
             if box.name == "nameBox":
-                choices = list(sorted([p.description
-                    for p in database.products.values()]))
+                choices = list(sorted(set([p.description
+                    for p in database.products.values()])))
             elif box.name == "unitBox":
-                choices = list(sorted([p.amountAndUnit
-                    for p in database.products.values()]))
+                choices = list(sorted(set([p.amountAndUnit
+                    for p in database.products.values()])))
             elif box.name == "priceBox":
-                choices = list(sorted([str(p.grossSalesPrice())
-                    for p in database.products.values()]))
+                choices = list(sorted(set([formatPrice(p.grossSalesPrice())
+                    for p in database.products.values()])))
+                print(f'choices={choices}')
             elif box.name == "pageNumberBox":
                 choices = [str(x) for x in range(1, 100)]
             elif box.name.find("dataBox") != -1:

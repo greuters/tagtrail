@@ -292,6 +292,16 @@ class Box(ABC):
         self.textRotation = textRotation
         self._log = helpers.Log()
 
+    @property
+    def text(self):
+        return self.__text
+
+    @text.setter
+    def text(self, text):
+        if not isinstance(text, str):
+            return ValueError(f'{text} is not a string')
+        self.__text = text
+
     def draw(self, img):
         cv.rectangle(img, self.pt1, self.pt2, self.bgColor, -1)
         (x1, y1) = self.pt1
@@ -302,10 +312,12 @@ class Box(ABC):
         cv.line(img, (x1, y2), (x2,y2), self.lineColor, self.lineW)
 
         if self.text != "":
+            self._log.debug(f"text={self.text}")
             textW, textH = self.font.getsize(self.text)
-            self._log.debug("textW={}, textH={}".format(textW, textH))
+            self._log.debug(f"textW={textW}, textH={textH}")
             textX = x1 + round(((x2-x1) - textW) / 2)
             textY = y1 + round(((y2-y1) - textH) / 2)
+            self._log.debug(f"textX={textX}, textY={textY}")
             img_rgb = cv.cvtColor(img[textY:textY+textH,textX:textX+textW], cv.COLOR_BGR2RGB)
             canvas = Image.fromarray(img_rgb)
             draw = ImageDraw.Draw(canvas)
