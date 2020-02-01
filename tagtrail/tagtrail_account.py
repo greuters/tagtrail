@@ -53,19 +53,39 @@ class TagCollector(ABC):
         self.accountingDate = accountingDate
         self.alreadyAccountedSheets = self.loadProductSheets(self.alreadyAccountedProductsPath)
         self.currentSheets = self.loadProductSheets(self.currentProductsToAccountPath)
+        self.checkPageConsistency()
+        self.informAboutPriceChanges()
         self.newTagsPerProduct = self.collectNewTagsPerProduct()
 
     def currentProductPagePaths(self):
         return [sheet.filePath for sheet in self.currentSheets.values()]
 
     def taggedGrossSalesPrice(self, productId):
+        return self.__sheetGrossSalesPrice(productId, self.currentSheets)
+
+    def __sheetGrossSalesPrice(self, productId, sheets):
         prices = [s.grossSalesPrice
-                  for (pId, _), s in self.currentSheets.items()
+                  for (pId, _), s in sheets.items()
                   if pId == productId]
-        if len(set(prices)) != 1:
-            raise AssertionError('should have exactly one price per ' + \
-                    f'product, but {productId} has {prices}')
-        return prices[0]
+        if prices:
+            if len(set(prices)) != 1:
+                raise AssertionError('should have exactly one price per ' +
+                        f'product, but {productId} has {prices}')
+            return prices[0]
+        else:
+            return None
+
+    def __sheetAmountAndUnit(self, productId, sheets):
+        amountAndUnits = [s.amountAndUnit
+                for (pId, _), s in sheets.items()
+                if pId == productId]
+        if amountAndUnits:
+            if len(set(amountAndUnits)) != 1:
+                raise ValueError(f'{productId} pages have different ' +
+                        f'amounts, {amountAndUnits}')
+            return amountAndUnits[0]
+        else:
+            return None
 
     def numNewTags(self, productId, memberIds):
         if productId in self.newTagsPerProduct:
@@ -143,33 +163,63 @@ class TagCollector(ABC):
             sheet = ProductSheet()
             sheet.load(path+filePath)
             sheet.filePath = filePath
+            if productId not in self.db.products:
+                raise ValueError(f'{productId} has a sheet, but is ' +
+                        'missing in database')
             if sheet.productId() != productId:
-                raise ValueError(f'{path+filePath} is invalid.\n' + \
+                raise ValueError(f'{path+filePath} is invalid.\n' +
                     '{sheet.productId()} != {productId}')
             if sheet.pageNumber != pageNumber:
-                raise ValueError(f'{path+filePath} is invalid.\n' + \
+                raise ValueError(f'{path+filePath} is invalid.\n' +
                     '{sheet.pageNumber()} != {pageNumber}')
             if sheet.unconfidentTags():
                 raise ValueError(
-                    f'{path+filePath} is not properly sanitized.\n' + \
+                    f'{path+filePath} is not properly sanitized.\n' +
                     'Run tagtrail_sanitize before tagtrail_account!')
             if (productId, pageNumber) in productSheets:
                 raise ValueError(
                     f'{(productId, pageNumber)} exists more than once')
             productSheets[(productId, pageNumber)] = sheet
-            prices = [s.grossSalesPrice
-                      for (pId, _), s in productSheets.items()
-                      if pId == productId]
-            if len(set(prices)) != 1:
-                raise ValueError(
-                    f'{productId} pages have different prices, {prices}')
-            amountAndUnits = [s.amountAndUnit
-                    for (pId, _), s in
-                    productSheets.items() if pId == productId]
-            if len(set(amountAndUnits)) != 1:
-                raise ValueError(
-                    f'{productId} pages have different amounts, {amountAndUnits}')
         return productSheets
+
+    def checkPageConsistency(self):
+        """
+        All pages of one product (current and already accounted ones) must have
+        the same amount and price. Check and abort if this is not the case.
+        """
+        for productId in self.db.products.keys():
+            alreadyAccountedPrice = self.__sheetGrossSalesPrice(productId,
+                    self.alreadyAccountedSheets)
+
+            currentPrice = self.__sheetGrossSalesPrice(productId,
+                    self.alreadyAccountedSheets)
+            if (alreadyAccountedPrice is not None
+                    and currentPrice is not None
+                    and alreadyAccountedPrice != currentPrice):
+                raise ValueError(f'{productId}: already accounted pages have '
+                        + 'another price then current ones'
+                        + f'({alreadyAccountedPrice} != {currentPrice})')
+
+            alreadyAccountedAmount = self.__sheetAmountAndUnit(
+                    productId,
+                    self.alreadyAccountedSheets)
+
+            currentAmount = self.__sheetAmountAndUnit(productId,
+                    self.alreadyAccountedSheets)
+            if (alreadyAccountedAmount is not None
+                    and currentAmount is not None
+                    and alreadyAccountedAmount != currentAmount):
+                raise ValueError(f'{productId}: already accounted pages have '
+                        + 'another amount then current ones'
+                        + f'({alreadyAccountedAmount} != {currentAmount})')
+
+    def informAboutPriceChanges(self):
+        for product in self.db.products.values():
+            if (self.taggedGrossSalesPrice(product.id) !=
+                    product.grossSalesPrice()):
+                self.log.info(f'price of {product.id} changed from '+
+                        f'{self.taggedGrossSalesPrice(product.id)} to ' +
+                        f'{product.grossSalesPrice()}')
 
 class Gui:
     def __init__(self, accountingDataPath, nextAccountingDataPath, accountingDate):
@@ -357,11 +407,13 @@ class EnrichedDatabase(database.Database):
             for productId in tagCollector.newTagsPerProduct.keys():
                 numTags = tagCollector.numNewTags(productId, [member.id])
                 if numTags != 0:
+                    taggedGrossSalesPrice = tagCollector.taggedGrossSalesPrice(productId)
+                    assert(taggedGrossSalesPrice is not None)
                     position = database.BillPosition(productId,
                             self.products[productId].description,
                             numTags,
                             self.products[productId].purchasePrice,
-                            tagCollector.taggedGrossSalesPrice(productId),
+                            taggedGrossSalesPrice,
                             0)
                     bill[position.id] = position
             bills[member.id] = bill
@@ -414,12 +466,10 @@ class EnrichedDatabase(database.Database):
                         break
 
                     billPos = bill[product.id]
-                    if billPos.unitGrossSalesPrice != product.grossSalesPrice():
-                        raise AssertionError('billPos price != product price')
-
-                    billPos.numInventoryDifferenceTags(min(billPos.numTags, quantityDifference))
-                    transactions.add(database.GnucashTransaction(
-                        f'{self.inventoryDifference} accounted on {self.accountingDate}',
+                    billPos.numInventoryDifferenceTags = min(billPos.numTags, quantityDifference)
+                    transactions.append(database.GnucashTransaction(
+                        (f'{product.id}: {self.inventoryDifference} ' +
+                            f'accounted on {self.accountingDate}'),
                         billPos.grossSalesPriceInventoryDifference(),
                         self.inventoryDifferenceAccount,
                         bill.memberId,
