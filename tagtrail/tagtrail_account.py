@@ -23,16 +23,13 @@ from sheets import ProductSheet
 import database
 import tkinter
 from tkinter import messagebox
+import itertools
 import traceback
 import datetime
 import os
 import shutil
 import csv
 import copy
-
-# TODO: handle tags for non-existing products (i.e. somebody "bought" something
-# that should not have been there any more) => should be accounted as negative
-# SCHWUND
 
 class TagCollector(ABC):
     """
@@ -61,13 +58,13 @@ class TagCollector(ABC):
     def currentProductPagePaths(self):
         return [sheet.filePath for sheet in self.currentSheets.values()]
 
-    def currentGrossSalesPrice(self, productId):
+    def taggedGrossSalesPrice(self, productId):
         prices = [s.grossSalesPrice
                   for (pId, _), s in self.currentSheets.items()
                   if pId == productId]
         if len(set(prices)) != 1:
             raise AssertionError('should have exactly one price per ' + \
-                    f'{productId}, but prices={prices}')
+                    f'product, but {productId} has {prices}')
         return prices[0]
 
     def numNewTags(self, productId, memberIds):
@@ -166,6 +163,12 @@ class TagCollector(ABC):
             if len(set(prices)) != 1:
                 raise ValueError(
                     f'{productId} pages have different prices, {prices}')
+            amountAndUnits = [s.amountAndUnit
+                    for (pId, _), s in
+                    productSheets.items() if pId == productId]
+            if len(set(amountAndUnits)) != 1:
+                raise ValueError(
+                    f'{productId} pages have different amounts, {amountAndUnits}')
         return productSheets
 
 class Gui:
@@ -231,10 +234,11 @@ class Gui:
     def writeGnuCashFiles(self):
         destPath = f'{self.accountingDataPath}/4_gnucash/'
         database.Database.writeCsv(f'{destPath}accounts.csv', self.db.accounts)
-        database.Database.writeCsv(f'{destPath}purchaseTransactions.csv',
-                self.db.purchaseTransactions)
-        database.Database.writeCsv(f'{destPath}paymentTransactions.csv',
-                self.db.paymentTransactions)
+        transactions = database.GnucashTransactionList(
+                *itertools.chain(self.db.purchaseTransactions,
+                self.db.inventoryDifferenceTransactions))
+        database.Database.writeCsv(f'{destPath}gnucashTransactions.csv',
+                transactions)
 
     def prepareNextAccounting(self):
         helpers.recreateDir(self.nextAccountingDataPath, self.log)
@@ -281,6 +285,8 @@ class EnrichedDatabase(database.Database):
     merchandiseValueAccount = 'Warenwert'
     margin = 'Marge'
     marginAccount = 'Marge'
+    inventoryDifference = 'Inventurdifferenz'
+    inventoryDifferenceAccount = 'Inventurdifferenz'
 
     def __init__(self, accountingDataPath, accountingDate):
         self.log = helpers.Log()
@@ -305,9 +311,10 @@ class EnrichedDatabase(database.Database):
         self.paymentTransactions = self.loadPaymentTransactions()
         self.bills = self.createBills(tagCollector)
         self.productPagePaths = tagCollector.currentProductPagePaths()
+        self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
+        self.purchaseTransactions = self.createPurchaseTransactions()
         self.accounts = database.MemberAccountDict(
                 {m.id: database.MemberAccount(m.id) for m in self.members.values()})
-        self.purchaseTransactions = self.createPurchaseTransactions()
 
     def loadPaymentTransactions(self):
         toDate = self.accountingDate-datetime.timedelta(days=1)
@@ -354,24 +361,87 @@ class EnrichedDatabase(database.Database):
                             self.products[productId].description,
                             numTags,
                             self.products[productId].purchasePrice,
-                            tagCollector.currentGrossSalesPrice(productId),
+                            tagCollector.taggedGrossSalesPrice(productId),
                             0)
                     bill[position.id] = position
             bills[member.id] = bill
         return bills
 
+    def createInventoryDifferenceTransactions(self):
+        transactions = database.GnucashTransactionList()
+        if not self.products.inventoryQuantityDate:
+            self.log.info(
+                'No inventoryQuantityDate given - not checking inventory')
+            self.log.debug([p for p in self.products.values() if p.inventoryQuantity != 0])
+            if [p for p in self.products.values() if p.inventoryQuantity != 0]:
+                raise AssertionException('Add an inventoryQuantityDate ' +
+                        'or omit inventory quantities alltogether')
+            return transactions
+
+        for product in self.products.values():
+            expectedQuantity = (product.previousQuantity
+                    - product.soldQuantity
+                    + product.addedQuantity)
+            if product.inventoryQuantity < expectedQuantity:
+                self.log.debug(f'{product.id}: expected = {expectedQuantity}, ' +
+                        f'inventory = {product.inventoryQuantity}')
+                quantityDifference = expectedQuantity - product.inventoryQuantity
+                purchasePriceDifference = quantityDifference * product.purchasePrice
+                grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
+                transactions.append(database.GnucashTransaction(
+                    f'{product.id}: {self.inventoryDifference} accounted on {self.accountingDate}',
+                    purchasePriceDifference,
+                    self.merchandiseValueAccount,
+                    self.inventoryDifferenceAccount,
+                    self.accountingDate
+                    ))
+                transactions.append(database.GnucashTransaction(
+                    f'{product.id}: {self.inventoryDifference} accounted on {self.accountingDate}',
+                    grossSalesPriceDifference - purchasePriceDifference,
+                    self.marginAccount,
+                    self.inventoryDifferenceAccount,
+                    self.accountingDate
+                    ))
+
+            elif product.inventoryQuantity > expectedQuantity:
+                self.log.debug(f'{product.id}: expected = {expectedQuantity}, ' +
+                        f'inventory = {product.inventoryQuantity}')
+                quantityDifference = product.inventoryQuantity - expectedQuantity
+                for bill in self.bills.values():
+                    if not product.id in bill:
+                        continue
+                    if quantityDifference == 0:
+                        break
+
+                    billPos = bill[product.id]
+                    if billPos.unitGrossSalesPrice != product.grossSalesPrice():
+                        raise AssertionError('billPos price != product price')
+
+                    billPos.numInventoryDifferenceTags(min(billPos.numTags, quantityDifference))
+                    transactions.add(database.GnucashTransaction(
+                        f'{self.inventoryDifference} accounted on {self.accountingDate}',
+                        billPos.grossSalesPriceInventoryDifference(),
+                        self.inventoryDifferenceAccount,
+                        bill.memberId,
+                        self.accountingDate
+                        ))
+                    quantityDifference -= billPos.numInventoryDifferenceTags
+                if quantityDifference != 0:
+                    raise AssertionError('quantityDifference != 0')
+        return transactions
+
     def createPurchaseTransactions(self):
         return database.GnucashTransactionList(
                 *([database.GnucashTransaction(
                     f'{self.merchandiseValue} accounted on {self.accountingDate}',
-                    bill.totalPurchasePrice(),
+                    bill.purchasePriceWithoutInventoryDifference(),
                     self.merchandiseValueAccount,
                     bill.memberId,
                     self.accountingDate) for bill in self.bills.values()]
                 +
                 [database.GnucashTransaction(
                     f'{self.margin} accounted on {self.accountingDate}',
-                    bill.totalGrossSalesPrice()-bill.totalPurchasePrice(),
+                    bill.grossSalesPriceWithoutInventoryDifference()-bill.purchasePriceWithoutInventoryDifference(),
                     self.marginAccount,
                     bill.memberId,
                     self.accountingDate) for bill in self.bills.values()])

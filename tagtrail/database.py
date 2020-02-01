@@ -32,6 +32,7 @@ import datetime
 import slugify
 import copy
 import re
+import itertools
 from collections import UserDict, UserList
 
 class Database(ABC):
@@ -87,16 +88,16 @@ class Database(ABC):
                 raise TypeError('containerClass must be a DatabaseDict or DatabaseList')
 
             for cnt, row in enumerate(reader):
+                cls.log.debug("row={}", row)
                 if cnt<len(prefixRows):
                     prefixValues.append(
                             helpers.readPrefixRow(prefixRows[cnt], row))
                 elif cnt==len(prefixRows):
-                    for expectedHeader, actualHeader in zip(columnHeaders, row):
+                    for expectedHeader, actualHeader in itertools.zip_longest(columnHeaders, row):
                         if expectedHeader != actualHeader:
                             raise ValueError(
                             f"expectedHeader '{expectedHeader}' != actualHeader '{actualHeader}'")
                 else:
-                    cls.log.debug("row={}", row)
                     vals = []
                     for val in row:
                         if containerClass.colInternalDelimiter is None or \
@@ -115,6 +116,7 @@ class Database(ABC):
     @classmethod
     def writeCsv(cls, path, containerClass):
         with open(path, "w+", newline=containerClass.newline, encoding=containerClass.encoding) as fout:
+            assert(len(containerClass.prefixRows()) == len(containerClass.prefixValues()))
             for prefix, val in zip(containerClass.prefixRows(),
                     containerClass.prefixValues()):
                 fout.write("{};{}\n".format(prefix, val))
@@ -288,7 +290,8 @@ class Product(DatabaseObject):
             origin = None,
             production = None,
             transport = None,
-            conservation = None
+            conservation = None,
+            gCo2e = None
             ):
         if not type(description) is str:
             raise TypeError(f'description is not a string, {description}')
@@ -343,6 +346,7 @@ class Product(DatabaseObject):
         self.production = production
         self.transport = transport
         self.conservation = conservation
+        self.gCo2e = gCo2e
 
     @property
     def amountAndUnit(self):
@@ -390,6 +394,7 @@ class Product(DatabaseObject):
         return helpers.roundPriceCH(self.purchasePrice * (1 + Product.marginPercentage))
 
 class ProductDict(DatabaseDict):
+    log = helpers.Log()
     def __init__(self,
             previousQuantityDate,
             expectedQuantityDate,
@@ -403,9 +408,9 @@ class ProductDict(DatabaseDict):
             raise TypeError(f'expectedQuantityDate is not a string: {expectedQuantityDate}')
         if not isinstance(inventoryQuantityDate, str):
             raise TypeError(f'inventoryQuantityDate is not a string: {inventoryQuantityDate}')
-        self.previousQuantityDate = previousQuantityDate
-        self.expectedQuantityDate = expectedQuantityDate
-        self.inventoryQuantityDate = inventoryQuantityDate
+        self.previousQuantityDate = None if previousQuantityDate == '' else helpers.DateUtility.strptime(previousQuantityDate)
+        self.expectedQuantityDate = None if expectedQuantityDate == '' else helpers.DateUtility.strptime(expectedQuantityDate)
+        self.inventoryQuantityDate = None if inventoryQuantityDate == '' else helpers.DateUtility.strptime(inventoryQuantityDate)
 
     @classmethod
     def prefixRows(cls):
@@ -418,7 +423,8 @@ class ProductDict(DatabaseDict):
         'Eaternity Name', 'Origin [country]',
         f"Production [{', '.join(Product.validProductionIds)}]",
         f"Transport [{', '.join(Product.validTransportIds)}]",
-        f"Conservation [{', '.join(Product.validConservationIds)}]"]
+        f"Conservation [{', '.join(Product.validConservationIds)}]",
+        ]#'gCo2e',]
 
     @classmethod
     def containedDatabaseObjectCls(cls):
@@ -433,13 +439,14 @@ class ProductDict(DatabaseDict):
                 previousQuantity = int(rowValues[4]),
                 addedQuantity = 0 if not rowValues[5] else int(rowValues[5]),
                 soldQuantity  = 0 if not rowValues[6] else int(rowValues[6]),
-                inventoryQuantity = 0 if not rowValues[7] else int(rowValues[7]),
                 # not reading expectedQuantity
+                inventoryQuantity = 0 if not rowValues[8] else int(rowValues[8]),
                 eaternityName = rowValues[9],
                 origin = rowValues[10],
                 production = rowValues[11],
                 transport = rowValues[12],
-                conservation = rowValues[13])
+                conservation = rowValues[13],
+                )#gCo2e = None if not rowValues[14] else int(rowValues[14]))
 
     def prefixValues(self):
         return ['' if self.previousQuantityDate is None else str(self.previousQuantityDate),
@@ -447,14 +454,22 @@ class ProductDict(DatabaseDict):
                 '' if self.inventoryQuantityDate is None else str(self.inventoryQuantityDate)]
 
     def csvRows(self):
-        return [[p.description, str(p.amount), p.unit, str(p.purchasePrice),
+        return [[p.description,
+                str(p.amount),
+                p.unit,
+                str(p.purchasePrice),
                 '' if p.previousQuantity is None else str(p.previousQuantity),
                 '' if p.addedQuantity is None else str(p.addedQuantity),
                 '' if p.soldQuantity is None else str(p.soldQuantity),
                 '' if p.expectedQuantity is None else str(p.expectedQuantity),
                 '' if p.inventoryQuantity is None else str(p.inventoryQuantity),
-                p.eaternityName, p.origin, ','.join(p.production), p.transport,
-                ','.join(p.conservation)]
+                p.eaternityName,
+                p.origin,
+                ','.join(p.production),
+                p.transport,
+                ','.join(p.conservation),
+                ]
+                #p.gCo2e,]
                 for p in self.values()]
 
     def copyForNextAccounting(self, accountingDate):
@@ -462,7 +477,7 @@ class ProductDict(DatabaseDict):
         Copy all products and initialize their quantities for the next accounting.
 
         The copy will be ready to export as an initial template for the next
-        accounting. All but the previousQuantity will be reset, and the
+        accounting. All quantities but the previousQuantity will be reset, and the
         previousQuantity is either initialized from self.inventoryQuantity (if
         inventory happened on accountingDate) or from self.expectedQuantity.
         """
@@ -473,7 +488,7 @@ class ProductDict(DatabaseDict):
         if self.inventoryQuantityDate and self.inventoryQuantityDate != accountingDate:
             # TODO might need a user / GUI warning
             self.log.warn(f'Not taking inventory of ' + \
-                    f'{self.inventoryQuantityDate} into account, ' + \
+                    f'({self.inventoryQuantityDate}) into account, ' + \
                     'inventory has to be done on same date as ' + \
                     f'accounting ({accountingDate})!')
         quantitySelector = None
@@ -509,12 +524,50 @@ class BillPosition(DatabaseObject):
         super().__init__(productId)
         self.description = description
         self.numTags = numTags
+        self.__numInventoryDifferenceTags = 0
         self.unitPurchasePrice = unitPurchasePrice
         self.unitGrossSalesPrice = unitGrossSalesPrice
         self.gCo2e = gCo2e
 
-    def totalPurchasePrice(self):
-        return self.numTags * self.unitPurchasePrice
+    @property
+    def numInventoryDifferenceTags(self):
+        """
+        There are two possible reasons for inventory difference:
+            1. someone took a product without tagging it
+            2. someone tagged a product that should not have been there any
+            more
+
+        Example: accidentally tagging 'Dark Chocolate' which is already sold
+        out, while actually taking 'Brown Chocolate', leads to case one on
+        'Brown Chocolate' and case two on 'Dark Chocolate'.
+
+        In the first case, we don't know who to attribute this loss to, so we
+        book it on a general 'Inventory Difference' account.
+
+        To get an overview over our total inventory difference, we want to book
+        the tag in the second case on the same 'Inventory Difference' account.
+        Whose tag we use as an 'inventoryDifferenceTag' does not matter to the
+        customer (they are billed the price of one tag in any case) nor to us.
+        """
+        return self.__numInventoryDifferenceTags
+
+    @numInventoryDifferenceTags.setter
+    def numInventoryDifferenceTags(self, numDifferenceTags):
+        if self.numTags < numDifferenceTags:
+            raise ValueError(f'numTags ({self.numTags})' + \
+                    f' < numDifferenceTags ({numDifferenceTags})')
+        if numDifferenceTags < 0:
+            raise ValueError('numDifferenceTags < 0')
+        self.__numInventoryDifferenceTags = numDifferenceTags
+
+    def purchasePriceWithoutInventoryDifference(self):
+        return (self.numTags-self.numInventoryDifferenceTags) * self.unitPurchasePrice
+
+    def grossSalesPriceWithoutInventoryDifference(self):
+        return (self.numTags-self.numInventoryDifferenceTags) * self.unitGrossSalesPrice
+
+    def grossSalesPriceInventoryDifference(self):
+        return self.numInventoryDifferenceTags * self.unitGrossSalesPrice
 
     def totalGrossSalesPrice(self):
         return self.numTags * self.unitGrossSalesPrice
@@ -543,10 +596,10 @@ class Bill(DatabaseDict):
         self.previousAccountingDate = previousAccountingDate \
                 if isinstance(previousAccountingDate, datetime.date) else \
                 helpers.DateUtility.strptime(previousAccountingDate)
-        self.previousBalance = float(previousBalance)
         self.currentAccountingDate = currentAccountingDate \
                 if isinstance(currentAccountingDate, datetime.date) else \
                 helpers.DateUtility.strptime(currentAccountingDate)
+        self.previousBalance = float(previousBalance)
         self.totalPayments = float(totalPayments)
         self.setCorrection(float(correctionTransaction), correctionJustification)
         if currentExpectedBalance and \
@@ -569,13 +622,13 @@ class Bill(DatabaseDict):
         Tagtrail assumes it has complete knowledge of the new member balance by
         adding up the previous balance, incoming payments and priced tags.
 
-        This is not completely true, as e.g. products might be bad and are
-        refunded, somebody paid you in cache or you changed the GnuCash file
-        for some other valid reason in between accountings.
+        This is not completely true, as e.g. products might have gone bad and
+        are refunded, somebody paid you in cache or you want to change the
+        GnuCash file for some other valid reason.
 
-        To make these modifications transparent, the user has to justify them
-        and they appear as a summarized correction on the bill, without being
-        imported to GnuCash again.
+        To make these modifications transparent to the customer, the accountant
+        has to justify them and they appear as a summarized correction on the
+        bill before being imported to GnuCash.
         """
         return self.__correctionTransaction
 
@@ -597,8 +650,11 @@ class Bill(DatabaseDict):
     def totalGrossSalesPrice(self):
         return sum([p.totalGrossSalesPrice() for p in self.values()])
 
-    def totalPurchasePrice(self):
-        return sum([p.totalPurchasePrice() for p in self.values()])
+    def purchasePriceWithoutInventoryDifference(self):
+        return sum([p.purchasePriceWithoutInventoryDifference() for p in self.values()])
+
+    def grossSalesPriceWithoutInventoryDifference(self):
+        return sum([p.grossSalesPriceWithoutInventoryDifference() for p in self.values()])
 
     def currentBalance(self):
         return self.previousBalance + self.totalPayments + \
@@ -634,7 +690,8 @@ class Bill(DatabaseDict):
         return position
 
     def prefixValues(self):
-        return [self.memberId, self.previousAccountingDate,
+        return [self.memberId,
+                self.previousAccountingDate,
                 self.currentAccountingDate,
                 helpers.formatPrice(self.previousBalance),
                 helpers.formatPrice(self.totalPayments),
@@ -865,7 +922,7 @@ class PostfinanceTransactionList(DatabaseList):
 
     # TODO move to config
     expectedCurrency = 'CHF'
-    expectedAccount = 'CH3609000000890399940'
+    expectedAccount = 'CH12345600231'
 
     dateFormat = '%Y-%m-%d'
     filenameDateFormat = '%Y%m%d'
