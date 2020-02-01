@@ -93,28 +93,37 @@ class Gui:
         self.log = helpers.Log()
         self.accountingDataPath = accountingDataPath
         self.accountingDate = accountingDate
-        self.db = EnrichedDatabase(self.accountingDataPath,
-                self.accountingDate)
+
+        self.inputCanvas = None
+        self.buttonCanvas = None
 
         self.root = tkinter.Tk()
         self.root.report_callback_exception = self.reportCallbackException
         self.buttonCanvasWidth=200
-        self.width=self.root.winfo_screenwidth()
-        self.height=self.root.winfo_screenheight()
-        self.root.geometry(str(self.width)+'x'+str(self.height))
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)
         self.root.bind("<Up>", self.switchInputFocus)
         self.root.bind("<Down>", self.switchInputFocus)
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
-        self.loadInputCanvas()
-        self.loadButtonCanvas()
-        self.root.mainloop()
+        self.root.bind("<Configure>", self.onResize)
+
+        if self.loadData():
+            self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
+            self.root.mainloop()
+
+    def onResize(self, event):
+        if event.widget == self.root:
+            self.width=event.width
+            self.height=event.height
+            self.loadInputCanvas()
+            self.loadButtonCanvas()
 
     def loadInputCanvas(self):
         # input canvas - one entry per transaction
         canvasWidth = self.width - self.buttonCanvasWidth
+        if self.inputCanvas is not None:
+            self.inputCanvas.destroy()
         self.inputCanvas = tkinter.Canvas(self.root,
                width=canvasWidth,
                height=self.height)
@@ -133,7 +142,14 @@ class Gui:
                     anchor=tkinter.E,
                     width=canvasWidth-entryWidth)
             label.place(x=0, y=y)
-            self.root.update()
+
+            # need to update the screen to get the correct label height
+            # caveat: during the update, a <Configure> event might be triggered
+            # and invalidate the whole process => abort if we are outdated
+            label.update()
+            if not label.winfo_exists():
+                return
+
             h = label.winfo_height()
 
             if transaction.memberId is None:
@@ -188,6 +204,8 @@ class Gui:
 
 
     def loadButtonCanvas(self):
+        if self.buttonCanvas is not None:
+            self.buttonCanvas.destroy()
         self.buttonCanvas = tkinter.Frame(self.root,
                width=self.buttonCanvasWidth,
                height=self.height)
@@ -203,7 +221,13 @@ class Gui:
         for b in self.buttons.values():
             b.place(relx=.5, y=y, anchor="center",
                     width=.8*self.buttonCanvasWidth)
+
+            # need to update the screen to get the correct button height
+            # caveat: during the update, a <Configure> event might be triggered
+            # and invalidate the whole process => abort if we are outdated
             b.update()
+            if not b.winfo_exists():
+                return
             y += b.winfo_height()
 
     def reportCallbackException(self, exception, value, tb):
@@ -214,11 +238,23 @@ class Gui:
         self.save()
         self.root.destroy()
 
+    def loadData(self):
+        """
+        Load data and return True if any work remains to be done, else False
+        """
+        self.db = EnrichedDatabase(self.accountingDataPath,
+                self.accountingDate)
+        paymentTransactions = [t for t in self.db.postfinanceTransactions if
+                t.creditAmount is not None]
+        if len(paymentTransactions) == 0:
+            tkinter.messagebox.showinfo(
+                'Nothing to do', 'All payment transactions have been processed')
+            return False
+        return True
+
     def saveAndReloadDB(self, event=None):
         self.save()
-        self.db = EnrichedDatabase(self.accountingDataPath,
-                self.db.previousAccountingDate, self.accountingDate)
-        self.inputCanvas.destroy()
+        self.loadData()
         self.loadInputCanvas()
         return "break"
 
