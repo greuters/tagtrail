@@ -114,6 +114,8 @@ class LineBasedStep(ProcessingStep):
         self.drawLinePtAndVec((a*rho, b*rho), (-b, a))
 
 class SplitSheets(ProcessingStep):
+    numberOfSheets = 4
+
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
@@ -158,20 +160,27 @@ class SplitSheets(ProcessingStep):
             self.processSheet(np.copy(self._inputImg[y0:y1, x0:x1, :]))
 
     def processSheet(self, sheetImg):
+        """
+        Process one part of the input image, extracting only the white paper.
+
+        return: True if a sheet image was extracted and stored in
+        outputSheetImgs, else False.
+        """
+        sheetImgWidth, sheetImgHeight, _ = sheetImg.shape
         grayImg = cv.cvtColor(sheetImg, cv.COLOR_BGR2GRAY)
-        self._grayImgs.append(grayImg)
         thresholdImg = cv.threshold(grayImg, self._threshold, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
-        self._thresholdImgs.append(thresholdImg)
 
         eroded1Img = cv.erode(thresholdImg, self._smallKernel, 1)
-        self._eroded1Imgs.append(eroded1Img)
         dilatedImg = cv.dilate(eroded1Img, self._mediumKernel, 1)
-        self._dilatedImgs.append(dilatedImg)
         eroded2Img = cv.erode(dilatedImg, self._bigKernel, 1)
-        self._eroded2Imgs.append(eroded2Img)
+        foregroundSize = len(np.where(eroded2Img == 255)[0])
+        self._log.debug(f'foregroundSize = {foregroundSize}')
+        self._log.debug(f'imageSize = {sheetImgWidth * sheetImgHeight}')
+        if foregroundSize < sheetImgWidth * sheetImgHeight / 3:
+            self._log.info('found empty sheet')
+            return False
 
         numComponents, labeledImg = cv.connectedComponents(eroded2Img)
-        self._labeledImgs.append(labeledImg * 255 / numComponents)
         # create tuples (label, size) for each connectedComponent
         components = list(map(lambda label:
                 (label, len(np.where(labeledImg == label)[0])),
@@ -189,7 +198,6 @@ class SplitSheets(ProcessingStep):
         center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
         foregroundImg = cv.cvtColor(foregroundImg, cv.COLOR_GRAY2BGR)
         cv.drawContours(foregroundImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
-        self._foregroundImgs.append(foregroundImg)
 
         # extract the minAreaRect from sheetImg
         # cudos to http://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
@@ -197,11 +205,20 @@ class SplitSheets(ProcessingStep):
             rotationAngle += 90.0
             minAreaRectWidth, minAreaRectHeight = minAreaRectHeight, minAreaRectWidth
         rotationMatrix = cv.getRotationMatrix2D(center, rotationAngle, 1.0)
-        sourceWidth, sourceHeight, _ = foregroundImg.shape
-        rotatedImg = cv.warpAffine(sheetImg, rotationMatrix, (sourceHeight, sourceWidth), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
-        self._rotatedImgs.append(rotatedImg)
+        rotatedImg = cv.warpAffine(sheetImg, rotationMatrix, (sheetImgHeight, sheetImgWidth), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
         outputSheetImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
+
+        self._grayImgs.append(grayImg)
+        self._thresholdImgs.append(thresholdImg)
+        self._eroded1Imgs.append(eroded1Img)
+        self._dilatedImgs.append(dilatedImg)
+        self._eroded2Imgs.append(eroded2Img)
+        self._labeledImgs.append(labeledImg * 255 / numComponents)
+        self._foregroundImgs.append(foregroundImg)
+        self._rotatedImgs.append(rotatedImg)
         self._outputSheetImgs.append(outputSheetImg)
+
+        return True
 
     def writeOutput(self):
         cv.imwrite(f'{self.prefix}_0_0_input.jpg', self._inputImg)
@@ -223,6 +240,10 @@ class SplitSheets(ProcessingStep):
             cv.imwrite(f'{self.prefix}_{idx}_8_rotatedImg.jpg', rotatedImg)
         for idx, outputSheetImg in enumerate(self._outputSheetImgs):
             cv.imwrite(f'{self.prefix}_{idx}_9_outputSheetImg.jpg', outputSheetImg)
+
+    def generatedSheets(self):
+        return [f'{self.prefix}_{idx}_9_outputSheetImg.jpg'
+                for idx, _ in enumerate(self._outputSheetImgs)]
 
 class RotateSheet(LineBasedStep):
     def __init__(self,
@@ -597,8 +618,8 @@ class RecognizeText(ProcessingStep):
                 if box.text == '':
                     box.confidence = 0
             elif box.name == "pageNumberBox":
-                pageNumber, confidence = self.recognizeBoxText(box, map(str,
-                    range(0,100)))
+                pageNumber, confidence = self.recognizeBoxText(box,
+                        [f'Blatt {str(n)}' for n in range(1, 100)])
                 if pageNumber == '' or confidence == 0:
                     box.text, box.confidence = str(self.__fallbackPageNumber), 0
                 else:
@@ -676,7 +697,8 @@ def processFile(database, inputFile, outputDir, tmpDir):
         print(f'sheetName = {sheetName}')
         sheetDir = f'{tmpDir}sheet_{idx}'
         helpers.recreateDir(sheetDir)
-        processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')
+        # processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')
+    return split.generatedSheets()
 
 def processSheet(database, sheetImg, sheetName, outputDir, tmpDir):
     print('Processing sheet: ', sheetName)
@@ -702,10 +724,19 @@ def main(accountingDir, tmpDir):
     helpers.recreateDir(outputDir)
     helpers.recreateDir(tmpDir)
     db = Database(f'{accountingDir}0_input/')
+    partiallyFilledFiles = []
     for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         for f in fileNames:
             helpers.recreateDir(tmpDir+f)
-            processFile(db, parentDir + f, outputDir, tmpDir + f + '/')
+            generatedSheets = processFile(db, parentDir + f, outputDir, tmpDir + f + '/')
+            if len(generatedSheets) < SplitSheets.numberOfSheets:
+                partiallyFilledFiles.append(f)
+
+        print()
+        print(f'processed {len(fileNames)} files')
+        print(f'the following files generated less than {SplitSheets.numberOfSheets} sheets')
+        for f in partiallyFilledFiles:
+            print(parentDir + f)
         break
 
 if __name__== "__main__":
