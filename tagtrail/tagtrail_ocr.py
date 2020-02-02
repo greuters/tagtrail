@@ -114,28 +114,27 @@ class LineBasedStep(ProcessingStep):
         self.drawLinePtAndVec((a*rho, b*rho), (-b, a))
 
 class SplitSheets(ProcessingStep):
-    # TODO: improve like that:
-    # 1. cover background with black paper / color
-    # 2. for each sheet, crop whole area, using relative coordinates to cope with
-    # any resolution (as long as aspect ratio remains
-    # 3. dilate generously, erode even a bit more, to get rid of text / lines
-    # 4. take rotated min bounding box of biggest component as the sheet img
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
                  log = helpers.Log(),
-                 sheet0 = (220, 260, 1310, 1840), # x0, y0, x1, y1
-                 sheet1 = (1700, 260, 2800, 1840), # x0, y0, x1, y1
-                 sheet2 = (220, 2270, 1310, 3820), # x0, y0, x1, y1
-                 sheet3 = (1700, 2270, 2800, 3820), # x0, y0, x1, y1
-                 backgroundColorMin = (0, 00, 0), # hsv
-                 backgroundColorMax = (180, 255, 150), # hsv
-                 backgroundThreshold = 0.6):
+                 sheet0 = (0, 0, .5, .5), # x0, y0, x1, y1 relative
+                 sheet1 = (.5, 0, 1, .5), # x0, y0, x1, y1 relative
+                 sheet2 = (0, .5, .5, 1), # x0, y0, x1, y1 relative
+                 sheet3 = (.5, .5, 1, 1), # x0, y0, x1, y1 relative
+                 threshold = 140,
+                 kernelSize = 15,
+                 ):
         super().__init__(name, outputDir, log)
         self._sheets = [sheet0, sheet1, sheet2, sheet3]
-        self._backgroundColorMin = backgroundColorMin
-        self._backgroundColorMax = backgroundColorMax
-        self._backgroundThreshold = backgroundThreshold
+        self._log = helpers.Log(helpers.Log.LEVEL_DEBUG)
+        self._threshold = threshold
+        self._smallKernel = cv.getStructuringElement(cv.MORPH_RECT,
+                (kernelSize, kernelSize))
+        self._mediumKernel = cv.getStructuringElement(cv.MORPH_RECT,
+                (kernelSize*4, kernelSize*4))
+        self._bigKernel = cv.getStructuringElement(cv.MORPH_RECT,
+                (kernelSize*10, kernelSize*10))
 
     def process(self, inputImg):
         super().process(inputImg)
@@ -143,28 +142,87 @@ class SplitSheets(ProcessingStep):
         self._inputImg = inputImg
         self._outputImg = np.copy(inputImg)
 
-        self._backgroundMasks = []
+        self._grayImgs = []
+        self._thresholdImgs = []
+        self._eroded1Imgs = []
+        self._dilatedImgs = []
+        self._eroded2Imgs = []
+        self._labeledImgs = []
+        self._foregroundImgs = []
+        self._rotatedImgs = []
         self._outputSheetImgs = []
-        for x0, y0, x1, y1 in self._sheets:
-            sheetImg = np.copy(self._inputImg[y0:y1, x0:x1, :])
-            hsv = cv.cvtColor(sheetImg, cv.COLOR_BGR2HSV)
-            backgroundMask = cv.inRange(hsv, np.array(self._backgroundColorMin),
-                    np.array(self._backgroundColorMax))
-            self._backgroundMasks.append(backgroundMask)
-            numBackgroundPixels = backgroundMask.sum().sum() / 255
-            numPixelsTotal = (x1-x0) * (y1-y0)
-            self._log.debug(f'backgroundPercentage = {numBackgroundPixels / numPixelsTotal}')
-            if numBackgroundPixels / numPixelsTotal < self._backgroundThreshold:
-                self._outputSheetImgs.append(sheetImg)
-                self._outputImg[y0:y1, x0:x1, :] = 0
+        for x0rel, y0rel, x1rel, y1rel in self._sheets:
+            height, width, _ = self._inputImg.shape
+            x0, y0 = int(x0rel*width), int(y0rel*height)
+            x1, y1 = int(x1rel*width), int(y1rel*height)
+            self.processSheet(np.copy(self._inputImg[y0:y1, x0:x1, :]))
+
+    def processSheet(self, sheetImg):
+        grayImg = cv.cvtColor(sheetImg, cv.COLOR_BGR2GRAY)
+        self._grayImgs.append(grayImg)
+        thresholdImg = cv.threshold(grayImg, self._threshold, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
+        self._thresholdImgs.append(thresholdImg)
+
+        eroded1Img = cv.erode(thresholdImg, self._smallKernel, 1)
+        self._eroded1Imgs.append(eroded1Img)
+        dilatedImg = cv.dilate(eroded1Img, self._mediumKernel, 1)
+        self._dilatedImgs.append(dilatedImg)
+        eroded2Img = cv.erode(dilatedImg, self._bigKernel, 1)
+        self._eroded2Imgs.append(eroded2Img)
+
+        numComponents, labeledImg = cv.connectedComponents(eroded2Img)
+        self._labeledImgs.append(labeledImg * 255 / numComponents)
+        # create tuples (label, size) for each connectedComponent
+        components = list(map(lambda label:
+                (label, len(np.where(labeledImg == label)[0])),
+                range(numComponents)))
+        components.sort(key = lambda x: x[1], reverse=True)
+        self._log.debug('components (label, size) = {}', list(components))
+
+        # assume the biggest component to be the foreground
+        # compute and show its rotated minAreaRect
+        foregroundLabel = components[0][0]
+        foregroundImg = np.where(labeledImg == foregroundLabel,
+                np.uint8(255.0), np.uint8(0.0))
+        contours, _ = cv.findContours(foregroundImg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        minAreaRect = cv.minAreaRect(contours[0])
+        center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
+        foregroundImg = cv.cvtColor(foregroundImg, cv.COLOR_GRAY2BGR)
+        cv.drawContours(foregroundImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
+        self._foregroundImgs.append(foregroundImg)
+
+        # extract the minAreaRect from sheetImg
+        # cudos to http://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
+        if rotationAngle < -45.0:
+            rotationAngle += 90.0
+            minAreaRectWidth, minAreaRectHeight = minAreaRectHeight, minAreaRectWidth
+        rotationMatrix = cv.getRotationMatrix2D(center, rotationAngle, 1.0)
+        sourceWidth, sourceHeight, _ = foregroundImg.shape
+        rotatedImg = cv.warpAffine(sheetImg, rotationMatrix, (sourceHeight, sourceWidth), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+        self._rotatedImgs.append(rotatedImg)
+        outputSheetImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
+        self._outputSheetImgs.append(outputSheetImg)
 
     def writeOutput(self):
-        cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
-        for idx, backgroundMask in enumerate(self._backgroundMasks):
-            cv.imwrite(f'{self.prefix}_0_{idx}_backgroundMask.jpg', backgroundMask)
-        for idx, sheetImg in enumerate(self._outputSheetImgs):
-            cv.imwrite(f'{self.prefix}_1_{idx}_sheetImg.jpg', sheetImg)
-        cv.imwrite(f'{self.prefix}_{len(self._outputSheetImgs)}_outputImg.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_0_0_input.jpg', self._inputImg)
+        for idx, grayImg in enumerate(self._grayImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_1_grayImg.jpg', grayImg)
+        for idx, thresholdImg in enumerate(self._thresholdImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_2_thresholdImg.jpg', thresholdImg)
+        for idx, eroded1Img in enumerate(self._eroded1Imgs):
+            cv.imwrite(f'{self.prefix}_{idx}_3_eroded1Img.jpg', eroded1Img)
+        for idx, dilatedImg in enumerate(self._dilatedImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_4_dilatedImg.jpg', dilatedImg)
+        for idx, eroded2Img in enumerate(self._eroded2Imgs):
+            cv.imwrite(f'{self.prefix}_{idx}_5_eroded2Img.jpg', eroded2Img)
+        for idx, labeledImg in enumerate(self._labeledImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_6_labeledImg.jpg', labeledImg)
+        for idx, foregroundImg in enumerate(self._foregroundImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_7_foregroundImg.jpg', foregroundImg)
+        for idx, rotatedImg in enumerate(self._rotatedImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_8_rotatedImg.jpg', rotatedImg)
+        for idx, outputSheetImg in enumerate(self._outputSheetImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_9_outputSheetImg.jpg', outputSheetImg)
 
 class RotateSheet(LineBasedStep):
     def __init__(self,
