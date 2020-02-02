@@ -53,7 +53,7 @@ class InputSheet(ProductSheet):
                 choices = list(sorted(set([formatPrice(p.grossSalesPrice())
                     for p in database.products.values()])))
             elif box.name == "pageNumberBox":
-                choices = [str(x) for x in range(1, 100)]
+                choices = [f'Blatt {str(n)}' for n in range(1, 100)]
             elif box.name.find("dataBox") != -1:
                 choices = list(sorted(database.members.keys()))
             else:
@@ -270,7 +270,7 @@ class Gui:
                     was overconfident and probably some of the initially green
                     boxes contain wrong entries. Please check them and file a
                     bug report at https://github.com/greuters/tagtrail.git/
-                    """)
+                    """.format(self.numCorrectValidatedBoxes, self.numValidatedValidatedBoxes))
             self.root.destroy()
         else:
             self.destroyCanvas()

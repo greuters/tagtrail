@@ -922,7 +922,7 @@ class PostfinanceTransactionList(DatabaseList):
 
     # TODO move to config
     expectedCurrency = 'CHF'
-    expectedAccount = 'CH12345600231'
+    expectedAccount = 'CH3609000000890399940'
 
     dateFormat = '%Y-%m-%d'
     filenameDateFormat = '%Y%m%d'

@@ -240,10 +240,10 @@ class Gui:
         self.productSheetSelection.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         self.productSheetSelection.config(relief=tkinter.GROOVE, bd=2)
 
+        accountedProducts = [path.split('_')[0] for path in self.db.productPagePaths]
         missingProducts = sorted([
             p.id for p in self.db.products.values()
-            if '{}_1.csv'.format(p.id) not in
-            self.db.productPagePaths
+            if p.id not in accountedProducts
             ])
         mp = gui_components.Checkbar(self.root, 'Missing products:', missingProducts, False)
         mp.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
@@ -304,6 +304,7 @@ class Gui:
 
     def writeMemberCSV(self):
         newMembers = copy.deepcopy(self.db.members)
+        newMembers.accountingDate = self.accountingDate
         for m in newMembers.values():
             m.balance = self.db.bills[m.id].currentBalance()
         database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/members.csv',
