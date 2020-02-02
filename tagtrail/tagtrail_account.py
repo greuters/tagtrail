@@ -42,16 +42,16 @@ class TagCollector(ABC):
     newline = ''
 
     def __init__(self,
-            alreadyAccountedProductsPath,
+            accountedProductsPath,
             currentProductsToAccountPath,
             accountingDate,
             db, log = helpers.Log()):
         self.log = log
         self.db = db
-        self.alreadyAccountedProductsPath = alreadyAccountedProductsPath
+        self.accountedProductsPath = accountedProductsPath
         self.currentProductsToAccountPath = currentProductsToAccountPath
         self.accountingDate = accountingDate
-        self.alreadyAccountedSheets = self.loadProductSheets(self.alreadyAccountedProductsPath)
+        self.accountedSheets = self.loadProductSheets(self.accountedProductsPath)
         self.currentSheets = self.loadProductSheets(self.currentProductsToAccountPath)
         self.checkPageConsistency()
         self.informAboutPriceChanges()
@@ -99,16 +99,16 @@ class TagCollector(ABC):
 
     def newTags(self, productId, pageNumber):
         key = (productId, pageNumber)
-        alreadyAccountedTags = self.alreadyAccountedSheets[key].confidentTags()
+        accountedTags = self.accountedSheets[key].confidentTags()
         currentTags = self.currentSheets[key].confidentTags()
-        assert(len(alreadyAccountedTags) == len(currentTags))
-        self.log.debug(f'alreadyAccountedTags: {alreadyAccountedTags}')
+        assert(len(accountedTags) == len(currentTags))
+        self.log.debug(f'accountedTags: {accountedTags}')
         self.log.debug(f'currentTags: {currentTags}')
 
-        changedIndices = [idx for idx, tag in enumerate(alreadyAccountedTags)
+        changedIndices = [idx for idx, tag in enumerate(accountedTags)
                 if currentTags[idx] != tag]
         self.log.debug(f'changedIndices: {changedIndices}')
-        offendingDataboxes = [f'dataBox{idx}' for idx in changedIndices if alreadyAccountedTags[idx] != '']
+        offendingDataboxes = [f'dataBox{idx}' for idx in changedIndices if accountedTags[idx] != '']
         if offendingDataboxes:
             self.log.error(f'offendingDataboxes: {offendingDataboxes}')
             raise ValueError(
@@ -120,14 +120,14 @@ class TagCollector(ABC):
                 'Offending data boxes:\n\n' + \
                 f'{offendingDataboxes}\n\n' + \
                 'Corresponding file from last accounting:\n\n' + \
-                f'{self.alreadyAccountedProductsPath}{productId}_{pageNumber}.csv')
+                f'{self.accountedProductsPath}{productId}_{pageNumber}.csv')
 
         return list(map(lambda idx: currentTags[idx], changedIndices))
 
     def collectNewTagsPerProduct(self):
         newTags = {}
         for key in self.currentSheets.keys():
-            if key not in self.alreadyAccountedSheets:
+            if key not in self.accountedSheets:
                 newTags[key] = self.currentSheets[key].confidentTags()
             else:
                 newTags[key] = self.newTags(key[0], key[1])
@@ -188,30 +188,30 @@ class TagCollector(ABC):
         the same amount and price. Check and abort if this is not the case.
         """
         for productId in self.db.products.keys():
-            alreadyAccountedPrice = self.__sheetGrossSalesPrice(productId,
-                    self.alreadyAccountedSheets)
+            accountedPrice = self.__sheetGrossSalesPrice(productId,
+                    self.accountedSheets)
 
             currentPrice = self.__sheetGrossSalesPrice(productId,
-                    self.alreadyAccountedSheets)
-            if (alreadyAccountedPrice is not None
+                    self.accountedSheets)
+            if (accountedPrice is not None
                     and currentPrice is not None
-                    and alreadyAccountedPrice != currentPrice):
+                    and accountedPrice != currentPrice):
                 raise ValueError(f'{productId}: already accounted pages have '
                         + 'another price then current ones'
-                        + f'({alreadyAccountedPrice} != {currentPrice})')
+                        + f'({accountedPrice} != {currentPrice})')
 
-            alreadyAccountedAmount = self.__sheetAmountAndUnit(
+            accountedAmount = self.__sheetAmountAndUnit(
                     productId,
-                    self.alreadyAccountedSheets)
+                    self.accountedSheets)
 
             currentAmount = self.__sheetAmountAndUnit(productId,
-                    self.alreadyAccountedSheets)
-            if (alreadyAccountedAmount is not None
+                    self.accountedSheets)
+            if (accountedAmount is not None
                     and currentAmount is not None
-                    and alreadyAccountedAmount != currentAmount):
+                    and accountedAmount != currentAmount):
                 raise ValueError(f'{productId}: already accounted pages have '
                         + 'another amount then current ones'
-                        + f'({alreadyAccountedAmount} != {currentAmount})')
+                        + f'({accountedAmount} != {currentAmount})')
 
     def informAboutPriceChanges(self):
         for product in self.db.products.values():

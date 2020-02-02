@@ -19,21 +19,25 @@ from tkinter import simpledialog, ttk
 import tkinter
 import helpers
 
-class AutocompleteEntry(ttk.Combobox):
-    def __init__(self, text, confidence, possibleValues, releaseFocus, *args, **kwargs):
-        tkinter.Entry.__init__(self, *args, **kwargs)
-        self.__possibleValues = possibleValues
+#TODO: adapt to use normal ttk.ComboBox functionality
+class AutocompleteEntry(tkinter.Entry):
+    """
+    All input is uppercased before processing.
+    """
+    def __init__(self, text, confidence, possibleValues, releaseFocus, enabled, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.possibleValues = [v.upper() for v in possibleValues]
         self.__releaseFocus = releaseFocus
-        self.__log = helpers.Log()
+        self.__log = helpers.Log(helpers.Log.LEVEL_DEBUG)
         self.__previousValue = ""
         self.__listBox = None
         self.__var = self["textvariable"]
         if self.__var == '':
             self.__var = self["textvariable"] = tkinter.StringVar()
         self.text = text
+        self.enabled = enabled
         self.confidence = confidence
 
-        self.__var.trace('w', self.varTextChanged)
         self.bind("<Return>", self.selection)
         self.bind("<Up>", self.up)
         self.bind("<Down>", self.down)
@@ -72,11 +76,12 @@ class AutocompleteEntry(ttk.Combobox):
         self.__var.set(self.__var.get().upper())
         self.__log.debug('changed var = {}', self.text)
         self.confidence = 0
+
         if self.text == '':
             self.destroyListBox()
         else:
             if self.text.strip() == '':
-                words = self.__possibleValues
+                words = self.possibleValues
             else:
                 words = self.comparison(self.text)
             self.__log.debug('possible words = {}', words)
@@ -85,7 +90,7 @@ class AutocompleteEntry(ttk.Combobox):
             else:
                 longestCommonPrefix = self.longestCommonPrefix(words)
                 self.__log.debug('longestCommonPrefix(words) = {}', self.longestCommonPrefix(words))
-                if longestCommonPrefix != self.text.upper():
+                if longestCommonPrefix != self.text:
                     self.delete(0, tkinter.END)
                     self.insert(0, longestCommonPrefix)
 
@@ -112,7 +117,7 @@ class AutocompleteEntry(ttk.Combobox):
             prefixes = [word[0:i] for i in range(len(word)+1)]
             for p in sorted(prefixes, reverse=True):
                 if len(p) == 0 or numOptions < len(self.comparison(p)):
-                    self.text = p
+                    self.setArbitraryText(p)
                     break
         return "break"
 
@@ -139,17 +144,33 @@ class AutocompleteEntry(ttk.Combobox):
             self.__listBox = None
 
     def longestCommonPrefix(self, words):
-        word = words[0].upper()
+        word = words[0]
         prefixes = [word[0:i] for i in range(len(word)+1)]
         for p in sorted(prefixes, reverse=True):
-            isPrefix = [(w.upper().find(p) == 0) for w in words]
+            isPrefix = [(w.find(p) == 0) for w in words]
             if len(p) == 0 or False not in isPrefix:
                 return p
 
     def comparison(self, word):
-        if not self.__possibleValues:
+        if not self.possibleValues:
             return [word]
-        return [w for w in self.__possibleValues if w.upper().find(word.upper()) == 0]
+        return [w for w in self.possibleValues if w.find(word) == 0]
+
+    @property
+    def enabled(self):
+        return self.cget('state') == 'normal'
+
+    @enabled.setter
+    def enabled(self, enabled):
+        """
+        Enable/disable user input and autocorrection.
+        """
+        if enabled:
+            self.__var.trace_id = self.__var.trace('w', self.varTextChanged)
+            self.configure(state='normal')
+        else:
+            self.__var.trace_vdelete('w', self.__var.trace_id)
+            self.configure(state='disabled')
 
     @property
     def text(self):
@@ -157,6 +178,20 @@ class AutocompleteEntry(ttk.Combobox):
 
     @text.setter
     def text(self, text):
+        """
+        If text is not in self.possibleValues or '', nothing happens. To avoid this
+        restriction, set self.enabled = False and call self.setArbitraryText
+        """
+        if text != '' and not text.upper() in self.possibleValues:
+            return
+        self.__var.set(text.upper())
+
+    def setArbitraryText(self, text):
+        """
+        Sets text without constraining to self.possibleValues.
+        Note that, if self.enabled == True, the value will be subjected to
+        autocorrection.
+        """
         self.__var.set(text.upper())
 
     @property

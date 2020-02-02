@@ -69,11 +69,11 @@ class ProductSheet(ABC):
         return (round(u / self.sheetW * self.xRes),
                 round(v / self.sheetH * self.yRes))
 
-    def __init__(self, database=None, testMode=False):
+    def __init__(self, database=None, testMode=False, log = helpers.Log()):
         self._database=database
         self.testMode=testMode
         self.__boxes={}
-        self._log=helpers.Log()
+        self._log=log
         self._box_to_pos={}
         self._pos_to_box={}
 
@@ -200,6 +200,10 @@ class ProductSheet(ABC):
     def boxes(self):
         return self.__boxes.values()
 
+    def dataBoxes(self):
+        return [box for box in self.__boxes.values() if
+                box.name.find('dataBox') != -1]
+
     def sortedBoxes(self):
         return [self._pos_to_box[pos] for pos in self.sortedPositions()]
 
@@ -226,8 +230,7 @@ class ProductSheet(ABC):
             return None
 
     def tagsAndConfidences(self):
-        return [(box.text, box.confidence) for box in self.__boxes.values() if
-            box.name.find("dataBox") != -1]
+        return [(box.text, box.confidence) for box in self.dataBoxes()]
 
     def confidentTags(self):
         return [tag for (tag, conf) in self.tagsAndConfidences() if conf == 1]
@@ -267,8 +270,11 @@ class ProductSheet(ABC):
                 self.__boxes[boxName].text = text
                 self.__boxes[boxName].confidence = confidence
 
+    def fileName(self):
+        return f'{self.productId()}_{self.pageNumber}.csv'
+
     def store(self, path):
-        filePath = f'{path}{self.productId()}_{self.pageNumber}.csv'
+        filePath = f'{path}{self.fileName()}'
         self._log.info(f'storing sheet {filePath}')
         with open(filePath, "w+") as fout:
             fout.write(f'boxName;text;confidence\n')

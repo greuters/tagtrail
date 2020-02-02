@@ -34,8 +34,9 @@ class InputSheet(ProductSheet):
     validationProbability = 0.05
 
     def __init__(self, root, aspectRatio,
-            database, path):
-        super().__init__()
+            database, path, accountedProductsPath):
+        super().__init__(log=Log(Log.LEVEL_DEBUG))
+        self.accountedProductsPath = accountedProductsPath
         self.load(path)
         self.originalPath = path
 
@@ -51,7 +52,6 @@ class InputSheet(ProductSheet):
             elif box.name == "priceBox":
                 choices = list(sorted(set([formatPrice(p.grossSalesPrice())
                     for p in database.products.values()])))
-                print(f'choices={choices}')
             elif box.name == "pageNumberBox":
                 choices = [str(x) for x in range(1, 100)]
             elif box.name.find("dataBox") != -1:
@@ -78,11 +78,13 @@ class InputSheet(ProductSheet):
             x1, y1 = x1*aspectRatio, y1*aspectRatio
             (x2, y2) = box.pt2
             x2, y2 = x2*aspectRatio, y2*aspectRatio
-            entry = gui_components.AutocompleteEntry(box.text, box.confidence, choices, self.switchFocus, root)
+            entry = gui_components.AutocompleteEntry(box.text, box.confidence,
+                    choices, self.switchFocus, True, root)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             entry.box = box
             self._box_to_widget[box] = entry
 
+        self.loadTagsFromPreviousAccounting()
         self._box_to_widget[self.boxByName('nameBox')].focus_set()
 
     def switchFocus(self, event):
@@ -92,8 +94,11 @@ class InputSheet(ProductSheet):
             if event.keysym in ["Return", "Tab"]:
                 if event.keysym == "Return":
                     event.widget.confidence=1
-                event.widget.box.text = event.widget.text
-                event.widget.box.confidence = event.widget.confidence
+                if event.widget.enabled:
+                    event.widget.box.text = event.widget.text
+                    event.widget.box.confidence = event.widget.confidence
+                    if event.widget.box.name in ['nameBox', 'pageNumberBox']:
+                        self.loadTagsFromPreviousAccounting()
 
                 nextBox = self.nextUnclearBox(event.widget.box)
                 if nextBox:
@@ -108,6 +113,47 @@ class InputSheet(ProductSheet):
                     self._box_to_widget[neighbourBox].focus_set()
 
         return event
+
+    def loadTagsFromPreviousAccounting(self):
+        """
+        Load tags from last accounting, if name and page of this sheet
+        are clear and the sheet already existed.
+        """
+        if self.boxByName('nameBox').confidence != 1:
+            return
+        if  self.boxByName('pageNumberBox').confidence != 1:
+            return
+        accountedSheetPath = f'{self.accountedProductsPath}{self.productId()}_{self.pageNumber}.csv'
+        self._log.debug(f'loading previous tags from {accountedSheetPath}')
+        if not os.path.exists(accountedSheetPath):
+            return
+
+        accountedSheet = ProductSheet()
+        accountedSheet.load(accountedSheetPath)
+        if [box for box in accountedSheet.boxes()
+                if box.confidence != 1.0]:
+            raise ValueError(
+                    f'{accountedSheetPath} has boxes with confidence != 1')
+        if accountedSheet.productId() != self.productId():
+            raise ValueError(f'{accountedSheetPath} has wrong productId')
+        if accountedSheet.pageNumber != self.pageNumber:
+            raise ValueError(f'{accountedSheetPath} has wrong pageNumber')
+
+        for accountedBox in accountedSheet.boxes():
+            print(f'{accountedBox.name} : {accountedBox.text}')
+            if accountedBox.text != '':
+                print('changing value')
+                inputBox = self.boxByName(accountedBox.name)
+                inputBox.text = accountedBox.text
+                inputBox.confidence = 1
+                inputBox.copiedFromPreviousAccounting = True
+
+                assert(inputBox in self._box_to_widget)
+                autocompleteEntry = self._box_to_widget[inputBox]
+                autocompleteEntry.possibleValues = [inputBox.text.upper()]
+                autocompleteEntry.text = inputBox.text
+                autocompleteEntry.confidence = inputBox.confidence
+                autocompleteEntry.enabled = False
 
     def nextUnclearBox(self, selectedBox):
         sortedBoxes = self.sortedBoxes()
@@ -137,13 +183,10 @@ class Gui:
     scanPostfix = '_normalized_scan.jpg'
 
     def __init__(self, accountingDataPath):
-        # TODO: add second dataPath - for each csv, check if the corresponding
-        # csv existed in the last accounting. if a box has a (validated, assert
-        # confidence = 1) non '' text, override the ocr suggestion and set
-        # confidence to 1
-        self.log = Log()
+        self.log = Log(Log.LEVEL_DEBUG)
         self.accountingDataPath = accountingDataPath
         self.productPath = f'{self.accountingDataPath}2_taggedProductSheets/'
+        self.accountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'
         self.db = Database(f'{self.accountingDataPath}0_input/')
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
@@ -250,6 +293,11 @@ class Gui:
         if not self.inputSheet.pageNumber:
             raise ValueError('Unable to store sheet, pageNumber is missing')
 
+        assert(self.inputSheet.productId() in self.db.products.keys())
+        assert(not [b for b in self.inputSheet.dataBoxes()
+                if b.text != '' and not b.text in self.db.members and not
+                b.copiedFromPreviousAccounting])
+
         numCorrect, numValidated = self.inputSheet.getValidationScore()
         self.numCorrectValidatedBoxes += numCorrect
         self.numValidatedValidatedBoxes += numValidated
@@ -260,10 +308,12 @@ class Gui:
                 f'{self.numValidatedValidatedBoxes} validated texts were correct')
         os.remove(self.csvPath)
         self.inputSheet.store(self.productPath)
-        os.rename(self.scanPath, "{}{}_{}{}".format(self.productPath,
-            self.inputSheet.productId(),
-            self.inputSheet.pageNumber,
-            self.scanPostfix))
+        self.csvPath = f'{self.productPath}{self.inputSheet.fileName()}'
+        newScanPath = (f'{self.productPath}{self.inputSheet.productId()}' +
+                f'_{self.inputSheet.pageNumber}{self.scanPostfix}')
+        self.log.debug(f'renaming {self.scanPath} to {newScanPath}')
+        os.rename(self.scanPath, newScanPath)
+        self.scanPath = newScanPath
         self.destroyCanvas()
 
     def destroyCanvas(self):
@@ -293,7 +343,8 @@ class Gui:
                width=canvas_w,
                height=canvas_h)
         self.inputCanvas.place(x=canvas_w, y=0)
-        self.inputSheet = InputSheet(self.inputCanvas, aspectRatio, self.db, self.csvPath)
+        self.inputSheet = InputSheet(self.inputCanvas, aspectRatio, self.db,
+                self.csvPath, self.accountedProductsPath)
 
         # Additional buttons
         self.buttonCanvas = tkinter.Frame(self.root,
@@ -354,7 +405,4 @@ if __name__== "__main__":
     parser.add_argument('accountingDir',
             help='Top-level tagtrail directory to process, usually data/next/')
     args = parser.parse_args()
-    # TODO: check that only valid member ids and product ids are stored for new
-    # tags (that are not in previous accounting)
-    # product files need to have product ids in file names
     Gui(args.accountingDir)
