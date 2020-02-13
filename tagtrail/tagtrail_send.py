@@ -30,6 +30,7 @@ from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
+from keyrings.cryptfile.cryptfile import CryptFileKeyring
 
 class MailSender(ABC):
     # TODO load from config
@@ -39,13 +40,12 @@ class MailSender(ABC):
     imapPort = 993
     invoiceIban = 'CH3609000000890399940'
     liquidityThreshold = 100
-
+    password_file_path = './config/cryptfile_pass.cfg'
 
     def __init__(self,
             accountingPath,
             accessCode,
             accountantName,
-            mailPassword,
             testRecipient = None
             ):
         self.accessCode = accessCode
@@ -66,10 +66,28 @@ class MailSender(ABC):
                 self.templatePath+'correction.txt')
 
         self.accountantName = accountantName
-        if mailPassword:
-            self.mailPassword = mailPassword
+
+        keyring = CryptFileKeyring()
+        for attempt in range(3):
+            try:
+                keyring.file_path = self.password_file_path
+                # this call asks the user for the keyring password in the background
+                # if it is wrong, a ValueError is raised - ugly, but only
+                # working solution I found so far
+                self.mailPassword = keyring.get_password('tagtrail_send', self.mailUser)
+                break
+            except ValueError:
+                print('Failed to open keyring - Wrong password?')
+                keyring = CryptFileKeyring()
         else:
-            self.mailPassword = getpass.getpass()
+            raise ValueError('Failed to open keyring - run out of retries')
+
+        if self.mailPassword is None:
+            # if we made it here, the keyring is opened
+            self.mailPassword = getpass.getpass(f'Password for {self.mailUser}:')
+            keyring.set_password('tagtrail_send', self.mailUser,
+                    self.mailPassword)
+
         self.testRecipient = testRecipient
 
     def readTemplate(self, filename):
@@ -171,9 +189,6 @@ if __name__ == '__main__':
             help="New access code to be sent to members",)
     parser.add_argument('accountantName',
             help="Name of the person responsible for this accounting.")
-    parser.add_argument('-p, --password',
-            dest='password',
-            help=f'password for {MailSender.mailUser}. If not passed, it will be requested.')
     parser.add_argument('--testRecipient',
             dest='testRecipient',
             help='If given, mails are sent to this email address instead of the real receivers.')
@@ -182,5 +197,4 @@ if __name__ == '__main__':
     MailSender(args.accountingDir,
             args.accessCode,
             args.accountantName,
-            args.password,
             args.testRecipient).sendBills()
