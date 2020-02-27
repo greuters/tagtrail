@@ -35,7 +35,7 @@ class InputSheet(ProductSheet):
 
     def __init__(self, root, aspectRatio,
             database, path, accountedProductsPath):
-        super().__init__(log=Log(Log.LEVEL_DEBUG))
+        super().__init__(log=Log())
         self.accountedProductsPath = accountedProductsPath
         self.load(path)
         self.originalPath = path
@@ -47,11 +47,11 @@ class InputSheet(ProductSheet):
         pageNumbers = [pageNumberString.format(pageNumber=str(n))
                             for n in range(1, maxNumPages+1)]
         currency = database.config.get('general', 'currency')
-        names, units, prices = zip(*[
+        names, units, prices = map(set, zip(*[
             (p.description.upper(),
-             str(p.amount).upper()+p.unit.upper(),
+             p.amountAndUnit.upper(),
              formatPrice(p.grossSalesPrice(), currency).upper())
-            for p in database.products.values()])
+            for p in database.products.values()]))
 
         self._box_to_widget = {}
         self.validationBoxTexts = {}
@@ -193,7 +193,7 @@ class Gui:
     scanPostfix = '_normalized_scan.jpg'
 
     def __init__(self, accountingDataPath):
-        self.log = Log(Log.LEVEL_DEBUG)
+        self.log = Log()
         self.accountingDataPath = accountingDataPath
         self.productPath = f'{self.accountingDataPath}2_taggedProductSheets/'
         self.accountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'

@@ -129,7 +129,7 @@ class SplitSheets(ProcessingStep):
                  ):
         super().__init__(name, outputDir, log)
         self._sheets = [sheet0, sheet1, sheet2, sheet3]
-        self._log = helpers.Log(helpers.Log.LEVEL_DEBUG)
+        self._log = helpers.Log()
         self._threshold = threshold
         self._smallKernel = cv.getStructuringElement(cv.MORPH_RECT,
                 (kernelSize, kernelSize))
@@ -360,39 +360,43 @@ class RotateSheet(LineBasedStep):
         cv.imwrite(f'{self.prefix}_7_fillColorPixels.jpg', self._fillColorPixels)
         cv.imwrite(f'{self.prefix}_8_output.jpg', self._outputImg)
 
-class RotateLabel(LineBasedStep):
-    threshold = 127
-
+class RotateLabel(ProcessingStep):
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
                  log = helpers.Log(),
-                 kernelSize = 12):
+                 kernelSize = 12,
+                 borderSize = 20):
         super().__init__(name, outputDir, log)
         self._kernelSize = kernelSize
+        self._borderSize = borderSize
 
-    def process(self, inputImg):
+    def process(self, inputImg, originalImg):
         super().process(inputImg)
-        self._inputImg = inputImg
-        gray = cv.cvtColor(self._inputImg, cv.COLOR_BGR2GRAY)
-        self._grayImg = cv.bitwise_not(gray)
-        self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
+        self._inputImg = cv.copyMakeBorder(inputImg, self._borderSize,
+                self._borderSize, self._borderSize, self._borderSize,
+                cv.BORDER_CONSTANT, value=(0, 0, 0))
+        self._originalImg = cv.copyMakeBorder(originalImg, self._borderSize,
+                self._borderSize, self._borderSize, self._borderSize,
+                cv.BORDER_CONSTANT, value=(0, 0, 0))
 
-        kernel = cv.getStructuringElement(cv.MORPH_RECT,
+        closingKernel = cv.getStructuringElement(cv.MORPH_RECT,
                 (int(self._kernelSize*1.5), self._kernelSize))
-        self._closedImg = cv.morphologyEx(self._thresholdImg, cv.MORPH_CLOSE, kernel)
-        self._dilatedImg = cv.dilate(self._closedImg, kernel, 1)
-        numComponents, self._labeledImg = cv.connectedComponents(self._dilatedImg)
-        # create tuples (label, size) for each connectedComponent
-        components = list(map(lambda label:
-                (label, len(np.where(self._labeledImg == label)[0])),
-                range(numComponents)))
-        components.sort(key = lambda x: x[1], reverse=True)
-        self._log.debug('components (label, size) = {}', list(components))
+        self._closedImg = cv.morphologyEx(self._inputImg, cv.MORPH_CLOSE,
+                closingKernel)
+        dilationKernel = cv.getStructuringElement(cv.MORPH_RECT,
+                (self._kernelSize*4, self._kernelSize))
+        self._dilatedImg = cv.dilate(self._closedImg, dilationKernel, 1)
 
-        # assume the 2nd biggest component to be the actual text
-        textLabel = components[1][0] if numComponents > 1 else components[0][0]
-        self._selectedImg = np.where(self._labeledImg == textLabel , 255.0, 0.0)
+        # select 2nd biggest component, assumed to be the actual text
+        numComponents, self._labeledImg, stats, _ = \
+                cv.connectedComponentsWithStats(self._dilatedImg)
+        labels = [label for label in range(numComponents)]
+        labels.sort(key = lambda label: stats[label, cv.CC_STAT_AREA],
+                reverse=True)
+        textLabel = labels[1] if numComponents > 1 else labels[0]
+        self._selectedImg = np.where(self._labeledImg == textLabel,
+                np.uint8(255.0), np.uint8(0.0))
 
         # prepare labeled components for graphical output
         if numComponents > 1:
@@ -400,49 +404,35 @@ class RotateLabel(LineBasedStep):
         elif numComponents == 1:
             self._labeledImg = self._labeledImg * 255
 
-        self._selectedImg = cv.copyMakeBorder(
-                self._selectedImg, 20, 20, 20, 20,
-                cv.BORDER_CONSTANT, value=(0, 0, 0))
-        self._selectedImg = cv.dilate(self._selectedImg, kernel, 1)
+        # find minAreaRect
+        self._minAreaImg = np.copy(self._selectedImg)
+        contours, _ = cv.findContours(self._selectedImg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        minAreaRect = cv.minAreaRect(contours[0])
+        center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
+        self._minAreaImg = cv.cvtColor(self._minAreaImg, cv.COLOR_GRAY2BGR)
+        cv.drawContours(self._minAreaImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
 
-        self._linesImg = np.copy(self._selectedImg)
-        coords = np.column_stack(np.where(self._selectedImg > 0.0))
-        # fit line and compute rotation angle
-        (vy, vx, y0, x0) = cv.fitLine(coords, cv.DIST_L2, 0, 0.01, 0.01)
-        cv.circle(self._linesImg, (x0, y0), 10, (0,255,0), 2)
-        cv.circle(self._linesImg, (x0+20*vx, y0+20*vy), 5, (255,0,0), 2)
-        self.drawLinePtAndVec((x0, y0), (vx, vy))
-        alpha=self.minAngleToGridPtAndVec((x0, y0), (vx, vy))
-        self._log.debug("minAngleToGridPtAndVec = {:.2f}", alpha)
-        angle=alpha * 180 / np.pi
-        self._log.debug("rotation angle = {:.2f}", angle)
-
-        # rotate line image for verification
-        (h, w) = self._linesImg.shape[:2]
-        center = (w // 2, h // 2)
-        M = cv.getRotationMatrix2D(center, angle, 1.0)
-        self._linesRotatedImg = cv.warpAffine(self._linesImg, M, (w, h),
-                flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
-
-        # rotate inputImg
-        (h, w) = self._inputImg.shape[:2]
-        center = (w // 2, h // 2)
-        M = cv.getRotationMatrix2D(center, angle, 1.0)
-        self._outputImg = cv.warpAffine(self._inputImg, M, (w, h),
-                flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+        # extract the rotated minAreaRect from the original
+        # cudos to http://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
+        if rotationAngle < -45.0:
+            rotationAngle += 90.0
+            minAreaRectWidth, minAreaRectHeight = minAreaRectHeight, minAreaRectWidth
+        rotationMatrix = cv.getRotationMatrix2D(center, rotationAngle, 1.0)
+        minAreaImgHeight, minAreaImgWidth, _ = self._minAreaImg.shape
+        self._minAreaRotatedImg = cv.warpAffine(self._minAreaImg, rotationMatrix, (minAreaImgWidth, minAreaImgHeight), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+        originalImgHeight, originalImgWidth, _ = self._originalImg.shape
+        rotatedImg = cv.warpAffine(self._originalImg, rotationMatrix, (originalImgWidth, originalImgHeight), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+        self._outputImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
 
     def writeOutput(self):
         cv.imwrite(f'{self.prefix}_0_input.jpg', self._inputImg)
-        cv.imwrite(f'{self.prefix}_1_gray.jpg', self._grayImg)
-        cv.imwrite(f'{self.prefix}_2_threshold.jpg', self._thresholdImg)
-        cv.imwrite(f'{self.prefix}_3_closed.jpg', self._closedImg)
-        cv.imwrite(f'{self.prefix}_4_dilated.jpg', self._dilatedImg)
-        cv.imwrite(f'{self.prefix}_5_labeled.jpg', self._labeledImg)
-        cv.imwrite(f'{self.prefix}_6_selected.jpg', self._selectedImg)
-        cv.imwrite(f'{self.prefix}_7_line.jpg', self._linesImg)
-        cv.imwrite(f'{self.prefix}_8_lineRotated.jpg', self._linesRotatedImg)
-        cv.imwrite(f'{self.prefix}_9a_input.jpg', self._inputImg)
-        cv.imwrite(f'{self.prefix}_9b_output.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_1_closed.jpg', self._closedImg)
+        cv.imwrite(f'{self.prefix}_2_dilated.jpg', self._dilatedImg)
+        cv.imwrite(f'{self.prefix}_3_labeled.jpg', self._labeledImg)
+        cv.imwrite(f'{self.prefix}_4_selected.jpg', self._selectedImg)
+        cv.imwrite(f'{self.prefix}_5_minArea.jpg', self._minAreaImg)
+        cv.imwrite(f'{self.prefix}_6_minAreaRotated.jpg', self._minAreaRotatedImg)
+        cv.imwrite(f'{self.prefix}_7_output.jpg', self._outputImg)
 
 class FindMarginsByLines(LineBasedStep):
     class Corner:
@@ -561,7 +551,6 @@ class FitToSheet(ProcessingStep):
         cv.imwrite(f'{self.prefix}_1_output.jpg', self._outputImg)
 
 class RecognizeText(ProcessingStep):
-    confidenceThreshold = 0.5
     nextFallbackPageNumber = 0
 
     def __init__(self,
@@ -569,6 +558,10 @@ class RecognizeText(ProcessingStep):
             outputDir,
             db,
             fallbackSheetName,
+            marginSize = 5,
+            minComponentArea = 100,
+            minNormalizedAspectRatio = .1,
+            confidenceThreshold = 0.5,
             log = helpers.Log()
             ):
         super().__init__(name, outputDir, log)
@@ -577,6 +570,10 @@ class RecognizeText(ProcessingStep):
         self.__fallbackSheetName = fallbackSheetName
         self.__fallbackPageNumber = self.nextFallbackPageNumber
         RecognizeText.nextFallbackPageNumber += 1
+        self.marginSize = marginSize
+        self.confidenceThreshold = confidenceThreshold
+        self.minComponentArea = minComponentArea
+        self.minNormalizedAspectRatio = minNormalizedAspectRatio
 
     def productId(self):
         return self.__sheet.productId()
@@ -588,10 +585,14 @@ class RecognizeText(ProcessingStep):
         super().process(inputImg)
         self._inputImg = inputImg
         self._grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
-        threshold = np.average(self._grayImg) * 0.8
-        print(f'average = {np.average(self._grayImg)}')
-        _, self._thresholdImg = cv.threshold(self._grayImg, threshold, 255,
-                cv.THRESH_BINARY_INV)
+        self._thresholdImg = 255-cv.adaptiveThreshold(self._grayImg, 255,
+                cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,3)
+        closingKernel = cv.getStructuringElement(cv.MORPH_RECT, (5,5))
+        self._closedImg = cv.morphologyEx(self._thresholdImg, cv.MORPH_CLOSE,
+                closingKernel)
+        openingKernel = cv.getStructuringElement(cv.MORPH_RECT, (4,4))
+        self._openedImg = cv.morphologyEx(self._closedImg, cv.MORPH_OPEN,
+                openingKernel)
 
         # prepare choices
         maxNumPages = self.__db.config.getint('tagtrail_gen',
@@ -600,20 +601,20 @@ class RecognizeText(ProcessingStep):
         pageNumbers = [pageNumberString.format(pageNumber=str(n))
                             for n in range(1, maxNumPages+1)]
         currency = self.__db.config.get('general', 'currency')
-        names, units, prices = zip(*[
+        names, units, prices = map(set, zip(*[
             (p.description.upper(),
-             str(p.amount).upper()+p.unit.upper(),
+             p.amountAndUnit.upper(),
              helpers.formatPrice(p.grossSalesPrice(), currency).upper())
-            for p in self.__db.products.values()])
+            for p in self.__db.products.values()]))
         memberIds = [m.id for m in self.__db.members.values()]
-        self._log.debug(f'names={names}, units={units}, prices={prices}, ' +
-                f'memberIds={memberIds}, pageNumbers={pageNumbers}')
+        self._log.debug(f'names={list(names)}, units={list(units)}, prices={list(prices)}, ' +
+                f'memberIds={list(memberIds)}, pageNumbers={list(pageNumbers)}')
 
         self._recognizedBoxTexts = {}
         for box in self.__sheet.boxes():
             if box.name == "nameBox":
                 name, confidence = self.recognizeBoxText(box, names)
-                if name == '' or confidence == 0:
+                if name == '' or confidence < 1:
                     box.text, box.confidence = self.__fallbackSheetName, 0
                 else:
                     box.text, box.confidence = name, confidence
@@ -628,7 +629,7 @@ class RecognizeText(ProcessingStep):
             elif box.name == "pageNumberBox":
                 pageNumber, confidence = self.recognizeBoxText(box,
                         pageNumbers)
-                if pageNumber == '' or confidence == 0:
+                if pageNumber == '' or confidence < 1:
                     box.text, box.confidence = str(self.__fallbackPageNumber), 0
                 else:
                     box.text, box.confidence = pageNumber, confidence
@@ -637,6 +638,50 @@ class RecognizeText(ProcessingStep):
             else:
                 box.text, box.confidence = ("", 1.0)
 
+        # try to fill in product infos if id is clear
+        nameBox = self.__sheet.boxByName('nameBox')
+        unitBox = self.__sheet.boxByName('unitBox')
+        priceBox = self.__sheet.boxByName('priceBox')
+        pageNumberBox = self.__sheet.boxByName('pageNumberBox')
+        if nameBox.confidence == 1:
+            product = self.__db.products[self.__sheet.productId()]
+            expectedAmountAndUnit = product.amountAndUnit.upper()
+            expectedPrice = helpers.formatPrice(product.grossSalesPrice(), currency).upper()
+            if unitBox.confidence < 1:
+                self._log.info(f'Inferred unit={expectedAmountAndUnit}')
+                unitBox.text = expectedAmountAndUnit
+                unitBox.confidence = 1
+            elif unitBox.text != expectedAmountAndUnit:
+                unitBox.confidence = 0
+            if priceBox.confidence < 1:
+                self._log.info(f'Inferred price={expectedPrice}')
+                priceBox.text = expectedPrice
+                priceBox.confidence = 1
+            elif priceBox.text != expectedPrice:
+                priceBox.confidence = 0
+            if (product.previousQuantity < ProductSheet.maxQuantity()
+                    and pageNumberBox.text == ''):
+                # previousQuantity might also be small because many units were
+                # already sold, while we still have more than one sheet
+                # => this is just a good guess
+                pageNumberBox.confidence = 0
+                pageNumberBox.text = self.__db.config.get('tagtrail_gen',
+                        'page_number_string').format(pageNumber='1')
+                self._log.info(f'Inferred pageNumber={pageNumberBox.text}')
+
+        # assume box should be filled if at least two neighbours are filled
+        for box in self.__sheet.boxes():
+            if box.text != '' or box.confidence == 0:
+                continue
+            numFilledNeighbours = 0
+            for direction in ["Up", "Down", "Left", "Right"]:
+                neighbourBox = self.__sheet.neighbourBox(box, direction)
+                if neighbourBox is not None and neighbourBox.text != '':
+                    numFilledNeighbours += 1
+            if 2 <= numFilledNeighbours:
+                box.confidence = 0
+
+        for box in self.__sheet.boxes():
             if box.confidence < self.confidenceThreshold:
                 box.bgColor = (0, 0, 80)
 
@@ -647,22 +692,59 @@ class RecognizeText(ProcessingStep):
     """
     def recognizeBoxText(self, box, candidateTexts):
         (x0,y0),(x1,y1)=box.pt1,box.pt2
-        m=20
-        thresholdImg = self._thresholdImg[y0+m:y1-m,x0+m:x1-m]
-        # assume empty box if not enough components are recognized
-        numComponents, labeledImg = cv.connectedComponents(thresholdImg)
+        openedImg = self._openedImg[y0-self.marginSize:y1+self.marginSize,
+                x0-self.marginSize:x1+self.marginSize]
+        originalImg = self._inputImg[y0-self.marginSize:y1+self.marginSize,
+                x0-self.marginSize:x1+self.marginSize]
+        cv.imwrite(f'{self.prefix}_0_{box.name}_0_originalImg.jpg', originalImg)
+        cv.imwrite(f'{self.prefix}_0_{box.name}_1_openedImg.jpg', openedImg)
+
+        numComponents, labeledImg, stats, _ = cv.connectedComponentsWithStats(openedImg)
+
+        # find components touching the border of the image
+        height, width = labeledImg.shape
+        componentsTouchingBorder = set()
+        for x in range(width):
+            componentsTouchingBorder.add(labeledImg[0,x])
+            componentsTouchingBorder.add(labeledImg[height-1,x])
+        for y in range(height):
+            componentsTouchingBorder.add(labeledImg[y,0])
+            componentsTouchingBorder.add(labeledImg[y,width-1])
+        self._log.debug(f'componentsTouchingBorder={list(componentsTouchingBorder)}')
+
+        # remove spurious components
+        bordersCleanedImg = labeledImg
+        for label in range(numComponents):
+            componentWidth = stats[label, cv.CC_STAT_WIDTH]
+            componentHeight = stats[label, cv.CC_STAT_HEIGHT]
+            normalizedAspectRatio = (min(componentWidth, componentHeight) /
+                    max(componentWidth, componentHeight))
+            self._log.debug(f'stats[label, cv.CC_STAT_WIDTH]={componentWidth}')
+            self._log.debug(f'stats[label, cv.CC_STAT_HEIGHT]={componentHeight}')
+            self._log.debug(f'normalizedAspectRatio={normalizedAspectRatio}')
+            self._log.debug(f'stats[label, cv.CC_STAT_AREA]={stats[label, cv.CC_STAT_AREA]}')
+            if (label in componentsTouchingBorder
+                    or stats[label, cv.CC_STAT_AREA] < self.minComponentArea
+                    or normalizedAspectRatio < self.minNormalizedAspectRatio):
+                bordersCleanedImg = np.where(bordersCleanedImg == label,
+                        np.uint8(0.0), bordersCleanedImg)
+
+        bordersCleanedImg = np.where(bordersCleanedImg == 0,
+                        np.uint8(0.0), np.uint8(255.0))
         labeledImg = labeledImg / numComponents * 255
-        cv.imwrite(f'{self.prefix}_0_{box.name}_1_thresholdImg.jpg', thresholdImg)
         cv.imwrite(f'{self.prefix}_0_{box.name}_2_labeledImg.jpg', labeledImg)
-        self._log.debug(f'{box.name} has numComponents={numComponents}')
+        cv.imwrite(f'{self.prefix}_0_{box.name}_3_bordersCleanedImg.jpg', bordersCleanedImg)
+
+        # assume empty box if not enough components are recognized
+        numComponents, _ = cv.connectedComponents(bordersCleanedImg)
+        self._log.debug(f'bordersCleanedImg of {box.name} has numComponents={numComponents}')
         if numComponents < 4:
             box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
-        kernel = cv.getStructuringElement(cv.MORPH_RECT, (2,2))
-        inputImg = cv.erode(self._inputImg[y0+m:y1-m,x0+m:x1-m], kernel, 1)
-        p = RotateLabel(f'_0_{box.name}_3_rotation', self.prefix, log=self._log)
-        p.process(inputImg)
+        p = RotateLabel(f'_0_{box.name}_3_rotation', self.prefix,
+                log=self._log)
+        p.process(bordersCleanedImg, originalImg)
         p.writeOutput()
         img = p._outputImg
 
@@ -693,7 +775,9 @@ class RecognizeText(ProcessingStep):
     def writeOutput(self):
         cv.imwrite(f'{self.prefix}_1_grayImg.jpg', self._grayImg)
         cv.imwrite(f'{self.prefix}_2_thresholdImg.jpg', self._thresholdImg)
-        cv.imwrite(f'{self.prefix}_3_output.jpg', self._outputImg)
+        cv.imwrite(f'{self.prefix}_3_closedImg.jpg', self._closedImg)
+        cv.imwrite(f'{self.prefix}_4_openedImg.jpg', self._openedImg)
+        cv.imwrite(f'{self.prefix}_5_output.jpg', self._outputImg)
 
 def processFile(database, inputFile, outputDir, tmpDir):
     print('Processing file: ', inputFile)
