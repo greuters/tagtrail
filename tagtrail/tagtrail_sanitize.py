@@ -40,20 +40,30 @@ class InputSheet(ProductSheet):
         self.load(path)
         self.originalPath = path
 
+        # prepare choices
+        maxNumPages = database.config.getint('tagtrail_gen',
+                'max_num_pages_per_product')
+        pageNumberString = database.config.get('tagtrail_gen', 'page_number_string')
+        pageNumbers = [pageNumberString.format(pageNumber=str(n))
+                            for n in range(1, maxNumPages+1)]
+        currency = database.config.get('general', 'currency')
+        names, units, prices = zip(*[
+            (p.description.upper(),
+             str(p.amount).upper()+p.unit.upper(),
+             formatPrice(p.grossSalesPrice(), currency).upper())
+            for p in database.products.values()])
+
         self._box_to_widget = {}
         self.validationBoxTexts = {}
         for box in self.boxes():
             if box.name == "nameBox":
-                choices = list(sorted(set([p.description
-                    for p in database.products.values()])))
+                choices = names
             elif box.name == "unitBox":
-                choices = list(sorted(set([p.amountAndUnit
-                    for p in database.products.values()])))
+                choices = units
             elif box.name == "priceBox":
-                choices = list(sorted(set([formatPrice(p.grossSalesPrice())
-                    for p in database.products.values()])))
+                choices = prices
             elif box.name == "pageNumberBox":
-                choices = [f'Blatt {str(n)}' for n in range(1, 100)]
+                choices = pageNumbers
             elif box.name.find("dataBox") != -1:
                 choices = list(sorted(database.members.keys()))
             else:

@@ -119,13 +119,13 @@ class SplitSheets(ProcessingStep):
     def __init__(self,
                  name,
                  outputDir = 'data/tmp/',
-                 log = helpers.Log(),
                  sheet0 = (0, 0, .5, .5), # x0, y0, x1, y1 relative
                  sheet1 = (.5, 0, 1, .5), # x0, y0, x1, y1 relative
                  sheet2 = (0, .5, .5, 1), # x0, y0, x1, y1 relative
                  sheet3 = (.5, .5, 1, 1), # x0, y0, x1, y1 relative
                  threshold = 140,
                  kernelSize = 15,
+                 log = helpers.Log(),
                  ):
         super().__init__(name, outputDir, log)
         self._sheets = [sheet0, sheet1, sheet2, sheet3]
@@ -593,14 +593,22 @@ class RecognizeText(ProcessingStep):
         _, self._thresholdImg = cv.threshold(self._grayImg, threshold, 255,
                 cv.THRESH_BINARY_INV)
 
+        # prepare choices
+        maxNumPages = self.__db.config.getint('tagtrail_gen',
+                'max_num_pages_per_product')
+        pageNumberString = self.__db.config.get('tagtrail_gen', 'page_number_string')
+        pageNumbers = [pageNumberString.format(pageNumber=str(n))
+                            for n in range(1, maxNumPages+1)]
+        currency = self.__db.config.get('general', 'currency')
         names, units, prices = zip(*[
             (p.description.upper(),
              str(p.amount).upper()+p.unit.upper(),
-             helpers.formatPrice(p.grossSalesPrice()).upper())
+             helpers.formatPrice(p.grossSalesPrice(), currency).upper())
             for p in self.__db.products.values()])
         memberIds = [m.id for m in self.__db.members.values()]
-        self._log.debug("names={}, units={}, prices={}, memberIds={}", names,
-                units, prices, memberIds)
+        self._log.debug(f'names={names}, units={units}, prices={prices}, ' +
+                f'memberIds={memberIds}, pageNumbers={pageNumbers}')
+
         self._recognizedBoxTexts = {}
         for box in self.__sheet.boxes():
             if box.name == "nameBox":
@@ -619,7 +627,7 @@ class RecognizeText(ProcessingStep):
                     box.confidence = 0
             elif box.name == "pageNumberBox":
                 pageNumber, confidence = self.recognizeBoxText(box,
-                        [f'Blatt {str(n)}' for n in range(1, 100)])
+                        pageNumbers)
                 if pageNumber == '' or confidence == 0:
                     box.text, box.confidence = str(self.__fallbackPageNumber), 0
                 else:
@@ -689,7 +697,22 @@ class RecognizeText(ProcessingStep):
 
 def processFile(database, inputFile, outputDir, tmpDir):
     print('Processing file: ', inputFile)
-    split = SplitSheets("0_splitSheets", tmpDir)
+
+    sheet0 = tuple(map(float,
+        database.config.getcsvlist('tagtrail_ocr', 'sheet0_coordinates')))
+    sheet1 = tuple(map(float,
+        database.config.getcsvlist('tagtrail_ocr', 'sheet1_coordinates')))
+    sheet2 = tuple(map(float,
+        database.config.getcsvlist('tagtrail_ocr', 'sheet2_coordinates')))
+    sheet3 = tuple(map(float,
+        database.config.getcsvlist('tagtrail_ocr', 'sheet3_coordinates')))
+    split = SplitSheets(
+            "0_splitSheets",
+            tmpDir,
+            sheet0,
+            sheet1,
+            sheet2,
+            sheet3)
     split.process(cv.imread(inputFile))
     split.writeOutput()
     for idx, sheetImg in enumerate(split._outputSheetImgs):
@@ -697,7 +720,7 @@ def processFile(database, inputFile, outputDir, tmpDir):
         print(f'sheetName = {sheetName}')
         sheetDir = f'{tmpDir}sheet_{idx}'
         helpers.recreateDir(sheetDir)
-        # processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')
+        processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')
     return split.generatedSheets()
 
 def processSheet(database, sheetImg, sheetName, outputDir, tmpDir):

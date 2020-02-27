@@ -114,3 +114,4 @@ venv.bak/
 docs/html/
 docs/.*
 *.gnucash.*.gnucash
+config/credentials.cfg

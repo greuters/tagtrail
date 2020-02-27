@@ -37,14 +37,24 @@ def generateSheet(sheetDir, sheetName, db, addTestTags):
     log = helpers.Log()
     if sheetName in db.products:
         product = db.products[sheetName]
+        # one based, as this goes out to customers
         numPages = math.ceil(product.previousQuantity /
-                ProductSheet.maxQuantity())+1
-        for pageNumber in range(1, numPages):
+                ProductSheet.maxQuantity())
+        maxNumPages = db.config.getint('tagtrail_gen',
+                'max_num_pages_per_product')
+        if numPages > maxNumPages:
+            raise ValueError(f'Quantity of {product.id} is too high, ' +
+                    f'would need {numPages}, max {maxNumPages} are allowed')
+
+        for pageNumber in range(1, numPages+1):
             sheet = ProductSheet(db, addTestTags)
             sheet.name = product.description
             sheet.amountAndUnit = product.amountAndUnit
-            sheet.grossSalesPrice = f'{helpers.formatPrice(product.grossSalesPrice())} CHF'
-            sheet.pageNumber = f'Blatt {str(pageNumber)}'
+            sheet.grossSalesPrice = helpers.formatPrice(
+                    product.grossSalesPrice(),
+                    db.config.get('general', 'currency'))
+            sheet.pageNumber = db.config.get('tagtrail_gen',
+                    'page_number_string').format(pageNumber=str(pageNumber))
             path = f'{sheetDir}{sheetName}_{pageNumber}.jpg'
 
             if cv.imwrite(path, sheet.createImg()) is True:

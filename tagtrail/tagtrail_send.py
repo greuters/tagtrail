@@ -33,26 +33,19 @@ from email.mime.base import MIMEBase
 from keyrings.cryptfile.cryptfile import CryptFileKeyring
 
 class MailSender(ABC):
-    # TODO load from config
-    mailUser = 'info@speichaer.ch'
-    mailHost = 'mail.cyon.ch'
-    smtpPort = 465
-    imapPort = 993
-    invoiceIban = 'CH3609000000890399940'
-    liquidityThreshold = 100
-    password_file_path = './config/cryptfile_pass.cfg'
-
     def __init__(self,
             accountingPath,
             accessCode,
             accountantName,
+            configFilePath,
             testRecipient = None
             ):
         self.accessCode = accessCode
         self.log = helpers.Log(helpers.Log.LEVEL_DEBUG)
         self.billPath = accountingPath + '3_bills/'
         self.templatePath = accountingPath + '0_input/templates/'
-        self.db = database.Database(f'{accountingPath}0_input/')
+        self.db = database.Database(f'{accountingPath}0_input/',
+                configFilePath)
         self.bills = [database.Database.readCsv(
             f'{self.billPath}{member.id}.csv', database.Bill)
             for member in self.db.members.values()]
@@ -70,11 +63,13 @@ class MailSender(ABC):
         keyring = CryptFileKeyring()
         for attempt in range(3):
             try:
-                keyring.file_path = self.password_file_path
+                keyring.file_path = self.db.config.get('general',
+                        'password_file_path')
                 # this call asks the user for the keyring password in the background
                 # if it is wrong, a ValueError is raised - ugly, but only
                 # working solution I found so far
-                self.mailPassword = keyring.get_password('tagtrail_send', self.mailUser)
+                self.mailPassword = keyring.get_password('tagtrail_send',
+                        self.db.config.get('tagtrail_send', 'mail_user'))
                 break
             except ValueError:
                 print('Failed to open keyring - Wrong password?')
@@ -84,8 +79,11 @@ class MailSender(ABC):
 
         if self.mailPassword is None:
             # if we made it here, the keyring is opened
-            self.mailPassword = getpass.getpass(f'Password for {self.mailUser}:')
-            keyring.set_password('tagtrail_send', self.mailUser,
+            self.mailPassword = getpass.getpass('Password for ' +
+                    f'{self.db.config.get("tagtrail_send", "mail_user")}:')
+            keyring.set_password(
+                    'tagtrail_send',
+                    self.db.config.get('tagtrail_send', 'mail_user'),
                     self.mailPassword)
 
         self.testRecipient = testRecipient
@@ -107,13 +105,19 @@ class MailSender(ABC):
                 return
 
         for bill in self.bills:
-            invoiceTextTemplate = self.invoiceAboveThresholdTemplate \
-                    if self.liquidityThreshold < bill.currentBalance() else \
-                    self.invoiceBelowThresholdTemplate
-            correctionText = '' if bill.correctionTransaction == 0 else \
-                    self.correctionTextTemplate.substitute(
-                    CORRECTION_TRANSACTION=helpers.formatPrice(bill.correctionTransaction, 'CHF'),
-                    CORRECTION_JUSTIFICATION=bill.correctionJustification)
+            if (self.db.config.get('general', 'liquidity_threshold')
+                    < bill.currentBalance()):
+                invoiceTextTemplate = self.invoiceAboveThresholdTemplate
+            else:
+                invoiceTextTemplate = self.invoiceBelowThresholdTemplate
+
+            if bill.correctionTransaction == 0:
+                correctionText = ''
+            else:
+                correctionText = self.correctionTextTemplate.substitute(
+                        CORRECTION_TRANSACTION=helpers.formatPrice(bill.correctionTransaction,
+                            'CHF'),
+                        CORRECTION_JUSTIFICATION=bill.correctionJustification)
 
             for email in self.db.members[bill.memberId].emails:
                 if not self.testRecipient is None:
@@ -124,10 +128,14 @@ class MailSender(ABC):
                 self.log.info('Sending email to {}, {}'.format(email, name))
                 body = self.emailTemplate.substitute(
                             INVOICE_TEXT=invoiceTextTemplate.substitute(
-                                LIQUIDITY_THRESHOLD=helpers.formatPrice(self.liquidityThreshold, 'CHF'),
+                                LIQUIDITY_THRESHOLD=helpers.formatPrice(
+                                    self.db.config.get('general',
+                                        'liquidity_threshold'),
+                                    'CHF'),
                                 ACCESS_CODE=self.accessCode,
                                 MEMBER_ID=bill.memberId,
-                                INVOICE_IBAN=self.invoiceIban),
+                                INVOICE_IBAN=self.db.config.get('general',
+                                    'our_iban')),
                             MEMBER_NAME=name,
                             BILL=str(bill),
                             TOTAL_GROSS_SALES_PRICE=helpers.formatPrice(bill.totalGrossSalesPrice(), 'CHF'),
@@ -137,11 +145,14 @@ class MailSender(ABC):
                             PREVIOUS_BALANCE=helpers.formatPrice(bill.previousBalance, 'CHF'),
                             CURRENT_ACCOUNTING_DATE=bill.currentAccountingDate,
                             CURRENT_BALANCE=helpers.formatPrice(bill.currentBalance(), 'CHF'),
-                            LIQUIDITY_THRESHOLD=helpers.formatPrice(self.liquidityThreshold, 'CHF'),
-                            INVOICE_IBAN=self.invoiceIban,
+                            LIQUIDITY_THRESHOLD=helpers.formatPrice(
+                                self.db.config.get('general',
+                                    'liquidity_threshold'),
+                                'CHF'),
+                            INVOICE_IBAN=self.db.config.get('general', 'our_iban'),
                             MEMBER_ID=bill.memberId,
                             ACCESS_CODE=self.accessCode,
-                            REPLY_TO_ADDRESS=self.mailUser,
+                            REPLY_TO_ADDRESS=self.db.config.get('tagtrail_send', 'mail_user'),
                             ACCOUNTANT_NAME=self.accountantName
                             )
 
@@ -152,7 +163,7 @@ class MailSender(ABC):
 
     def sendEmail(self, to, subject, body, path, attachmentName):
         message = MIMEMultipart()
-        message["From"] = self.mailUser
+        message["From"] = self.db.config.get('tagtrail_send', 'mail_user')
         message["To"] = to
         message["Subject"] = subject
         message.attach(MIMEText(body, "plain"))
@@ -170,12 +181,24 @@ class MailSender(ABC):
         text = message.as_string()
 
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(self.mailHost, self.smtpPort, context=context) as server:
-            result = server.login(self.mailUser, self.mailPassword)
-            server.sendmail(self.mailUser, to, text)
+        with smtplib.SMTP_SSL(
+                self.db.config.get('tagtrail_send', 'mail_host'),
+                self.db.config.get('tagtrail_send', 'smtp_port'),
+                context=context) as server:
+            result = server.login(
+                    self.db.config.get('tagtrail_send', 'mail_user'),
+                    self.mailPassword)
+            server.sendmail(
+                    self.db.config.get('tagtrail_send', 'mail_user'),
+                    to,
+                    text)
 
-        imap = imaplib.IMAP4_SSL(self.mailHost, self.imapPort)
-        imap.login(self.mailUser, self.mailPassword)
+        imap = imaplib.IMAP4_SSL(
+                self.db.config.get('tagtrail_send', 'mail_host'),
+                self.db.config.get('tagtrail_send', 'imap_port'))
+        imap.login(
+                self.db.config.get('tagtrail_send', 'mail_user'),
+                self.mailPassword)
         imap.append('INBOX.Sent', '\\Seen', imaplib.Time2Internaldate(time.time()), text.encode('utf8'))
         imap.logout()
 
@@ -192,9 +215,14 @@ if __name__ == '__main__':
     parser.add_argument('--testRecipient',
             dest='testRecipient',
             help='If given, mails are sent to this email address instead of the real receivers.')
+    parser.add_argument('--configFilePath',
+            dest='configFilePath',
+            default='config/tagtrail.cfg',
+            help='Path to the config file to be used.')
     args = parser.parse_args()
 
     MailSender(args.accountingDir,
             args.accessCode,
             args.accountantName,
+            args.configFilePath,
             args.testRecipient).sendBills()

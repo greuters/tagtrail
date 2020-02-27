@@ -222,7 +222,8 @@ class TagCollector(ABC):
                         f'{product.grossSalesPrice()}')
 
 class Gui:
-    def __init__(self, accountingDataPath, nextAccountingDataPath, accountingDate):
+    def __init__(self, accountingDataPath, nextAccountingDataPath,
+            accountingDate, configFilePath):
         self.log = helpers.Log()
         self.accountingDate = accountingDate
         self.accountingDataPath = accountingDataPath
@@ -232,7 +233,8 @@ class Gui:
         self.root.report_callback_exception = self.reportCallbackException
         self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
 
-        self.db = EnrichedDatabase(accountingDataPath, accountingDate)
+        self.db = EnrichedDatabase(accountingDataPath, accountingDate,
+                configFilePath=configFilePath)
 
         self.productSheetSelection = gui_components.Checkbar(self.root,
                 'Accounted pages to keep:',
@@ -331,14 +333,6 @@ class Gui:
             shutil.copy(srcPath, destPath)
 
 class EnrichedDatabase(database.Database):
-    # TODO move to config file
-    merchandiseValue = 'Warenwert'
-    merchandiseValueAccount = 'Warenwert'
-    margin = 'Marge'
-    marginAccount = 'Marge'
-    inventoryDifference = 'Inventurdifferenz'
-    inventoryDifferenceAccount = 'Inventurdifferenz'
-
     def __init__(self, accountingDataPath, accountingDate):
         self.log = helpers.Log()
         self.accountingDataPath = accountingDataPath
@@ -431,6 +425,10 @@ class EnrichedDatabase(database.Database):
                         'or omit inventory quantities alltogether')
             return transactions
 
+        inventoryDifference = self.config.get('tagtrail_account',
+                'inventory_difference')
+        inventoryDifferenceAccount = self.config.get('tagtrail_account',
+                'inventory_difference_account')
         for product in self.products.values():
             expectedQuantity = (product.previousQuantity
                     - product.soldQuantity
@@ -442,17 +440,18 @@ class EnrichedDatabase(database.Database):
                 purchasePriceDifference = quantityDifference * product.purchasePrice
                 grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
                 transactions.append(database.GnucashTransaction(
-                    f'{product.id}: {self.inventoryDifference} accounted on {self.accountingDate}',
+                    f'{product.id}: {inventoryDifference} accounted on {self.accountingDate}',
                     purchasePriceDifference,
-                    self.merchandiseValueAccount,
-                    self.inventoryDifferenceAccount,
+                    self.config.get('tagtrail_account',
+                        'merchandise_value_account'),
+                    inventoryDifferenceAccount,
                     self.accountingDate
                     ))
                 transactions.append(database.GnucashTransaction(
-                    f'{product.id}: {self.inventoryDifference} accounted on {self.accountingDate}',
+                    f'{product.id}: {inventoryDifference} accounted on {self.accountingDate}',
                     grossSalesPriceDifference - purchasePriceDifference,
-                    self.marginAccount,
-                    self.inventoryDifferenceAccount,
+                    self.config.get('tagtrail_account', 'margin_account'),
+                    inventoryDifferenceAccount,
                     self.accountingDate
                     ))
 
@@ -469,10 +468,10 @@ class EnrichedDatabase(database.Database):
                     billPos = bill[product.id]
                     billPos.numInventoryDifferenceTags = min(billPos.numTags, quantityDifference)
                     transactions.append(database.GnucashTransaction(
-                        (f'{product.id}: {self.inventoryDifference} ' +
+                        (f'{product.id}: {inventoryDifference} ' +
                             f'accounted on {self.accountingDate}'),
                         billPos.grossSalesPriceInventoryDifference(),
-                        self.inventoryDifferenceAccount,
+                        inventoryDifferenceAccount,
                         bill.memberId,
                         self.accountingDate
                         ))
@@ -482,18 +481,24 @@ class EnrichedDatabase(database.Database):
         return transactions
 
     def createPurchaseTransactions(self):
+        merchandiseValue = self.config.get('tagtrail_account',
+                'merchandise_value')
+        merchandiseValueAccount = self.config.get('tagtrail_account',
+                'merchandise_value_account')
+        margin = self.config.get('tagtrail_account', 'margin')
+        marginAccount = self.config.get('tagtrail_account', 'margin_account')
         return database.GnucashTransactionList(
                 *([database.GnucashTransaction(
-                    f'{self.merchandiseValue} accounted on {self.accountingDate}',
+                    f'{merchandiseValue} accounted on {self.accountingDate}',
                     bill.purchasePriceWithoutInventoryDifference(),
-                    self.merchandiseValueAccount,
+                    merchandiseValueAccount,
                     bill.memberId,
                     self.accountingDate) for bill in self.bills.values()]
                 +
                 [database.GnucashTransaction(
-                    f'{self.margin} accounted on {self.accountingDate}',
+                    f'{margin} accounted on {self.accountingDate}',
                     bill.grossSalesPriceWithoutInventoryDifference()-bill.purchasePriceWithoutInventoryDifference(),
-                    self.marginAccount,
+                    marginAccount,
                     bill.memberId,
                     self.accountingDate) for bill in self.bills.values()])
                 )
@@ -502,11 +507,11 @@ class EnrichedDatabase(database.Database):
     def previousAccountingDate(self):
         return self.members.accountingDate
 
-def main(accountingDir, renamedAccountingDir, accountingDate, nextAccountingDir):
+def main(accountingDir, renamedAccountingDir, accountingDate, nextAccountingDir, configFilePath):
     newDir = renamedAccountingDir.format(accountingDate = accountingDate)
     if accountingDir != newDir:
         shutil.move(accountingDir, newDir)
-    Gui(newDir, nextAccountingDir, accountingDate)
+    Gui(newDir, nextAccountingDir, accountingDate, configFilePath)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -530,6 +535,12 @@ if __name__ == '__main__':
             dest='nextAccountingDir',
             default='data/next/',
             help='Name of the top-level tagtrail directory to be created for the next accounting.')
+    parser.add_argument('--configFilePath',
+            dest='configFilePath',
+            default='config/tagtrail.cfg',
+            help='Path to the config file to be used.')
+
 
     args = parser.parse_args()
-    main(args.accountingDir, args.renamedAccountingDir, args.accountingDate, args.nextAccountingDir)
+    main(args.accountingDir, args.renamedAccountingDir, args.accountingDate,
+            args.nextAccountingDir, args.configFilePath)

@@ -33,6 +33,7 @@ import slugify
 import copy
 import re
 import itertools
+import configparser
 from collections import UserDict, UserList
 
 class Database(ABC):
@@ -46,57 +47,70 @@ class Database(ABC):
     def __init__(self,
             dataPath,
             memberFileName = 'members',
-            productFileName = 'products'):
+            productFileName = 'products',
+            configFilePath = 'config/tagtrail.cfg'):
         self.memberFilePath = dataPath + memberFileName + '.csv'
         self.productFilePath = dataPath + productFileName + '.csv'
+        self.config = configparser.SafeConfigParser(
+                interpolation=configparser.ExtendedInterpolation(),
+                converters={
+                    'csvlist': lambda x: [i.strip() for i in x.split(',') if
+                        i.strip() != ''],
+                    'newlinelist': lambda x: [i.strip() for i in x.splitlines()
+                        if i.strip() != '']})
+        self.log.info(f'Reading configuration from {configFilePath}')
+        self.config.read(configFilePath)
         self.log.info(f'Reading members from {self.memberFilePath}')
-        self.members = Database.readCsv(self.memberFilePath, MemberDict)
+        self.members = self.readCsv(self.memberFilePath, MemberDict)
         self.log.info(f'Reading products from {self.productFilePath}')
-        self.products = Database.readCsv(self.productFilePath, ProductDict)
+        self.products = self.readCsv(self.productFilePath, ProductDict)
 
-    @classmethod
-    def readCsv(cls, path, containerClass):
+
+    def readCsv(self, path, containerClass):
         """
         containerClass must be DatabaseDict or DatabaseList
         """
-        def addDbObjectToDict(dbObject, dbObjects):
-            if dbObject.id in dbObjects:
+        def addDbObjectToDict(dbObject, container):
+            if dbObject.id in container:
                 raise ValueError(f'duplicate key {dbObject.id} in {path}')
-            dbObjects[dbObject.id] = dbObject
+            container[dbObject.id] = dbObject
 
-        def addDbObjectToList(dbObject, dbObjects):
-            dbObjects.append(dbObject)
+        def addDbObjectToList(dbObject, container):
+            container.append(dbObject)
 
-        cls.log.debug(f'reading csv file {path}')
+        self.log.debug(f'reading csv file {path}')
         with open(path, newline=containerClass.newline, encoding=containerClass.encoding) as csvfile:
             reader = csv.reader(csvfile, delimiter=containerClass.csvDelimiter,
                     quotechar=containerClass.quotechar)
-            prefixRows = containerClass.prefixRows()
-            columnHeaders = containerClass.columnHeaders()
+            prefixRows = self.config.getnewlinelist(
+                    containerClass.configSection(),
+                    containerClass.prefixRowsConfigOption())
+            columnHeaders = self.config.getnewlinelist(
+                    containerClass.configSection(),
+                    containerClass.columnHeadersConfigOption())
             prefixValues = []
-            if issubclass(containerClass, DatabaseDict):
-                databaseObjects = {}
-                addDbObject = addDbObjectToDict
-                instantiateContainer = lambda prefixValues, databaseObjects: \
-                        containerClass(*prefixValues, **databaseObjects)
-            elif issubclass(containerClass, DatabaseList):
-                databaseObjects = []
-                addDbObject = addDbObjectToList
-                instantiateContainer = lambda prefixValues, databaseObjects: \
-                        containerClass(*prefixValues, *databaseObjects)
-            else:
-                raise TypeError('containerClass must be a DatabaseDict or DatabaseList')
 
             for cnt, row in enumerate(reader):
-                cls.log.debug("row={}", row)
+                self.log.debug("row={}", row)
                 if cnt<len(prefixRows):
                     prefixValues.append(
                             helpers.readPrefixRow(prefixRows[cnt], row))
+
                 elif cnt==len(prefixRows):
                     for expectedHeader, actualHeader in itertools.zip_longest(columnHeaders, row):
                         if expectedHeader != actualHeader:
                             raise ValueError(
                             f"expectedHeader '{expectedHeader}' != actualHeader '{actualHeader}'")
+
+                    if issubclass(containerClass, DatabaseDict):
+                        container = containerClass(self.config, *prefixValues)
+                        addDbObject = addDbObjectToDict
+                    elif issubclass(containerClass, DatabaseList):
+                        container = containerClass(self.config, *prefixValues, *databaseObjects)
+                        addDbObject = addDbObjectToList
+                    else:
+                        raise TypeError('containerClass must be a DatabaseDict or DatabaseList')
+
                 else:
                     vals = []
                     for val in row:
@@ -105,25 +119,34 @@ class Database(ABC):
                             vals.append(val)
                         else:
                             vals.append([v.strip() for v in val.split(containerClass.colInternalDelimiter)])
-                    cls.log.debug(f'vals={vals}')
-                    dbObject = containerClass.databaseObjectFromCsvRow(vals)
+                    self.log.debug(f'vals={vals}')
+                    dbObject = container.databaseObjectFromCsvRow(vals)
                     if not dbObject:
                         continue
-                    addDbObject(dbObject, databaseObjects)
+                    addDbObject(dbObject, container)
 
-            return instantiateContainer(prefixValues, databaseObjects)
+            return container
 
-    @classmethod
-    def writeCsv(cls, path, containerClass):
-        with open(path, "w+", newline=containerClass.newline, encoding=containerClass.encoding) as fout:
-            assert(len(containerClass.prefixRows()) == len(containerClass.prefixValues()))
-            for prefix, val in zip(containerClass.prefixRows(),
-                    containerClass.prefixValues()):
+    def writeCsv(self, path, container):
+        """
+        container must be a DatabaseDict or DatabaseList
+        """
+        prefixRows = self.config.getnewlinelist(
+                container.configSection(),
+                container.prefixRowsConfigOption())
+        columnHeaders = self.config.getnewlinelist(
+                container.configSection(),
+                container.columnHeadersConfigOption())
+        assert(len(prefixRows) == len(container.prefixValues()))
+
+        with open(path, "w+", newline=container.newline, encoding=container.encoding) as fout:
+            for prefix, val in zip(prefixRows,
+                    container.prefixValues()):
                 fout.write("{};{}\n".format(prefix, val))
 
-            fout.write(";".join(containerClass.columnHeaders())+"\n")
-            for row in containerClass.csvRows():
-                assert(len(row) == len(containerClass.columnHeaders()))
+            fout.write(";".join(columnHeaders)+"\n")
+            for row in container.csvRows():
+                assert(len(row) == len(columnHeaders))
                 fout.write(";".join(row)+"\n")
 
 class DatabaseObject(ABC):
@@ -134,26 +157,35 @@ class DatabaseObject(ABC):
         self.id = objId
 
 class DatabaseDict(UserDict):
+    """
+    Base class for dicts Database can handle.
+    """
     csvDelimiter = ';'
     colInternalDelimiter = ','
     quotechar = '"'
     newline = ''
     encoding = 'utf-8'
 
+    def __init__(self, config, **kwargs):
+        super().__init__(**kwargs)
+
     @classmethod
-    def prefixRows(cls):
+    def configSection(cls):
         raise NotImplementedError
 
     @classmethod
-    def columnHeaders(cls):
-        raise NotImplementedError
+    def prefixRowsConfigOption(cls):
+        return 'prefix_rows'
+
+    @classmethod
+    def columnHeadersConfigOption(cls):
+        return 'column_headers'
 
     @classmethod
     def containedDatabaseObjectCls(cls):
         raise NotImplementedError
 
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         raise NotImplementedError
 
     def prefixValues(self):
@@ -175,22 +207,31 @@ class DatabaseDict(UserDict):
         super().__setitem__(key, value)
 
 class DatabaseList(UserList):
+    """
+    Base class for lists Database can handle.
+    """
     csvDelimiter = ';'
     colInternalDelimiter = ','
     quotechar = '"'
     newline = ''
     encoding = 'latin-1'
 
+    def __init__(self, config, *args):
+        super().__init__(*args)
+
     @classmethod
-    def prefixRows(cls):
+    def configSection(cls):
         raise NotImplementedError
 
     @classmethod
-    def columnHeaders(cls):
-        raise NotImplementedError
+    def prefixRowsConfigOption(cls):
+        return 'prefix_rows'
 
     @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def columnHeadersConfigOption(cls):
+        return 'column_headers'
+
+    def databaseObjectFromCsvRow(self, rowValues):
         raise NotImplementedError
 
     def prefixValues(self):
@@ -228,28 +269,24 @@ class Member(DatabaseObject):
 
 class MemberDict(DatabaseDict):
     def __init__(self,
+            config,
             accountingDate,
             **kwargs
             ):
-        super().__init__(kwargs)
+        super().__init__(config, **kwargs)
         self.accountingDate = accountingDate \
                 if isinstance(accountingDate, datetime.date) else \
                 helpers.DateUtility.strptime(accountingDate)
 
     @classmethod
-    def prefixRows(cls):
-        return ['Kontostand am']
-
-    @classmethod
-    def columnHeaders(cls):
-        return ['memberId', 'name', 'emails', 'Kontostand']
+    def configSection(cls):
+        return 'members'
 
     @classmethod
     def containedDatabaseObjectCls(cls):
         return Member
 
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         memberId = rowValues[0]
         name = rowValues[1] if isinstance(rowValues[1], str) else ", ".join(rowValues[1])
         if isinstance(rowValues[2], list):
@@ -268,20 +305,12 @@ class MemberDict(DatabaseDict):
         return [[m.id, m.name, ', '.join(m.emails), str(m.balance)] for m in self.values()]
 
 class Product(DatabaseObject):
-    # TODO put in some config file
-    marginPercentage = 0.05
-    validEaternityUnits = ['kg', 'g', 'l', 'cl', 'ml']
-    validProductionIds = ['standard', 'greenhouse', 'organic', 'fair-trade',
-            'farm', 'wild-caught', 'sustainable-fish']
-    validTransportIds = ['air', 'ground']
-    validConservationIds = ['fresh', 'frozen', 'dried', 'conserved', 'canned',
-            'boiled-down']
-
     def __init__(self,
             description,
             amount,
             unit,
             purchasePrice,
+            marginPercentage,
             previousQuantity,
             inventoryQuantity = None,
             addedQuantity = None,
@@ -301,6 +330,8 @@ class Product(DatabaseObject):
             raise TypeError(f'unit is not a string, {unit}')
         if not type(purchasePrice) is float:
             raise TypeError(f'purchasePrice is not a float, {purchasePrice}')
+        if not type(marginPercentage) is float:
+            raise TypeError(f'marginPercentage is not a float, {marginPercentage}')
         if inventoryQuantity and not type(inventoryQuantity) is int:
             raise TypeError(f'inventoryQuantity is not an integer, {inventoryQuantity}')
         if eaternityName and not type(eaternityName) is str:
@@ -312,31 +343,21 @@ class Product(DatabaseObject):
                 production = [production]
             if not type(production) is list:
                 raise TypeError(f'production is not a list, {production}')
-            for p in production:
-                if not p in self.validProductionIds:
-                    raise ValueError('production must be one of ' + \
-                            f'{self.validProductionIds}, but is "{p}"')
         if transport:
             if not type(transport) is str:
                 raise TypeError(f'transport is not a string, {transport}')
-            if not transport in self.validTransportIds:
-                raise ValueError('transport must be one of ' + \
-                        f'{self.validTransportIds} but is "{transport}"')
         if conservation:
             if type(conservation) is str:
                 conservation = [conservation]
             if not type(conservation) is list:
                 raise TypeError(f'conservation is not a list, "{conservation}"')
-            for c in conservation:
-                if not c in self.validConservationIds:
-                    raise ValueError('conservation must be one of ' + \
-                            f'{self.validConservationIds}, but is {c}')
 
         super().__init__(slugify.slugify(description))
         self.description = description
         self.amount = amount
         self.unit = unit
         self.purchasePrice = purchasePrice
+        self.marginPercentage = marginPercentage
         self.previousQuantity = previousQuantity
         self.inventoryQuantity = inventoryQuantity
         self.addedQuantity = addedQuantity
@@ -391,51 +412,45 @@ class Product(DatabaseObject):
         return self.previousQuantity+self.addedQuantity-self.soldQuantity
 
     def grossSalesPrice(self):
-        return helpers.roundPriceCH(self.purchasePrice * (1 + Product.marginPercentage))
+        return helpers.roundPriceCH(self.purchasePrice * (1 + self.marginPercentage))
 
 class ProductDict(DatabaseDict):
     log = helpers.Log()
     def __init__(self,
+            config,
             previousQuantityDate,
             expectedQuantityDate,
             inventoryQuantityDate,
             **kwargs
             ):
-        super().__init__(kwargs)
+        super().__init__(config, **kwargs)
         if not isinstance(previousQuantityDate, str):
             raise TypeError(f'previousQuantityDate is not a string: {previousQuantityDate}')
         if not isinstance(expectedQuantityDate, str):
             raise TypeError(f'expectedQuantityDate is not a string: {expectedQuantityDate}')
         if not isinstance(inventoryQuantityDate, str):
             raise TypeError(f'inventoryQuantityDate is not a string: {inventoryQuantityDate}')
+
         self.previousQuantityDate = None if previousQuantityDate == '' else helpers.DateUtility.strptime(previousQuantityDate)
         self.expectedQuantityDate = None if expectedQuantityDate == '' else helpers.DateUtility.strptime(expectedQuantityDate)
         self.inventoryQuantityDate = None if inventoryQuantityDate == '' else helpers.DateUtility.strptime(inventoryQuantityDate)
+        self.productMarginPercentage = config.getfloat('general',
+                'product_margin_percentage')
 
     @classmethod
-    def prefixRows(cls):
-        return ['Previous Quantity Date', 'Expected Quantity Date', 'Inventory Quantity Date']
-
-    @classmethod
-    def columnHeaders(cls):
-        return ['Name', 'Amount', f"Unit [{', '.join(Product.validEaternityUnits)}]", 'Purchase Price',
-        'Previous Quantity', 'Added Quantity', 'Sold Quantity', 'Expected Quantity', 'Inventory Quantity',
-        'Eaternity Name', 'Origin [country]',
-        f"Production [{', '.join(Product.validProductionIds)}]",
-        f"Transport [{', '.join(Product.validTransportIds)}]",
-        f"Conservation [{', '.join(Product.validConservationIds)}]",
-        ]#'gCo2e',]
+    def configSection(cls):
+        return 'products'
 
     @classmethod
     def containedDatabaseObjectCls(cls):
         return Product
 
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         return Product(description = rowValues[0],
                 amount = int(rowValues[1]),
                 unit = rowValues[2],
                 purchasePrice = float(rowValues[3]),
+                marginPercentage = self.productMarginPercentage,
                 previousQuantity = int(rowValues[4]),
                 addedQuantity = 0 if not rowValues[5] else int(rowValues[5]),
                 soldQuantity  = 0 if not rowValues[6] else int(rowValues[6]),
@@ -573,12 +588,9 @@ class BillPosition(DatabaseObject):
         return self.numTags * self.unitGrossSalesPrice
 
 class Bill(DatabaseDict):
-    # TODO load from config
-    # TODO add climate price when ready
-    textRepresentationHeader = 'Produkt: #Kleberli x Einheitspreis [CHF] = Total [CHF]' #, Klimapreis [gCO2e]'
-    textRepresentationFooter = 'Total: {} CHF' #, {} gCO2e'
-
+# TODO add climate price when ready
     def __init__(self,
+            config,
             memberId,
             previousAccountingDate,
             currentAccountingDate,
@@ -591,7 +603,7 @@ class Bill(DatabaseDict):
             expectedTotalGCo2e = None,
             **kwargs
             ):
-        super().__init__(kwargs)
+        super().__init__(config, **kwargs)
         self.memberId = memberId
         self.previousAccountingDate = previousAccountingDate \
                 if isinstance(previousAccountingDate, datetime.date) else \
@@ -615,6 +627,12 @@ class Bill(DatabaseDict):
         if expectedTotalGCo2e and self.totalGCo2e() != int(expectedTotalGCo2e):
             raise ValueError(f'totalGCo2e ({totalGCo2e}) is ' + \
                     f'not consistent with sum of gCo2e ({self.totalGCo2e()})')
+        self.textRepresentationHeader = config.get(
+                self.configSection(),
+                'bill_text_representation_header')
+        self.textRepresentationFooter = config.get(
+                self.configSection(),
+                'bill_text_representation_footer')
 
     @property
     def correctionTransaction(self):
@@ -661,24 +679,14 @@ class Bill(DatabaseDict):
                 self.correctionTransaction - self.totalGrossSalesPrice()
 
     @classmethod
-    def prefixRows(cls):
-        return ['memberId', 'Previous Accounting Date', 'Current Accounting Date',
-                'Previous Balance [CHF]', 'Total Payments [CHF]',
-                'Correction Transaction [CHF]', 'Reason for correction',
-                'Total Price [CHF]', 'Current Balance [CHF]',
-                'Total Climate Price [gCo2e]']
-
-    @classmethod
-    def columnHeaders(cls):
-        return ['productId', 'description', 'numTags', 'unitPrice',
-                'totalProductPrice', 'gCo2e']
+    def configSection(cls):
+        return 'bills'
 
     @classmethod
     def containedDatabaseObjectCls(cls):
         return BillPosition
 
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         numTags = int(rowValues[2])
         unitGrossSalesPrice = helpers.priceFromFormatted(rowValues[3])
         totalGrossSalesPrice = rowValues[4]
@@ -718,7 +726,7 @@ class Bill(DatabaseDict):
                     #p.gCo2e
                     )
         text += '\n' + self.textRepresentationFooter.format(
-                helpers.formatPrice(self.totalGrossSalesPrice()))
+                totalPrice=helpers.formatPrice(self.totalGrossSalesPrice()))
                 #self.totalGCo2e())
         return text
 
@@ -731,19 +739,21 @@ class MemberAccountDict(DatabaseDict):
     """
     Configured for import to GnuCash
     """
-    # TODO: load from config file
-    prefix = 'Fremdkapital:Guthaben Mitglieder:'
-    currency = 'CHF'
+    def __init__(self,
+            config,
+            **kwargs):
+        super().__init__(config, **kwargs)
+        self.prefix = config.get(self.configSection(), 'account_prefix')
+        self.type = config.get(self.configSection(), 'type')
+        self.commoditym = config.get('general', 'currency')
+        self.commodityn = config.get(self.configSection(), 'commodityn')
+        self.hidden = config.get(self.configSection(), 'hidden')
+        self.tax = config.get(self.configSection(), 'tax')
+        self.placeHolder = config.get(self.configSection(), 'place_holder')
 
     @classmethod
-    def prefixRows(cls):
-        return []
-
-    @classmethod
-    def columnHeaders(cls):
-        return ['type', 'full_name', 'name', 'code',
-                'description', 'color', 'notes', 'commoditym',
-                'commodityn', 'hidden', 'tax', 'place_holder']
+    def configSection(cls):
+        return 'member_accounts'
 
     @classmethod
     def containedDatabaseObjectCls(cls):
@@ -774,26 +784,16 @@ class GnucashTransaction:
         self.date = date
 
 class GnucashTransactionList(DatabaseList):
-    colInternalDelimiter=None
-
     """
     Configured for import to GnuCash
     """
-    def __init__(self,
-            *args
-            ):
-        super().__init__(args)
+    colInternalDelimiter=None
 
     @classmethod
-    def prefixRows(cls):
-        return []
+    def configSection(cls):
+        raise 'gnucash_transactions'
 
-    @classmethod
-    def columnHeaders(cls):
-        return ['Date', 'Description', 'Account', 'Withdrawal', 'Transfer Account']
-
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         return GnucashTransaction(
                 date = helpers.DateUtility.strptime(rowValues[0]),
                 description = rowValues[1],
@@ -822,25 +822,23 @@ class CorrectionTransactionDict(DatabaseDict):
     """
     As simple as possible, to allow the user to store correction transactions.
     """
-    def __init__(self,
-            **kwargs
-            ):
-        super().__init__(kwargs)
+    @classmethod
+    def configSection(cls):
+        raise 'correction_transactions'
 
     @classmethod
     def prefixRows(cls):
-        return []
+        return 'prefix_rows'
 
     @classmethod
     def columnHeaders(cls):
-        return ['memberId', 'Amount', 'Justification']
+        return 'column_headers'
 
     @classmethod
     def containedDatabaseObjectCls(cls):
         return CorrectionTransaction
 
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         return CorrectionTransaction(
                 memberId = rowValues[0],
                 amount = float(rowValues[1]),
@@ -919,20 +917,13 @@ class PostfinanceTransaction:
 class PostfinanceTransactionList(DatabaseList):
     colInternalDelimiter=None
     encoding = 'latin-1'
-
-    # TODO move to config
-    expectedCurrency = 'CHF'
-    expectedAccount = 'CH3609000000890399940'
-
-    dateFormat = '%Y-%m-%d'
-    filenameDateFormat = '%Y%m%d'
-    expectedEntryType = 'All bookings'
     """
     Configured to read standard transaction export from PostFinance
     TODO: hint for programmers, this class needs to be adapted/replaced to
     import payments from different bank
     """
     def __init__(self,
+            config,
             dateFrom,
             dateTo,
             entryType,
@@ -949,24 +940,22 @@ class PostfinanceTransactionList(DatabaseList):
         if currency != self.expectedCurrency:
             raise ValueError('unexpected currency ' + \
                     f"'{currency}', should be '{self.expectedCurrency}'")
-        super().__init__(args)
+        super().__init__(config, *args)
         self.dateFrom = helpers.DateUtility.strptime(dateFrom, self.dateFormat)
         self.dateTo = helpers.DateUtility.strptime(dateTo, self.dateFormat)
+        self.expectedCurrency = config.get('general', 'currency')
+        self.expectedAccount = config.get('general', 'our_iban')
+        self.dateFormat = config.get(self.configSection(), 'date_format')
+        self.filenameDateFormat = config.get(self.configSection(),
+                'filename_date_format')
+        self.expectedEntryType = config.get(self.configSection(),
+                'expected_entry_type')
 
     @classmethod
-    def prefixRows(cls):
-        return ['Date from:', 'Date to:', 'Entry type:', 'Account:',
-                'Currency:']
+    def configSection(cls):
+        raise 'postfinance_transactions'
 
-    @classmethod
-    def columnHeaders(cls):
-        return ['Booking date', 'Notification text',
-                f'Credit in {cls.expectedCurrency}',
-                f'Debit in {cls.expectedCurrency}', 'Value',
-                f'Balance in {cls.expectedCurrency}']
-
-    @classmethod
-    def databaseObjectFromCsvRow(cls, rowValues):
+    def databaseObjectFromCsvRow(self, rowValues):
         if rowValues in [
                 [],
                 ['Disclaimer:'],
@@ -997,5 +986,3 @@ class PostfinanceTransactionList(DatabaseList):
             '' if t.debitAmount is None else helpers.formatPrice(t.debitAmount),
             t.value, t.balance]
                 for t in self]
-
-

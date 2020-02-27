@@ -83,9 +83,6 @@ class EnrichedDatabase(database.Database):
 
 
 class Gui:
-    # TODO load from config
-    giroAccount = 'Girokonto'
-
     def __init__(self,
             accountingDataPath,
             accountingDate):
@@ -279,7 +276,7 @@ class Gui:
                 pfTransaction.notificationText,
                 pfTransaction.creditAmount,
                 pfTransaction.memberId,
-                self.giroAccount,
+                self.db.config.get('tagtrail_bankimport', 'checking_account'),
                 pfTransaction.bookingDate)
             if not gnucashTransaction in paymentTransactions:
                 paymentTransactions.append(gnucashTransaction)
