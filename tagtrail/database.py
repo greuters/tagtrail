@@ -106,7 +106,7 @@ class Database(ABC):
                         container = containerClass(self.config, *prefixValues)
                         addDbObject = addDbObjectToDict
                     elif issubclass(containerClass, DatabaseList):
-                        container = containerClass(self.config, *prefixValues, *databaseObjects)
+                        container = containerClass(self.config, *prefixValues)
                         addDbObject = addDbObjectToList
                     else:
                         raise TypeError('containerClass must be a DatabaseDict or DatabaseList')
@@ -137,6 +137,7 @@ class Database(ABC):
         columnHeaders = self.config.getnewlinelist(
                 container.configSection(),
                 container.columnHeadersConfigOption())
+        self.log.debug(f'prefixRows={prefixRows}, prefixValues={container.prefixValues()}')
         assert(len(prefixRows) == len(container.prefixValues()))
 
         with open(path, "w+", newline=container.newline, encoding=container.encoding) as fout:
@@ -461,7 +462,7 @@ class ProductDict(DatabaseDict):
                 production = rowValues[11],
                 transport = rowValues[12],
                 conservation = rowValues[13],
-                )#gCo2e = None if not rowValues[14] else int(rowValues[14]))
+                gCo2e = None if not rowValues[14] else int(rowValues[14]))
 
     def prefixValues(self):
         return ['' if self.previousQuantityDate is None else str(self.previousQuantityDate),
@@ -483,8 +484,7 @@ class ProductDict(DatabaseDict):
                 ','.join(p.production),
                 p.transport,
                 ','.join(p.conservation),
-                ]
-                #p.gCo2e,]
+                str(p.gCo2e)]
                 for p in self.values()]
 
     def copyForNextAccounting(self, accountingDate):
@@ -587,8 +587,10 @@ class BillPosition(DatabaseObject):
     def totalGrossSalesPrice(self):
         return self.numTags * self.unitGrossSalesPrice
 
+    def totalgCo2e(self):
+        return None if self.gCo2e == None else self.numTags * self.gCo2e
+
 class Bill(DatabaseDict):
-# TODO add climate price when ready
     def __init__(self,
             config,
             memberId,
@@ -624,15 +626,13 @@ class Bill(DatabaseDict):
                 helpers.formatPrice(self.totalGrossSalesPrice()) != expectedTotalPrice:
             raise ValueError(f'totalGrossSalesPrice ({expectedTotalPrice}) is ' + \
                     f'not consistent with sum of prices ({self.totalGrossSalesPrice()})')
-        if expectedTotalGCo2e and self.totalGCo2e() != int(expectedTotalGCo2e):
-            raise ValueError(f'totalGCo2e ({totalGCo2e}) is ' + \
-                    f'not consistent with sum of gCo2e ({self.totalGCo2e()})')
+        self.expectedTotalGCo2e = expectedTotalGCo2e
         self.textRepresentationHeader = config.get(
-                self.configSection(),
-                'bill_text_representation_header')
+                self.configSection(), 'text_representation_header')
+        self.textRepresentationRow = config.get(
+                self.configSection(), 'text_representation_row')
         self.textRepresentationFooter = config.get(
-                self.configSection(),
-                'bill_text_representation_footer')
+                self.configSection(), 'text_representation_footer')
 
     @property
     def correctionTransaction(self):
@@ -663,7 +663,12 @@ class Bill(DatabaseDict):
         self.__correctionJustification = justification
 
     def totalGCo2e(self):
-        return sum([p.gCo2e for p in self.values()])
+        totalGCo2e = sum([0 if p.totalgCo2e() == None else p.totalgCo2e() for p in self.values()])
+        if (self.expectedTotalGCo2e and totalGCo2e !=
+                int(self.expectedTotalGCo2e)):
+            raise ValueError(f'expectedTotalGCo2e ({totalGCo2e}) is '
+                    + f'not consistent with sum of gCo2e ({totalGCo2e})')
+        return totalGCo2e
 
     def totalGrossSalesPrice(self):
         return sum([p.totalGrossSalesPrice() for p in self.values()])
@@ -690,8 +695,12 @@ class Bill(DatabaseDict):
         numTags = int(rowValues[2])
         unitGrossSalesPrice = helpers.priceFromFormatted(rowValues[3])
         totalGrossSalesPrice = rowValues[4]
-        position = BillPosition(rowValues[0], rowValues[1], numTags, None, unitGrossSalesPrice,
-                int(rowValues[5]))
+        position = BillPosition(rowValues[0],
+                rowValues[1],
+                numTags,
+                None,
+                unitGrossSalesPrice,
+                None if rowValues[5] == 'None' else int(rowValues[5]))
         if helpers.formatPrice(position.totalGrossSalesPrice()) != totalGrossSalesPrice:
             raise ValueError('inconsistent position, ' + \
                     f'({position.totalGrossSalesPrice()} == {numTags} * {unitGrossSalesPrice}) != {totalGrossSalesPrice}')
@@ -718,16 +727,16 @@ class Bill(DatabaseDict):
     def __str__(self):
         text = self.textRepresentationHeader + '\n'
         for p in self.values():
-            text += '{}: {} x {} = {}\n'.format(
-                    p.description,
-                    p.numTags,
-                    helpers.formatPrice(p.unitGrossSalesPrice),
-                    helpers.formatPrice(p.totalGrossSalesPrice()),
-                    #p.gCo2e
+            text += (self.textRepresentationRow + '\n').format(
+                    description=p.description,
+                    numTags=p.numTags,
+                    unitPrice=helpers.formatPrice(p.unitGrossSalesPrice),
+                    totalPrice=helpers.formatPrice(p.totalGrossSalesPrice()),
+                    totalgCo2e=p.totalgCo2e()
                     )
         text += '\n' + self.textRepresentationFooter.format(
-                totalPrice=helpers.formatPrice(self.totalGrossSalesPrice()))
-                #self.totalGCo2e())
+                totalPrice=helpers.formatPrice(self.totalGrossSalesPrice()),
+                totalgCo2e=self.totalGCo2e())
         return text
 
 class MemberAccount(DatabaseObject):
@@ -765,8 +774,9 @@ class MemberAccountDict(DatabaseDict):
         return []
 
     def csvRows(self):
-        return [['LIABILITY', self.prefix+a.id, a.id,
-                '', '', '', '', self.currency, 'CURRENCY', 'F', 'F', 'F']
+        return [[self.type, self.prefix+a.id, a.id,
+                '', '', '', '', self.commoditym, self.commodityn, self.hidden,
+                self.tax, self.placeHolder]
                 for a in self.values()]
 
 class GnucashTransaction:
@@ -791,7 +801,7 @@ class GnucashTransactionList(DatabaseList):
 
     @classmethod
     def configSection(cls):
-        raise 'gnucash_transactions'
+        return 'gnucash_transactions'
 
     def databaseObjectFromCsvRow(self, rowValues):
         return GnucashTransaction(
@@ -824,7 +834,7 @@ class CorrectionTransactionDict(DatabaseDict):
     """
     @classmethod
     def configSection(cls):
-        raise 'correction_transactions'
+        return 'correction_transactions'
 
     @classmethod
     def prefixRows(cls):
@@ -931,6 +941,11 @@ class PostfinanceTransactionList(DatabaseList):
             currency,
             *args
             ):
+        self.expectedEntryType = config.get(self.configSection(),
+                'expected_entry_type')
+        self.expectedCurrency = config.get('general', 'currency')
+        self.expectedAccount = config.get('general', 'our_iban')
+        self.dateFormat = config.get(self.configSection(), 'date_format')
         if entryType != self.expectedEntryType:
             raise ValueError('unexpected entry type ' + \
                     f"'{entryType}', should be '{self.expectedEntryType}'")
@@ -943,17 +958,10 @@ class PostfinanceTransactionList(DatabaseList):
         super().__init__(config, *args)
         self.dateFrom = helpers.DateUtility.strptime(dateFrom, self.dateFormat)
         self.dateTo = helpers.DateUtility.strptime(dateTo, self.dateFormat)
-        self.expectedCurrency = config.get('general', 'currency')
-        self.expectedAccount = config.get('general', 'our_iban')
-        self.dateFormat = config.get(self.configSection(), 'date_format')
-        self.filenameDateFormat = config.get(self.configSection(),
-                'filename_date_format')
-        self.expectedEntryType = config.get(self.configSection(),
-                'expected_entry_type')
 
     @classmethod
     def configSection(cls):
-        raise 'postfinance_transactions'
+        return 'postfinance_transactions'
 
     def databaseObjectFromCsvRow(self, rowValues):
         if rowValues in [
@@ -967,7 +975,7 @@ class PostfinanceTransactionList(DatabaseList):
             return None
         return PostfinanceTransaction(
                 bookingDate = helpers.DateUtility.strptime(rowValues[0],
-                    cls.dateFormat),
+                    self.dateFormat),
                 notificationText = rowValues[1],
                 creditAmount = None if rowValues[2] == '' else float(rowValues[2]),
                 debitAmount = None if rowValues[3] == '' else float(rowValues[3]),

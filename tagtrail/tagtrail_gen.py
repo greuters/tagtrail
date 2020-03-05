@@ -38,7 +38,7 @@ def generateSheet(sheetDir, sheetName, db, addTestTags):
     if sheetName in db.products:
         product = db.products[sheetName]
         # one based, as this goes out to customers
-        numPages = math.ceil(product.previousQuantity /
+        numPages = math.ceil(product.expectedQuantity /
                 ProductSheet.maxQuantity())
         maxNumPages = db.config.getint('tagtrail_gen',
                 'max_num_pages_per_product')

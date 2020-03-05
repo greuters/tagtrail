@@ -36,12 +36,16 @@ class EnrichedDatabase(database.Database):
         super().__init__(f'{accountingDataPath}0_input/')
         toDate = accountingDate-datetime.timedelta(days=1)
         self.accountingDataPath = accountingDataPath
-        self.inputTransactionsPath = self.accountingDataPath + \
-                '0_input/export_Transactions_' + \
-                helpers.DateUtility.strftime(self.previousAccountingDate,
-                        database.PostfinanceTransactionList.filenameDateFormat) + '_' + \
-                helpers.DateUtility.strftime(toDate,
-                        database.PostfinanceTransactionList.filenameDateFormat) + '.csv'
+        filenameDateFormat = self.config.get('postfinance_transactions',
+                        'filename_date_format')
+        self.inputTransactionsPath = (self.accountingDataPath
+                + '0_input/export_Transactions_'
+                + helpers.DateUtility.strftime(self.previousAccountingDate,
+                    filenameDateFormat)
+                + '_'
+                + helpers.DateUtility.strftime(toDate,
+                    filenameDateFormat)
+                + '.csv')
         self.unprocessedTransactionsPath = self.accountingDataPath + \
                 '5_output/unprocessed_Transactions_' + \
                 helpers.DateUtility.strftime(self.previousAccountingDate) + '_' + \
@@ -61,7 +65,8 @@ class EnrichedDatabase(database.Database):
                 self.previousAccountingDate, toDate)
 
     def loadPostfinanceTransactions(self, fromDate, toDate):
-        loadedTransactions = database.Database.readCsv(
+        self.log.info(f"loading transactions from {self.unprocessedTransactionsPath}")
+        loadedTransactions = self.readCsv(
                 self.unprocessedTransactionsPath,
                 database.PostfinanceTransactionList)
         if loadedTransactions.dateFrom != fromDate:
@@ -257,10 +262,10 @@ class Gui:
 
     def save(self):
         if os.path.isfile(self.db.paymentTransactionsPath):
-            paymentTransactions = database.Database.readCsv(self.db.paymentTransactionsPath,
+            paymentTransactions = self.db.readCsv(self.db.paymentTransactionsPath,
                     database.GnucashTransactionList)
         else:
-            paymentTransactions = database.GnucashTransactionList()
+            paymentTransactions = database.GnucashTransactionList(self.db.config)
 
         numberOfTransactions = len(paymentTransactions) + len(self.db.postfinanceTransactions)
         indicesToRemove = []
@@ -301,8 +306,8 @@ class Gui:
                             'consistent, please file a bug at ' + \
                             'https://github.com/greuters/tagtrail')
 
-        database.Database.writeCsv(self.db.paymentTransactionsPath, paymentTransactions)
-        database.Database.writeCsv(self.db.unprocessedTransactionsPath, self.db.postfinanceTransactions)
+        self.db.writeCsv(self.db.paymentTransactionsPath, paymentTransactions)
+        self.db.writeCsv(self.db.unprocessedTransactionsPath, self.db.postfinanceTransactions)
 
     def switchInputFocus(self, event):
         focused = self.root.focus_displayof()

@@ -15,7 +15,6 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import getpass
 import argparse
 from abc import ABC, abstractmethod
 from string import Template
@@ -30,7 +29,6 @@ from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
-from keyrings.cryptfile.cryptfile import CryptFileKeyring
 
 class MailSender(ABC):
     def __init__(self,
@@ -45,8 +43,8 @@ class MailSender(ABC):
         self.billPath = accountingPath + '3_bills/'
         self.templatePath = accountingPath + '0_input/templates/'
         self.db = database.Database(f'{accountingPath}0_input/',
-                configFilePath)
-        self.bills = [database.Database.readCsv(
+                configFilePath=configFilePath)
+        self.bills = [self.db.readCsv(
             f'{self.billPath}{member.id}.csv', database.Bill)
             for member in self.db.members.values()]
 
@@ -59,33 +57,10 @@ class MailSender(ABC):
                 self.templatePath+'correction.txt')
 
         self.accountantName = accountantName
-
-        keyring = CryptFileKeyring()
-        for attempt in range(3):
-            try:
-                keyring.file_path = self.db.config.get('general',
-                        'password_file_path')
-                # this call asks the user for the keyring password in the background
-                # if it is wrong, a ValueError is raised - ugly, but only
-                # working solution I found so far
-                self.mailPassword = keyring.get_password('tagtrail_send',
+        self.keyring = helpers.Keyring(self.db.config.get('general',
+            'password_file_path'))
+        self.mailPassword = self.keyring.get_and_ensure_password('tagtrail_send',
                         self.db.config.get('tagtrail_send', 'mail_user'))
-                break
-            except ValueError:
-                print('Failed to open keyring - Wrong password?')
-                keyring = CryptFileKeyring()
-        else:
-            raise ValueError('Failed to open keyring - run out of retries')
-
-        if self.mailPassword is None:
-            # if we made it here, the keyring is opened
-            self.mailPassword = getpass.getpass('Password for ' +
-                    f'{self.db.config.get("tagtrail_send", "mail_user")}:')
-            keyring.set_password(
-                    'tagtrail_send',
-                    self.db.config.get('tagtrail_send', 'mail_user'),
-                    self.mailPassword)
-
         self.testRecipient = testRecipient
 
     def readTemplate(self, filename):
@@ -105,7 +80,7 @@ class MailSender(ABC):
                 return
 
         for bill in self.bills:
-            if (self.db.config.get('general', 'liquidity_threshold')
+            if (self.db.config.getint('general', 'liquidity_threshold')
                     < bill.currentBalance()):
                 invoiceTextTemplate = self.invoiceAboveThresholdTemplate
             else:
@@ -116,7 +91,7 @@ class MailSender(ABC):
             else:
                 correctionText = self.correctionTextTemplate.substitute(
                         CORRECTION_TRANSACTION=helpers.formatPrice(bill.correctionTransaction,
-                            'CHF'),
+                            self.db.config.get('general', 'currency')),
                         CORRECTION_JUSTIFICATION=bill.correctionJustification)
 
             for email in self.db.members[bill.memberId].emails:
@@ -129,26 +104,26 @@ class MailSender(ABC):
                 body = self.emailTemplate.substitute(
                             INVOICE_TEXT=invoiceTextTemplate.substitute(
                                 LIQUIDITY_THRESHOLD=helpers.formatPrice(
-                                    self.db.config.get('general',
+                                    self.db.config.getint('general',
                                         'liquidity_threshold'),
-                                    'CHF'),
+                                    self.db.config.get('general', 'currency')),
                                 ACCESS_CODE=self.accessCode,
                                 MEMBER_ID=bill.memberId,
                                 INVOICE_IBAN=self.db.config.get('general',
                                     'our_iban')),
                             MEMBER_NAME=name,
                             BILL=str(bill),
-                            TOTAL_GROSS_SALES_PRICE=helpers.formatPrice(bill.totalGrossSalesPrice(), 'CHF'),
-                            TOTAL_PAYMENTS=helpers.formatPrice(bill.totalPayments, 'CHF'),
+                            TOTAL_GROSS_SALES_PRICE=helpers.formatPrice(bill.totalGrossSalesPrice(), self.db.config.get('general', 'currency')),
+                            TOTAL_PAYMENTS=helpers.formatPrice(bill.totalPayments, self.db.config.get('general', 'currency')),
                             CORRECTION_TEXT=correctionText,
                             PREVIOUS_ACCOUNTING_DATE=bill.previousAccountingDate,
-                            PREVIOUS_BALANCE=helpers.formatPrice(bill.previousBalance, 'CHF'),
+                            PREVIOUS_BALANCE=helpers.formatPrice(bill.previousBalance, self.db.config.get('general', 'currency')),
                             CURRENT_ACCOUNTING_DATE=bill.currentAccountingDate,
-                            CURRENT_BALANCE=helpers.formatPrice(bill.currentBalance(), 'CHF'),
+                            CURRENT_BALANCE=helpers.formatPrice(bill.currentBalance(), self.db.config.get('general', 'currency')),
                             LIQUIDITY_THRESHOLD=helpers.formatPrice(
-                                self.db.config.get('general',
+                                self.db.config.getint('general',
                                     'liquidity_threshold'),
-                                'CHF'),
+                                self.db.config.get('general', 'currency')),
                             INVOICE_IBAN=self.db.config.get('general', 'our_iban'),
                             MEMBER_ID=bill.memberId,
                             ACCESS_CODE=self.accessCode,

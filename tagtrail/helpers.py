@@ -22,6 +22,52 @@ import os
 import datetime
 import time
 import re
+from keyrings.cryptfile.cryptfile import CryptFileKeyring
+import getpass
+
+class Keyring:
+    """
+    Convenience wrapper to CryptFileKeyring
+    """
+    numKeyringOpeningAttempts = 3
+
+    def __init__(self,
+            key_file_path):
+        self._key_file_path = key_file_path
+        self._keyring = CryptFileKeyring()
+
+    def get_and_ensure_password(self, service, username):
+        """
+        Retrieve stored password from keyring, opening the keyring first if
+        necessary.
+        If the password is not available, the user is asked to enter one, which
+        is then stored and returned.
+
+        exceptions:
+            ValueError if the keyring could not be opened (wrong password)
+        """
+        password = None
+        for attempt in range(self.numKeyringOpeningAttempts):
+            try:
+                self._keyring.file_path = self._key_file_path
+                # this call asks the user for the keyring password in the
+                # background if the keyring is not opened yet
+                # if it is wrong, a ValueError is raised - ugly, but this is
+                # the only working solution I found so far
+                password = self._keyring.get_password(service, username)
+                break
+            except ValueError:
+                print('Failed to open keyring - Wrong password?')
+                self._keyring = CryptFileKeyring()
+        else:
+            raise ValueError('Failed to open keyring - run out of retries')
+
+        if password is None:
+            password = getpass.getpass(f'Password for {username}:')
+            # if we made it here, the keyring is opened - no ValueError
+            # expected any more
+            self._keyring.set_password( service, username, password)
+        return password
 
 class DateUtility:
     dateFormat = '%Y-%m-%d'

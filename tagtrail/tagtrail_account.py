@@ -30,6 +30,7 @@ import os
 import shutil
 import csv
 import copy
+import eaternity
 
 class TagCollector(ABC):
     """
@@ -223,7 +224,7 @@ class TagCollector(ABC):
 
 class Gui:
     def __init__(self, accountingDataPath, nextAccountingDataPath,
-            accountingDate, configFilePath):
+            accountingDate, configFilePath, updateCo2Statistics):
         self.log = helpers.Log()
         self.accountingDate = accountingDate
         self.accountingDataPath = accountingDataPath
@@ -234,7 +235,7 @@ class Gui:
         self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
 
         self.db = EnrichedDatabase(accountingDataPath, accountingDate,
-                configFilePath=configFilePath)
+                configFilePath, updateCo2Statistics)
 
         self.productSheetSelection = gui_components.Checkbar(self.root,
                 'Accounted pages to keep:',
@@ -280,16 +281,17 @@ class Gui:
         destPath = f'{self.accountingDataPath}3_bills/'
         helpers.recreateDir(destPath, self.log)
         for member in self.db.members.values():
-            database.Database.writeCsv(destPath+member.id+'.csv',
+            self.db.writeCsv(destPath+member.id+'.csv',
                     self.db.bills[member.id])
 
     def writeGnuCashFiles(self):
         destPath = f'{self.accountingDataPath}/4_gnucash/'
-        database.Database.writeCsv(f'{destPath}accounts.csv', self.db.accounts)
+        self.db.writeCsv(f'{destPath}accounts.csv', self.db.accounts)
         transactions = database.GnucashTransactionList(
-                *itertools.chain(self.db.purchaseTransactions,
+                self.db.config,
+                itertools.chain(self.db.purchaseTransactions,
                 self.db.inventoryDifferenceTransactions))
-        database.Database.writeCsv(f'{destPath}gnucashTransactions.csv',
+        self.db.writeCsv(f'{destPath}gnucashTransactions.csv',
                 transactions)
 
     def prepareNextAccounting(self):
@@ -299,8 +301,8 @@ class Gui:
         self.writeMemberCSV()
         self.writeProductsCSVs()
         self.copyAccountedSheets()
-        database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/correctionTransactions.csv',
-                database.CorrectionTransactionDict())
+        self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/correctionTransactions.csv',
+                database.CorrectionTransactionDict(self.db.config))
         shutil.copytree(f'{self.accountingDataPath}0_input/templates',
                 f'{self.nextAccountingDataPath}0_input/templates')
 
@@ -309,13 +311,13 @@ class Gui:
         newMembers.accountingDate = self.accountingDate
         for m in newMembers.values():
             m.balance = self.db.bills[m.id].currentBalance()
-        database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/members.csv',
+        self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/members.csv',
                 newMembers)
 
     def writeProductsCSVs(self):
-        database.Database.writeCsv(f'{self.accountingDataPath}5_output/products.csv',
+        self.db.writeCsv(f'{self.accountingDataPath}5_output/products.csv',
                 self.db.products)
-        database.Database.writeCsv(f'{self.nextAccountingDataPath}0_input/products.csv',
+        self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/products.csv',
                 self.db.products.copyForNextAccounting(self.accountingDate))
 
     def copyAccountedSheets(self):
@@ -333,11 +335,26 @@ class Gui:
             shutil.copy(srcPath, destPath)
 
 class EnrichedDatabase(database.Database):
-    def __init__(self, accountingDataPath, accountingDate):
+    def __init__(self, accountingDataPath, accountingDate, configFilePath, updateCo2Statistics):
         self.log = helpers.Log()
         self.accountingDataPath = accountingDataPath
         self.accountingDate = accountingDate
-        super().__init__(f'{accountingDataPath}0_input/')
+        super().__init__(f'{accountingDataPath}0_input/', configFilePath=configFilePath)
+
+        if updateCo2Statistics:
+            api = eaternity.EaternityApi(self.config)
+            for product in self.products.values():
+                try:
+                    gCo2e = api.co2Value(product)
+                    if product.gCo2e != gCo2e:
+                        self.log.info(f'Updated gCo2e from {product.gCo2e} '
+                                +f'to {gCo2e} for {product.id}')
+                        product.gCo2e = gCo2e
+                    else:
+                        self.log.debug(f'gCo2e for {product.id} = {gCo2e}')
+
+                except ValueError:
+                    self.log.info(f'Failed to retrieve gCo2e for {product.id}')
 
         tagCollector = TagCollector(
                 self.accountingDataPath+'0_input/accounted_products/',
@@ -350,7 +367,7 @@ class EnrichedDatabase(database.Database):
             product.soldQuantity = tagCollector.numNewTags(productId,
                     list(self.members.keys()))
 
-        self.correctionTransactions = database.Database.readCsv(
+        self.correctionTransactions = self.readCsv(
                 self.accountingDataPath+'0_input/correctionTransactions.csv',
                 database.CorrectionTransactionDict)
         self.paymentTransactions = self.loadPaymentTransactions()
@@ -358,8 +375,8 @@ class EnrichedDatabase(database.Database):
         self.productPagePaths = tagCollector.currentProductPagePaths()
         self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
         self.purchaseTransactions = self.createPurchaseTransactions()
-        self.accounts = database.MemberAccountDict(
-                {m.id: database.MemberAccount(m.id) for m in self.members.values()})
+        self.accounts = database.MemberAccountDict(self.config,
+                **{m.id: database.MemberAccount(m.id) for m in self.members.values()})
 
     def loadPaymentTransactions(self):
         toDate = self.accountingDate-datetime.timedelta(days=1)
@@ -374,7 +391,7 @@ class EnrichedDatabase(database.Database):
                 "Run tagtrail_bankimport before tagtrail_account!")
 
         unprocessedPayments = [t.notificationText for t in
-                database.Database.readCsv(unprocessedTransactionsPath,
+                self.readCsv(unprocessedTransactionsPath,
                     database.PostfinanceTransactionList)
                  if not t.creditAmount is None]
         if unprocessedPayments != []:
@@ -383,14 +400,15 @@ class EnrichedDatabase(database.Database):
                 + '\n\n'.join(unprocessedPayments) + '\n\n'
                 + 'Run tagtrail_bankimport again if you want to correct this.')
 
-        return database.Database.readCsv(
+        return self.readCsv(
                 self.accountingDataPath+'4_gnucash/paymentTransactions.csv',
                 database.GnucashTransactionList)
 
     def createBills(self, tagCollector):
         bills = {}
         for member in self.members.values():
-            bill = database.Bill(member.id,
+            bill = database.Bill(self.config,
+                    member.id,
                     self.members.accountingDate,
                     self.accountingDate,
                     member.balance,
@@ -409,13 +427,13 @@ class EnrichedDatabase(database.Database):
                             numTags,
                             self.products[productId].purchasePrice,
                             taggedGrossSalesPrice,
-                            0)
+                            self.products[productId].gCo2e)
                     bill[position.id] = position
             bills[member.id] = bill
         return bills
 
     def createInventoryDifferenceTransactions(self):
-        transactions = database.GnucashTransactionList()
+        transactions = database.GnucashTransactionList(self.config)
         if not self.products.inventoryQuantityDate:
             self.log.info(
                 'No inventoryQuantityDate given - not checking inventory')
@@ -488,7 +506,8 @@ class EnrichedDatabase(database.Database):
         margin = self.config.get('tagtrail_account', 'margin')
         marginAccount = self.config.get('tagtrail_account', 'margin_account')
         return database.GnucashTransactionList(
-                *([database.GnucashTransaction(
+                self.config,
+                ([database.GnucashTransaction(
                     f'{merchandiseValue} accounted on {self.accountingDate}',
                     bill.purchasePriceWithoutInventoryDifference(),
                     merchandiseValueAccount,
@@ -507,11 +526,12 @@ class EnrichedDatabase(database.Database):
     def previousAccountingDate(self):
         return self.members.accountingDate
 
-def main(accountingDir, renamedAccountingDir, accountingDate, nextAccountingDir, configFilePath):
+def main(accountingDir, renamedAccountingDir, accountingDate,
+        nextAccountingDir, configFilePath, updateCo2Statistics):
     newDir = renamedAccountingDir.format(accountingDate = accountingDate)
     if accountingDir != newDir:
         shutil.move(accountingDir, newDir)
-    Gui(newDir, nextAccountingDir, accountingDate, configFilePath)
+    Gui(newDir, nextAccountingDir, accountingDate, configFilePath, updateCo2Statistics)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -539,8 +559,11 @@ if __name__ == '__main__':
             dest='configFilePath',
             default='config/tagtrail.cfg',
             help='Path to the config file to be used.')
-
+    parser.add_argument('--updateCo2Statistics',
+            action='store_true',
+            default=False,
+            help='Retrieve new gCo2e statistics from eaternity')
 
     args = parser.parse_args()
     main(args.accountingDir, args.renamedAccountingDir, args.accountingDate,
-            args.nextAccountingDir, args.configFilePath)
+            args.nextAccountingDir, args.configFilePath, args.updateCo2Statistics)
