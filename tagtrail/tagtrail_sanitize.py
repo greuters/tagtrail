@@ -276,7 +276,7 @@ class Gui:
                 messagebox.showwarning('Sanitation complete',
                     """
                     Your work is done, but OCR didn't work properly.
-                    You corrected {} out of {} validated texts. Apparently OCR
+                    Only {} out of {} validated texts were correct. Apparently OCR
                     was overconfident and probably some of the initially green
                     boxes contain wrong entries. Please check them and file a
                     bug report at https://github.com/greuters/tagtrail.git/

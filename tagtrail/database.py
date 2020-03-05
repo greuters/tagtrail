@@ -519,7 +519,8 @@ class ProductDict(DatabaseDict):
 
         for productId, product in self.items():
             newProducts[productId].previousQuantity = quantitySelector(
-                    product.expectedQuantity, product.inventoryQuantity)
+                    product.expectedQuantity,
+                    product.inventoryQuantity + product.addedQuantity)
             if newProducts[productId].previousQuantity is None:
                 raise ValueError(f'failed to compute quantity for {productId}')
             newProducts[productId].inventoryQuantity = None
@@ -539,50 +540,12 @@ class BillPosition(DatabaseObject):
         super().__init__(productId)
         self.description = description
         self.numTags = numTags
-        self.__numInventoryDifferenceTags = 0
         self.unitPurchasePrice = unitPurchasePrice
         self.unitGrossSalesPrice = unitGrossSalesPrice
         self.gCo2e = gCo2e
 
-    @property
-    def numInventoryDifferenceTags(self):
-        """
-        There are two possible reasons for inventory difference:
-            1. someone took a product without tagging it
-            2. someone tagged a product that should not have been there any
-            more
-
-        Example: accidentally tagging 'Dark Chocolate' which is already sold
-        out, while actually taking 'Brown Chocolate', leads to case one on
-        'Brown Chocolate' and case two on 'Dark Chocolate'.
-
-        In the first case, we don't know who to attribute this loss to, so we
-        book it on a general 'Inventory Difference' account.
-
-        To get an overview over our total inventory difference, we want to book
-        the tag in the second case on the same 'Inventory Difference' account.
-        Whose tag we use as an 'inventoryDifferenceTag' does not matter to the
-        customer (they are billed the price of one tag in any case) nor to us.
-        """
-        return self.__numInventoryDifferenceTags
-
-    @numInventoryDifferenceTags.setter
-    def numInventoryDifferenceTags(self, numDifferenceTags):
-        if self.numTags < numDifferenceTags:
-            raise ValueError(f'numTags ({self.numTags})' + \
-                    f' < numDifferenceTags ({numDifferenceTags})')
-        if numDifferenceTags < 0:
-            raise ValueError('numDifferenceTags < 0')
-        self.__numInventoryDifferenceTags = numDifferenceTags
-
-    def purchasePriceWithoutInventoryDifference(self):
-        return (self.numTags-self.numInventoryDifferenceTags) * self.unitPurchasePrice
-
-    def grossSalesPriceWithoutInventoryDifference(self):
-        return (self.numTags-self.numInventoryDifferenceTags) * self.unitGrossSalesPrice
-
-    def grossSalesPriceInventoryDifference(self):
-        return self.numInventoryDifferenceTags * self.unitGrossSalesPrice
+    def totalPurchasePrice(self):
+        return self.numTags * self.unitPurchasePrice
 
     def totalGrossSalesPrice(self):
         return self.numTags * self.unitGrossSalesPrice
@@ -616,16 +579,8 @@ class Bill(DatabaseDict):
         self.previousBalance = float(previousBalance)
         self.totalPayments = float(totalPayments)
         self.setCorrection(float(correctionTransaction), correctionJustification)
-        if currentExpectedBalance and \
-                helpers.formatPrice(self.currentBalance()) != currentExpectedBalance:
-            raise ValueError('inconsistent price calculation,\n' + \
-                    f'({self.currentBalance()} == {self.previousBalance} + ' + \
-                    f'{self.totalPayments} + {self.correctionTransaction} - ' + \
-                    f'{self.totalGrossSalesPrice()}) != {currentExpectedBalance}')
-        if expectedTotalPrice and \
-                helpers.formatPrice(self.totalGrossSalesPrice()) != expectedTotalPrice:
-            raise ValueError(f'totalGrossSalesPrice ({expectedTotalPrice}) is ' + \
-                    f'not consistent with sum of prices ({self.totalGrossSalesPrice()})')
+        self.expectedTotalPrice = expectedTotalPrice
+        self.currentExpectedBalance = currentExpectedBalance
         self.expectedTotalGCo2e = expectedTotalGCo2e
         self.textRepresentationHeader = config.get(
                 self.configSection(), 'text_representation_header')
@@ -671,17 +626,28 @@ class Bill(DatabaseDict):
         return totalGCo2e
 
     def totalGrossSalesPrice(self):
-        return sum([p.totalGrossSalesPrice() for p in self.values()])
+        totalGrossSalesPrice = sum([p.totalGrossSalesPrice() for p in self.values()])
+        if (self.expectedTotalPrice and
+                helpers.formatPrice(totalGrossSalesPrice) !=
+                self.expectedTotalPrice):
+            raise ValueError(f'expectedTotalPrice ({self.expectedTotalPrice}) is '
+                    + f'not consistent with sum of prices ({totalGrossSalesPrice})')
+        return totalGrossSalesPrice
 
-    def purchasePriceWithoutInventoryDifference(self):
-        return sum([p.purchasePriceWithoutInventoryDifference() for p in self.values()])
-
-    def grossSalesPriceWithoutInventoryDifference(self):
-        return sum([p.grossSalesPriceWithoutInventoryDifference() for p in self.values()])
+    def totalPurchasePrice(self):
+        return sum([p.totalPurchasePrice() for p in self.values()])
 
     def currentBalance(self):
-        return self.previousBalance + self.totalPayments + \
+        currentBalance = self.previousBalance + self.totalPayments + \
                 self.correctionTransaction - self.totalGrossSalesPrice()
+        if (self.currentExpectedBalance and
+                helpers.formatPrice(currentBalance) !=
+                self.currentExpectedBalance):
+            raise ValueError(f'inconsistent price calculation for {memberId},\n'
+                    + f'({currentBalance} == {self.previousBalance} + '
+                    + f'{self.totalPayments} + {self.correctionTransaction} - '
+                    + f'{self.totalGrossSalesPrice()}) != {self.currentExpectedBalance}')
+        return currentBalance
 
     @classmethod
     def configSection(cls):

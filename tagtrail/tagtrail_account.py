@@ -449,14 +449,19 @@ class EnrichedDatabase(database.Database):
                 'inventory_difference_account')
         for product in self.products.values():
             expectedQuantity = (product.previousQuantity
-                    - product.soldQuantity
-                    + product.addedQuantity)
-            if product.inventoryQuantity < expectedQuantity:
-                self.log.debug(f'{product.id}: expected = {expectedQuantity}, ' +
-                        f'inventory = {product.inventoryQuantity}')
-                quantityDifference = expectedQuantity - product.inventoryQuantity
-                purchasePriceDifference = quantityDifference * product.purchasePrice
-                grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
+                    - product.soldQuantity)
+            quantityDifference = expectedQuantity - product.inventoryQuantity
+            purchasePriceDifference = quantityDifference * product.purchasePrice
+            grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
+
+            if quantityDifference != 0:
+                quantityDifferenceMsg = (f'{product.id}: expected = {expectedQuantity}, ' +
+                        f'inventory = {product.inventoryQuantity}, ' +
+                        f'difference = {quantityDifference}')
+                if quantityDifference < 3:
+                    self.log.debug(quantityDifferenceMsg)
+                else:
+                    self.log.info(quantityDifferenceMsg)
                 transactions.append(database.GnucashTransaction(
                     f'{product.id}: {inventoryDifference} accounted on {self.accountingDate}',
                     purchasePriceDifference,
@@ -472,30 +477,6 @@ class EnrichedDatabase(database.Database):
                     inventoryDifferenceAccount,
                     self.accountingDate
                     ))
-
-            elif product.inventoryQuantity > expectedQuantity:
-                self.log.debug(f'{product.id}: expected = {expectedQuantity}, ' +
-                        f'inventory = {product.inventoryQuantity}')
-                quantityDifference = product.inventoryQuantity - expectedQuantity
-                for bill in self.bills.values():
-                    if not product.id in bill:
-                        continue
-                    if quantityDifference == 0:
-                        break
-
-                    billPos = bill[product.id]
-                    billPos.numInventoryDifferenceTags = min(billPos.numTags, quantityDifference)
-                    transactions.append(database.GnucashTransaction(
-                        (f'{product.id}: {inventoryDifference} ' +
-                            f'accounted on {self.accountingDate}'),
-                        billPos.grossSalesPriceInventoryDifference(),
-                        inventoryDifferenceAccount,
-                        bill.memberId,
-                        self.accountingDate
-                        ))
-                    quantityDifference -= billPos.numInventoryDifferenceTags
-                if quantityDifference != 0:
-                    raise AssertionError('quantityDifference != 0')
         return transactions
 
     def createPurchaseTransactions(self):
@@ -509,14 +490,14 @@ class EnrichedDatabase(database.Database):
                 self.config,
                 ([database.GnucashTransaction(
                     f'{merchandiseValue} accounted on {self.accountingDate}',
-                    bill.purchasePriceWithoutInventoryDifference(),
+                    bill.totalPurchasePrice(),
                     merchandiseValueAccount,
                     bill.memberId,
                     self.accountingDate) for bill in self.bills.values()]
                 +
                 [database.GnucashTransaction(
                     f'{margin} accounted on {self.accountingDate}',
-                    bill.grossSalesPriceWithoutInventoryDifference()-bill.purchasePriceWithoutInventoryDifference(),
+                    bill.totalGrossSalesPrice()-bill.totalPurchasePrice(),
                     marginAccount,
                     bill.memberId,
                     self.accountingDate) for bill in self.bills.values()])
