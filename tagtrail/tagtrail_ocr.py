@@ -581,6 +581,9 @@ class RecognizeText(ProcessingStep):
     def pageNumber(self):
         return self.__sheet.pageNumber
 
+    def fileName(self):
+        return self.__sheet.fileName()
+
     def process(self, inputImg):
         super().process(inputImg)
         self._inputImg = inputImg
@@ -598,7 +601,7 @@ class RecognizeText(ProcessingStep):
         maxNumPages = self.__db.config.getint('tagtrail_gen',
                 'max_num_pages_per_product')
         pageNumberString = self.__db.config.get('tagtrail_gen', 'page_number_string')
-        pageNumbers = [pageNumberString.format(pageNumber=str(n))
+        pageNumbers = [pageNumberString.format(pageNumber=str(n)).upper()
                             for n in range(1, maxNumPages+1)]
         currency = self.__db.config.get('general', 'currency')
         names, units, prices = map(set, zip(*[
@@ -769,6 +772,10 @@ class RecognizeText(ProcessingStep):
         confidence = 1 - minDist / secondDist
         return confidence, strings[dists.index(minDist)]
 
+    def resetSheetToFallback(self):
+        self.__sheet.name = self.__fallbackSheetName
+        self.__sheet.pageNumber = self.__fallbackPageNumber
+
     def storeSheet(self, outputDir):
         self.__sheet.store(outputDir)
 
@@ -822,6 +829,10 @@ def processSheet(database, sheetImg, sheetName, outputDir, tmpDir):
         p.process(img)
         p.writeOutput()
         img = p._outputImg
+    if os.path.exists(f'{outputDir}{recognizer.fileName()}'):
+        print(f'reset sheet to fallback, as {recognizer.fileName()} already exists')
+        recognizer.resetSheetToFallback()
+
     recognizer.storeSheet(outputDir)
     cv.imwrite(f'{outputDir}{recognizer.productId()}_{recognizer.pageNumber()}_normalized_scan.jpg',
             fit._outputImg)

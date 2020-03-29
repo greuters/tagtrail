@@ -302,6 +302,13 @@ class Gui:
             raise ValueError('Unable to store sheet, grossSalesPrice is missing')
         if not self.inputSheet.pageNumber:
             raise ValueError('Unable to store sheet, pageNumber is missing')
+        newCsvPath = f'{self.productPath}{self.inputSheet.fileName()}'
+        newScanPath = (f'{self.productPath}{self.inputSheet.productId()}' +
+                f'_{self.inputSheet.pageNumber}{self.scanPostfix}')
+        if newCsvPath != self.csvPath and os.path.exists(newCsvPath):
+            raise ValueError(f'Unable to store sheet, file {newCsvPath} already exists')
+        if newScanPath != self.scanPath and os.path.exists(newScanPath):
+            raise ValueError(f'Unable to store sheet, file {newScanPath} already exists')
 
         assert(self.inputSheet.productId() in self.db.products.keys())
         assert(not [b for b in self.inputSheet.dataBoxes()
@@ -316,11 +323,11 @@ class Gui:
         self.log.info(f'total validation score: ' + \
                 f'{self.numCorrectValidatedBoxes} out of ' + \
                 f'{self.numValidatedValidatedBoxes} validated texts were correct')
+
+        self.log.debug(f'deleting {self.csvPath}')
         os.remove(self.csvPath)
         self.inputSheet.store(self.productPath)
-        self.csvPath = f'{self.productPath}{self.inputSheet.fileName()}'
-        newScanPath = (f'{self.productPath}{self.inputSheet.productId()}' +
-                f'_{self.inputSheet.pageNumber}{self.scanPostfix}')
+        self.csvPath = newCsvPath
         self.log.debug(f'renaming {self.scanPath} to {newScanPath}')
         os.rename(self.scanPath, newScanPath)
         self.scanPath = newScanPath
