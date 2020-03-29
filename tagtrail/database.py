@@ -484,7 +484,7 @@ class ProductDict(DatabaseDict):
                 ','.join(p.production),
                 p.transport,
                 ','.join(p.conservation),
-                str(p.gCo2e)]
+                '' if p.gCo2e is None else str(p.gCo2e)]
                 for p in self.values()]
 
     def copyForNextAccounting(self, accountingDate):
@@ -687,7 +687,7 @@ class Bill(DatabaseDict):
     def csvRows(self):
         return [[p.id, p.description, str(p.numTags),
             helpers.formatPrice(p.unitGrossSalesPrice),
-                 helpers.formatPrice(p.totalGrossSalesPrice()), str(p.gCo2e)]
+                 '' if p.totalgCo2e() is None else helpers.formatPrice(p.totalGrossSalesPrice()), str(p.totalgCo2e())]
                 for p in self.values()]
 
     def __str__(self):
@@ -698,7 +698,7 @@ class Bill(DatabaseDict):
                     numTags=p.numTags,
                     unitPrice=helpers.formatPrice(p.unitGrossSalesPrice),
                     totalPrice=helpers.formatPrice(p.totalGrossSalesPrice()),
-                    totalgCo2e=p.totalgCo2e()
+                    totalgCo2e='?' if p.totalgCo2e() is None else p.totalgCo2e()
                     )
         text += '\n' + self.textRepresentationFooter.format(
                 totalPrice=helpers.formatPrice(self.totalGrossSalesPrice()),

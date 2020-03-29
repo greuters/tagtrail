@@ -134,9 +134,7 @@ class SplitSheets(ProcessingStep):
         self._smallKernel = cv.getStructuringElement(cv.MORPH_RECT,
                 (kernelSize, kernelSize))
         self._mediumKernel = cv.getStructuringElement(cv.MORPH_RECT,
-                (kernelSize*4, kernelSize*4))
-        self._bigKernel = cv.getStructuringElement(cv.MORPH_RECT,
-                (kernelSize*10, kernelSize*10))
+                (kernelSize*4, kernelSize*2))
 
     def process(self, inputImg):
         super().process(inputImg)
@@ -146,9 +144,10 @@ class SplitSheets(ProcessingStep):
 
         self._grayImgs = []
         self._thresholdImgs = []
-        self._eroded1Imgs = []
+        self._adaptiveThresholdImgs = []
+        self._otsuThresholdImgs = []
+        self._erodedImgs = []
         self._dilatedImgs = []
-        self._eroded2Imgs = []
         self._labeledImgs = []
         self._foregroundImgs = []
         self._rotatedImgs = []
@@ -168,36 +167,34 @@ class SplitSheets(ProcessingStep):
         """
         sheetImgWidth, sheetImgHeight, _ = sheetImg.shape
         grayImg = cv.cvtColor(sheetImg, cv.COLOR_BGR2GRAY)
-        thresholdImg = cv.threshold(grayImg, self._threshold, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
+        otsuThresholdImg = cv.threshold(grayImg, self._threshold, 255,
+                cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
+        adaptiveThresholdImg = cv.adaptiveThreshold(cv.medianBlur(grayImg,7), 255,
+                cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
+        testDilate = cv.dilate(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
+                (7,7)), 1)
+        adaptiveThresholdImg = np.where(
+                cv.erode(testDilate, self._mediumKernel, 1) == 0,
+                np.uint8(255.0), np.uint8(0.0))
+        minAreaRect, adaptiveThresholdImg = self.biggestComponentMinAreaRect(adaptiveThresholdImg)
+        cv.drawContours(adaptiveThresholdImg,[np.int0(cv.boxPoints(minAreaRect))],0,255,-1)
+        thresholdImg = np.where(
+                np.all([otsuThresholdImg == 255, adaptiveThresholdImg == 255], 0),
+                np.uint8(255.0), np.uint8(0.0))
 
-        eroded1Img = cv.erode(thresholdImg, self._smallKernel, 1)
-        dilatedImg = cv.dilate(eroded1Img, self._mediumKernel, 1)
-        eroded2Img = cv.erode(dilatedImg, self._bigKernel, 1)
-        foregroundSize = len(np.where(eroded2Img == 255)[0])
+        erodedImg = cv.erode(thresholdImg, self._smallKernel, 1)
+        dilatedImg = cv.dilate(erodedImg, self._mediumKernel, 1)
+        foregroundSize = len(np.where(dilatedImg == 255)[0])
         self._log.debug(f'foregroundSize = {foregroundSize}')
         self._log.debug(f'imageSize = {sheetImgWidth * sheetImgHeight}')
-        if foregroundSize < sheetImgWidth * sheetImgHeight / 3:
+        if foregroundSize < sheetImgWidth * sheetImgHeight / 4:
             self._log.info('found empty sheet')
             return False
 
-        numComponents, labeledImg = cv.connectedComponents(eroded2Img)
-        # create tuples (label, size) for each connectedComponent
-        components = list(map(lambda label:
-                (label, len(np.where(labeledImg == label)[0])),
-                range(numComponents)))
-        components.sort(key = lambda x: x[1], reverse=True)
-        self._log.debug('components (label, size) = {}', list(components))
-
-        # assume the biggest component to be the foreground
-        # compute and show its rotated minAreaRect
-        foregroundLabel = components[0][0]
-        foregroundImg = np.where(labeledImg == foregroundLabel,
-                np.uint8(255.0), np.uint8(0.0))
-        contours, _ = cv.findContours(foregroundImg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        minAreaRect = cv.minAreaRect(contours[0])
-        center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
-        foregroundImg = cv.cvtColor(foregroundImg, cv.COLOR_GRAY2BGR)
+        minAreaRect, foregroundImg = self.biggestComponentMinAreaRect(dilatedImg)
+        foregroundImg = cv.cvtColor(grayImg, cv.COLOR_GRAY2BGR)
         cv.drawContours(foregroundImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
+        center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
 
         # extract the minAreaRect from sheetImg
         # cudos to http://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
@@ -209,31 +206,53 @@ class SplitSheets(ProcessingStep):
         outputSheetImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
 
         self._grayImgs.append(grayImg)
+        self._adaptiveThresholdImgs.append(adaptiveThresholdImg)
+        self._otsuThresholdImgs.append(otsuThresholdImg)
         self._thresholdImgs.append(thresholdImg)
-        self._eroded1Imgs.append(eroded1Img)
+        self._erodedImgs.append(erodedImg)
         self._dilatedImgs.append(dilatedImg)
-        self._eroded2Imgs.append(eroded2Img)
-        self._labeledImgs.append(labeledImg * 255 / numComponents)
         self._foregroundImgs.append(foregroundImg)
         self._rotatedImgs.append(rotatedImg)
         self._outputSheetImgs.append(outputSheetImg)
 
         return True
 
+    def biggestComponentMinAreaRect(self, img):
+        """
+        Find the biggest white component in the img.
+        Returns its minAreaRect and a black white image of the component.
+        """
+        numComponents, labeledImg = cv.connectedComponents(img)
+        componentIndices = [np.where(labeledImg == label) for label in range(numComponents)]
+        componentAreas = [len(idx[0]) for idx in componentIndices]
+        componentColors = [np.median(img[idx]) for idx in componentIndices]
+
+        # filter out black components, sort by size
+        components = [(label, componentAreas[label], componentColors[label]) for label in
+                range(numComponents) if componentColors[label] != 0]
+        components.sort(key = lambda x: x[1], reverse=True)
+        self._log.debug('components (label, size) = {}', list(components))
+
+        selectedLabel = components[0][0]
+        selectedImg = np.where(labeledImg == selectedLabel,
+                np.uint8(255.0), np.uint8(0.0))
+        contours, _ = cv.findContours(selectedImg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+        return cv.minAreaRect(contours[0]), selectedImg
+
     def writeOutput(self):
         cv.imwrite(f'{self.prefix}_0_0_input.jpg', self._inputImg)
         for idx, grayImg in enumerate(self._grayImgs):
             cv.imwrite(f'{self.prefix}_{idx}_1_grayImg.jpg', grayImg)
+        for idx, thresholdImg in enumerate(self._adaptiveThresholdImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_2_adaptiveThresholdImg.jpg', thresholdImg)
+        for idx, thresholdImg in enumerate(self._otsuThresholdImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_3_otsuThresholdImg.jpg', thresholdImg)
         for idx, thresholdImg in enumerate(self._thresholdImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_2_thresholdImg.jpg', thresholdImg)
-        for idx, eroded1Img in enumerate(self._eroded1Imgs):
-            cv.imwrite(f'{self.prefix}_{idx}_3_eroded1Img.jpg', eroded1Img)
+            cv.imwrite(f'{self.prefix}_{idx}_4_thresholdImg.jpg', thresholdImg)
+        for idx, erodedImg in enumerate(self._erodedImgs):
+            cv.imwrite(f'{self.prefix}_{idx}_5_erodedImg.jpg', erodedImg)
         for idx, dilatedImg in enumerate(self._dilatedImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_4_dilatedImg.jpg', dilatedImg)
-        for idx, eroded2Img in enumerate(self._eroded2Imgs):
-            cv.imwrite(f'{self.prefix}_{idx}_5_eroded2Img.jpg', eroded2Img)
-        for idx, labeledImg in enumerate(self._labeledImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_6_labeledImg.jpg', labeledImg)
+            cv.imwrite(f'{self.prefix}_{idx}_6_dilatedImg.jpg', dilatedImg)
         for idx, foregroundImg in enumerate(self._foregroundImgs):
             cv.imwrite(f'{self.prefix}_{idx}_7_foregroundImg.jpg', foregroundImg)
         for idx, rotatedImg in enumerate(self._rotatedImgs):
