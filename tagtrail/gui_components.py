@@ -123,6 +123,10 @@ class AutocompleteEntry(tkinter.Entry):
 
     def focus_set(self):
         super().focus_set()
+        # initialize with prefix
+        if self.text == '' and self.confidence == 0:
+            self.delete(0, tkinter.END)
+            self.insert(0, self.longestCommonPrefix(self.possibleValues))
         self.icursor(tkinter.END)
 
     # precondition: _listBox exists
