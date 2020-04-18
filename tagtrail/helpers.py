@@ -162,7 +162,7 @@ def recreateDir(path, log = Log()):
         shutil.rmtree(path)
     except FileNotFoundError:
         log.debug('Directory not found: {}', path)
-    shutil.os.mkdir(path)
+    os.makedirs(path)
 
 # retrieve names of all files directly in directory 'dir' (no recursion)
 # return an alphabetically sorted list of them
