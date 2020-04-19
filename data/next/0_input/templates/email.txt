@@ -15,5 +15,8 @@ ${REPLY_TO_ADDRESS}
 Liebe Grüße aus deinem Selbstbedienungsladen,
 ${ACCOUNTANT_NAME} für die Speichär-Betriebsgruppe
 
+Die Klimabilanz wird von https://eaternity.org/ berechnet. Als Vergleich
+entspricht z.B. 1km Autofahren 160 gCo2e oder eine 1km Zugfahrt mit der SBB 0.14 gCo2e.
+
 Bezogene Produkte:
 ${BILL}

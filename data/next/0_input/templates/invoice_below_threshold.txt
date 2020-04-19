@@ -4,6 +4,6 @@ Um in einem Monat wieder Zugang zum Speichär zu bekommen brauchst du bei
 der nächsten Abrechnung einen minimalen Kontostand von ${LIQUIDITY_THRESHOLD}.
 
 Bitte überweise den dafür nötigen Betrag (oder besser etwas mehr) mit deinem
-Kürzel (${MEMBER_ID}) als Vermerk auf folgendes Konto:
+Kürzel (und nur diesem) als Vermerk auf folgendes Konto:
 
-${INVOICE_IBAN}
+${INVOICE_IBAN}, Mitteilung: ${MEMBER_ID}

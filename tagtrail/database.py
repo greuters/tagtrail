@@ -685,9 +685,12 @@ class Bill(DatabaseDict):
                 self.totalGCo2e()]
 
     def csvRows(self):
-        return [[p.id, p.description, str(p.numTags),
+        return [[p.id,
+            p.description,
+            str(p.numTags),
             helpers.formatPrice(p.unitGrossSalesPrice),
-                 '' if p.totalgCo2e() is None else helpers.formatPrice(p.totalGrossSalesPrice()), str(p.totalgCo2e())]
+            'None' if p.totalGrossSalesPrice() is None else helpers.formatPrice(p.totalGrossSalesPrice()),
+            'None' if p.totalgCo2e() is None else str(p.totalgCo2e())]
                 for p in self.values()]
 
     def __str__(self):
