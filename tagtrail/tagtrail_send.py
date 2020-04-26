@@ -76,7 +76,7 @@ class MailSender(ABC):
                   'as they have no email:\n' + \
                   f'{",".join(billedMembersWithoutEmails)}\n' + \
                     'Continue (yes/no)? ')
-            if answer != 'yes':
+            if answer != 'yes' and answer != 'y':
                 return
 
         for bill in self.bills:

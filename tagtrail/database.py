@@ -49,7 +49,7 @@ class Database(ABC):
             memberFileName = 'members',
             productFileName = 'products',
             configFilePath = 'config/tagtrail.cfg'):
-        self.memberFilePath = dataPath + memberFileName + '.csv'
+        self.memberFilePath = dataPath + memberFileName + '.tsv'
         self.productFilePath = dataPath + productFileName + '.csv'
         self.config = configparser.SafeConfigParser(
                 interpolation=configparser.ExtendedInterpolation(),
@@ -143,12 +143,12 @@ class Database(ABC):
         with open(path, "w+", newline=container.newline, encoding=container.encoding) as fout:
             for prefix, val in zip(prefixRows,
                     container.prefixValues()):
-                fout.write("{};{}\n".format(prefix, val))
+                fout.write(f'{prefix}{container.csvDelimiter}{val}\n')
 
-            fout.write(";".join(columnHeaders)+"\n")
+            fout.write(container.csvDelimiter.join(columnHeaders)+"\n")
             for row in container.csvRows():
                 assert(len(row) == len(columnHeaders))
-                fout.write(";".join(row)+"\n")
+                fout.write(container.csvDelimiter.join(row)+"\n")
 
 class DatabaseObject(ABC):
     def __init__(self,
@@ -269,6 +269,7 @@ class Member(DatabaseObject):
 
 
 class MemberDict(DatabaseDict):
+    csvDelimiter = '\t'
     def __init__(self,
             config,
             accountingDate,
@@ -278,6 +279,9 @@ class MemberDict(DatabaseDict):
         self.accountingDate = accountingDate \
                 if isinstance(accountingDate, datetime.date) else \
                 helpers.DateUtility.strptime(accountingDate)
+        header = config.getnewlinelist(self.configSection(),
+                self.columnHeadersConfigOption())
+        self.numAdditionalCols = len(header) - 4
 
     @classmethod
     def configSection(cls):
@@ -303,7 +307,13 @@ class MemberDict(DatabaseDict):
         return [self.accountingDate]
 
     def csvRows(self):
-        return [[m.id, m.name, ', '.join(m.emails), str(m.balance)] for m in self.values()]
+        return [[
+            m.id,
+            m.name,
+            ', '.join(m.emails),
+            str(m.balance)
+            ]+['' for i in range(self.numAdditionalCols)]
+            for m in self.values()]
 
 class Product(DatabaseObject):
     def __init__(self,

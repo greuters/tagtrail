@@ -216,8 +216,8 @@ class TagCollector(ABC):
 
     def informAboutPriceChanges(self):
         for product in self.db.products.values():
-            if (self.taggedGrossSalesPrice(product.id) !=
-                    product.grossSalesPrice()):
+            if (self.taggedGrossSalesPrice(product.id) != None
+                    and self.taggedGrossSalesPrice(product.id) != product.grossSalesPrice()):
                 self.log.info(f'price of {product.id} changed from '+
                         f'{self.taggedGrossSalesPrice(product.id)} to ' +
                         f'{product.grossSalesPrice()}')
@@ -311,7 +311,9 @@ class Gui:
         newMembers.accountingDate = self.accountingDate
         for m in newMembers.values():
             m.balance = self.db.bills[m.id].currentBalance()
-        self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/members.csv',
+        self.db.writeCsv(f'{self.accountingDataPath}5_output/members.tsv',
+                newMembers)
+        self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/members.tsv',
                 newMembers)
 
     def writeProductsCSVs(self):
@@ -439,7 +441,7 @@ class EnrichedDatabase(database.Database):
                 'No inventoryQuantityDate given - not checking inventory')
             self.log.debug([p for p in self.products.values() if p.inventoryQuantity != 0])
             if [p for p in self.products.values() if p.inventoryQuantity != 0]:
-                raise AssertionException('Add an inventoryQuantityDate ' +
+                raise Exception('Add an inventoryQuantityDate ' +
                         'or omit inventory quantities alltogether')
             return transactions
 
