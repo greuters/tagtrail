@@ -902,7 +902,7 @@ class PostfinanceTransaction:
         """
         mostLikelyMemberId = None
         for memberId in possibleIds:
-            if self.notificationText.upper().find(memberId.upper()) != -1:
+            if self.notificationText.upper().find(f' {memberId.upper()} ') != -1:
                 if mostLikelyMemberId is None:
                     mostLikelyMemberId = memberId
                 else:
