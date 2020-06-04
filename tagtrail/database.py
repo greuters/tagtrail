@@ -560,7 +560,7 @@ class BillPosition(DatabaseObject):
     def totalGrossSalesPrice(self):
         return self.numTags * self.unitGrossSalesPrice
 
-    def totalgCo2e(self):
+    def totalGCo2e(self):
         return None if self.gCo2e == None else self.numTags * self.gCo2e
 
 class Bill(DatabaseDict):
@@ -628,10 +628,10 @@ class Bill(DatabaseDict):
         self.__correctionJustification = justification
 
     def totalGCo2e(self):
-        totalGCo2e = sum([0 if p.totalgCo2e() == None else p.totalgCo2e() for p in self.values()])
-        if (self.expectedTotalGCo2e and totalGCo2e !=
+        totalGCo2e = sum([0 if p.totalGCo2e() == None else p.totalGCo2e() for p in self.values()])
+        if (self.expectedTotalGCo2e and int(totalGCo2e) !=
                 int(self.expectedTotalGCo2e)):
-            raise ValueError(f'expectedTotalGCo2e ({totalGCo2e}) is '
+            raise ValueError(f'expectedTotalGCo2e ({self.expectedTotalGCo2e}) is '
                     + f'not consistent with sum of gCo2e ({totalGCo2e})')
         return totalGCo2e
 
@@ -670,16 +670,21 @@ class Bill(DatabaseDict):
     def databaseObjectFromCsvRow(self, rowValues):
         numTags = int(rowValues[2])
         unitGrossSalesPrice = helpers.priceFromFormatted(rowValues[3])
-        totalGrossSalesPrice = rowValues[4]
+        unitGCo2e = None if rowValues[4] == 'None' else int(rowValues[4])
+        totalGrossSalesPrice = rowValues[5]
+        totalGCo2e = None if rowValues[6] == 'None' else int(rowValues[6])
         position = BillPosition(rowValues[0],
                 rowValues[1],
                 numTags,
                 None,
                 unitGrossSalesPrice,
-                None if rowValues[5] == 'None' else int(rowValues[5]))
+                unitGCo2e)
         if helpers.formatPrice(position.totalGrossSalesPrice()) != totalGrossSalesPrice:
             raise ValueError('inconsistent position, ' + \
                     f'({position.totalGrossSalesPrice()} == {numTags} * {unitGrossSalesPrice}) != {totalGrossSalesPrice}')
+        if position.totalGCo2e() != totalGCo2e:
+            raise ValueError('inconsistent position, ' + \
+                    f'({position.totalGCo2e()} == {numTags} * {unitGCo2e}) != {totalGCo2e}')
         return position
 
     def prefixValues(self):
@@ -699,8 +704,9 @@ class Bill(DatabaseDict):
             p.description,
             str(p.numTags),
             helpers.formatPrice(p.unitGrossSalesPrice),
+            'None' if p.gCo2e is None else str(p.gCo2e),
             'None' if p.totalGrossSalesPrice() is None else helpers.formatPrice(p.totalGrossSalesPrice()),
-            'None' if p.totalgCo2e() is None else str(p.totalgCo2e())]
+            'None' if p.totalGCo2e() is None else str(p.totalGCo2e())]
                 for p in self.values()]
 
     def __str__(self):
@@ -711,11 +717,11 @@ class Bill(DatabaseDict):
                     numTags=p.numTags,
                     unitPrice=helpers.formatPrice(p.unitGrossSalesPrice),
                     totalPrice=helpers.formatPrice(p.totalGrossSalesPrice()),
-                    totalgCo2e='?' if p.totalgCo2e() is None else p.totalgCo2e()
+                    totalGCo2e='?' if p.totalGCo2e() is None else p.totalGCo2e()
                     )
         text += '\n' + self.textRepresentationFooter.format(
                 totalPrice=helpers.formatPrice(self.totalGrossSalesPrice()),
-                totalgCo2e=self.totalGCo2e())
+                totalGCo2e=self.totalGCo2e())
         return text
 
 class MemberAccount(DatabaseObject):

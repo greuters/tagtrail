@@ -187,6 +187,12 @@ class SplitSheets(ProcessingStep):
         foregroundSize = len(np.where(dilatedImg == 255)[0])
         self._log.debug(f'foregroundSize = {foregroundSize}')
         self._log.debug(f'imageSize = {sheetImgWidth * sheetImgHeight}')
+        self._grayImgs.append(grayImg)
+        self._adaptiveThresholdImgs.append(adaptiveThresholdImg)
+        self._otsuThresholdImgs.append(otsuThresholdImg)
+        self._thresholdImgs.append(thresholdImg)
+        self._erodedImgs.append(erodedImg)
+        self._dilatedImgs.append(dilatedImg)
         if foregroundSize < sheetImgWidth * sheetImgHeight / 4:
             self._log.info('found empty sheet')
             return False
@@ -205,12 +211,6 @@ class SplitSheets(ProcessingStep):
         rotatedImg = cv.warpAffine(sheetImg, rotationMatrix, (sheetImgHeight, sheetImgWidth), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
         outputSheetImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
 
-        self._grayImgs.append(grayImg)
-        self._adaptiveThresholdImgs.append(adaptiveThresholdImg)
-        self._otsuThresholdImgs.append(otsuThresholdImg)
-        self._thresholdImgs.append(thresholdImg)
-        self._erodedImgs.append(erodedImg)
-        self._dilatedImgs.append(dilatedImg)
         self._foregroundImgs.append(foregroundImg)
         self._rotatedImgs.append(rotatedImg)
         self._outputSheetImgs.append(outputSheetImg)
