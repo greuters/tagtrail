@@ -326,6 +326,7 @@ class Product(DatabaseObject):
             inventoryQuantity = None,
             addedQuantity = None,
             soldQuantity = None,
+            pagesToPrint = None,
             eaternityName = None,
             origin = None,
             production = None,
@@ -345,6 +346,11 @@ class Product(DatabaseObject):
             raise TypeError(f'marginPercentage is not a float, {marginPercentage}')
         if inventoryQuantity and not type(inventoryQuantity) is int:
             raise TypeError(f'inventoryQuantity is not an integer, {inventoryQuantity}')
+        if pagesToPrint:
+            if type(pagesToPrint) is str:
+                pagesToPrint = [pagesToPrint]
+            if not type(pagesToPrint) is list:
+                raise TypeError(f'pagesToPrint is not a list, {pagesToPrint}')
         if eaternityName and not type(eaternityName) is str:
             raise TypeError(f'eaternityName is not a string, {eaternityName}')
         if origin and not type(origin) is str:
@@ -373,6 +379,7 @@ class Product(DatabaseObject):
         self.inventoryQuantity = inventoryQuantity
         self.addedQuantity = addedQuantity
         self.soldQuantity = soldQuantity
+        self.pagesToPrint = pagesToPrint
         self.eaternityName = eaternityName
         self.origin = origin
         self.production = production
@@ -466,13 +473,15 @@ class ProductDict(DatabaseDict):
                 addedQuantity = 0 if not rowValues[5] else int(rowValues[5]),
                 soldQuantity  = 0 if not rowValues[6] else int(rowValues[6]),
                 # not reading expectedQuantity
-                inventoryQuantity = 0 if not rowValues[8] else int(rowValues[8]),
-                eaternityName = rowValues[9],
-                origin = rowValues[10],
-                production = rowValues[11],
-                transport = rowValues[12],
-                conservation = rowValues[13],
-                gCo2e = None if not rowValues[14] else int(rowValues[14]))
+                inventoryQuantity = None if not rowValues[8] else int(rowValues[8]),
+                pagesToPrint = rowValues[9],
+                # Comment is not used within tagtrail
+                eaternityName = rowValues[11],
+                origin = rowValues[12],
+                production = rowValues[13],
+                transport = rowValues[14],
+                conservation = rowValues[15],
+                gCo2e = None if not rowValues[16] else int(rowValues[16]))
 
     def prefixValues(self):
         return ['' if self.previousQuantityDate is None else str(self.previousQuantityDate),
@@ -489,6 +498,8 @@ class ProductDict(DatabaseDict):
                 '' if p.soldQuantity is None else str(p.soldQuantity),
                 '' if p.expectedQuantity is None else str(p.expectedQuantity),
                 '' if p.inventoryQuantity is None else str(p.inventoryQuantity),
+                '' if p.pagesToPrint is None else ','.join(p.pagesToPrint),
+                '', # Comment is not used within tagtrail
                 p.eaternityName,
                 p.origin,
                 ','.join(p.production),
@@ -530,9 +541,10 @@ class ProductDict(DatabaseDict):
         for productId, product in self.items():
             newProducts[productId].previousQuantity = quantitySelector(
                     product.expectedQuantity,
-                    product.inventoryQuantity + product.addedQuantity)
+                    product.inventoryQuantity)
             if newProducts[productId].previousQuantity is None:
                 raise ValueError(f'failed to compute quantity for {productId}')
+            newProducts[productId].pagesToPrint = None
             newProducts[productId].inventoryQuantity = None
             newProducts[productId].addedQuantity = None
             newProducts[productId].soldQuantity = None

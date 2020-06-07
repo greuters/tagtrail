@@ -58,8 +58,8 @@ class TagCollector(ABC):
         self.informAboutPriceChanges()
         self.newTagsPerProduct = self.collectNewTagsPerProduct()
 
-    def currentProductPagePaths(self):
-        return [sheet.filePath for sheet in self.currentSheets.values()]
+    def currentProductPageNames(self):
+        return [sheet.fileName for sheet in self.currentSheets.values()]
 
     def taggedGrossSalesPrice(self, productId):
         return self.__sheetGrossSalesPrice(productId, self.currentSheets)
@@ -153,29 +153,29 @@ class TagCollector(ABC):
 
     def loadProductSheets(self, path):
         self.log.info(f'collecting tags in {path}')
-        csvFilePaths = helpers.sortedFilesInDir(path, ext = '.csv')
-        if not csvFilePaths:
+        csvFileNames = helpers.sortedFilesInDir(path, ext = '.csv')
+        if not csvFileNames:
             return {}
 
         productSheets = {}
-        for filePath in csvFilePaths:
-            productId, pageNumber = os.path.splitext(filePath)[0].split('_')
+        for fileName in csvFileNames:
+            productId, pageNumber = os.path.splitext(fileName)[0].split('_')
             self.log.debug(f'productId={productId}, pageNumber={pageNumber}')
             sheet = ProductSheet()
-            sheet.load(path+filePath)
-            sheet.filePath = filePath
+            sheet.load(path+fileName)
+            sheet.fileName = fileName
             if productId not in self.db.products:
                 raise ValueError(f'{productId} has a sheet, but is ' +
                         'missing in database')
             if sheet.productId() != productId:
-                raise ValueError(f'{path+filePath} is invalid.\n' +
+                raise ValueError(f'{path+fileName} is invalid.\n' +
                     '{sheet.productId()} != {productId}')
             if sheet.pageNumber != pageNumber:
-                raise ValueError(f'{path+filePath} is invalid.\n' +
+                raise ValueError(f'{path+fileName} is invalid.\n' +
                     '{sheet.pageNumber()} != {pageNumber}')
             if sheet.unconfidentTags():
                 raise ValueError(
-                    f'{path+filePath} is not properly sanitized.\n' +
+                    f'{path+fileName} is not properly sanitized.\n' +
                     'Run tagtrail_sanitize before tagtrail_account!')
             if (productId, pageNumber) in productSheets:
                 raise ValueError(
@@ -223,6 +223,8 @@ class TagCollector(ABC):
                         f'{product.grossSalesPrice()}')
 
 class Gui:
+    scanPostfix = '_normalized_scan.jpg'
+
     def __init__(self, accountingDataPath, nextAccountingDataPath,
             accountingDate, configFilePath, updateCo2Statistics):
         self.log = helpers.Log()
@@ -237,20 +239,28 @@ class Gui:
         self.db = EnrichedDatabase(accountingDataPath, accountingDate,
                 configFilePath, updateCo2Statistics)
 
-        self.productSheetSelection = gui_components.Checkbar(self.root,
-                'Accounted pages to keep:',
-                self.db.productPagePaths, True)
-        self.productSheetSelection.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
-        self.productSheetSelection.config(relief=tkinter.GROOVE, bd=2)
+        accountedProducts = [fileName.split('_')[0] for fileName in self.db.productPageNames]
+        accountedProductsOverview = gui_components.Checkbar(self.root,
+                'Accounted pages:',
+                self.db.productPageNames, False)
+        accountedProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
+        accountedProductsOverview.config(relief=tkinter.GROOVE, bd=2)
 
-        accountedProducts = [path.split('_')[0] for path in self.db.productPagePaths]
+        emptiedProducts = sorted([
+            p.id for p in self.db.products.values()
+            if p.id not in accountedProducts and p.expectedQuantity <= 0
+            ])
+        emptiedProductsOverview = gui_components.Checkbar(self.root, 'Emptied pages:', emptiedProducts, False)
+        emptiedProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
+        emptiedProductsOverview.config(relief=tkinter.GROOVE, bd=2)
+
         missingProducts = sorted([
             p.id for p in self.db.products.values()
-            if p.id not in accountedProducts
+            if p.id not in accountedProducts and p.expectedQuantity > 0
             ])
-        mp = gui_components.Checkbar(self.root, 'Missing products:', missingProducts, False)
-        mp.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
-        mp.config(relief=tkinter.GROOVE, bd=2)
+        missingProductsOverview = gui_components.Checkbar(self.root, 'Missing products:', missingProducts, False)
+        missingProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
+        missingProductsOverview.config(relief=tkinter.GROOVE, bd=2)
 
         buttonFrame = tkinter.Frame(self.root)
         buttonFrame.pack(side=tkinter.BOTTOM, pady=5)
@@ -323,18 +333,27 @@ class Gui:
                 self.db.products.copyForNextAccounting(self.accountingDate))
 
     def copyAccountedSheets(self):
-        productSheetsToKeep = [path for selected, path in
-                zip(self.productSheetSelection.state(),
-                    self.db.productPagePaths)
-                if selected == 1]
-        self.log.debug(f'productSheetsToKeep = {productSheetsToKeep}')
+        # we keep all newly tagged product sheets, plus the ones we had as an
+        # input but didn't scan any more. accounted sheets should only ever be
+        # deleted when replacing them with tagtrail_gen
+        shutil.copytree(f'{self.accountingDataPath}2_taggedProductSheets',
+                f'{self.nextAccountingDataPath}0_input/accounted_products')
 
-        destPath = self.nextAccountingDataPath+'0_input/accounted_products/'
-        helpers.recreateDir(destPath, self.log)
-        for productFileName in productSheetsToKeep:
-            srcPath = self.accountingDataPath+'2_taggedProductSheets/'+productFileName
-            self.log.info("copy {} to {}".format(srcPath, destPath))
-            shutil.copy(srcPath, destPath)
+        inputAccountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'
+        inputAccountedProductCsvFiles = sorted(filter(
+            lambda f: os.path.splitext(f)[1] == '.csv',
+            next(os.walk(inputAccountedProductsPath))[2]))
+
+        for csvFile in inputAccountedProductCsvFiles:
+            if csvFile in self.db.productPageNames:
+                continue # newer version of this file already copied
+            else:
+                self.log.info(f'Copied accounted product {csvFile} ' +
+                        'directly from input to next accounting')
+                scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
+                dst = f'{self.nextAccountingDataPath}0_input/accounted_products/'
+                shutil.copy(f'{inputAccountedProductsPath}{csvFile}', dst)
+                shutil.copy(f'{inputAccountedProductsPath}{scanFile}', dst)
 
 class EnrichedDatabase(database.Database):
     def __init__(self, accountingDataPath, accountingDate, configFilePath, updateCo2Statistics):
@@ -374,7 +393,7 @@ class EnrichedDatabase(database.Database):
                 database.CorrectionTransactionDict)
         self.paymentTransactions = self.loadPaymentTransactions()
         self.bills = self.createBills(tagCollector)
-        self.productPagePaths = tagCollector.currentProductPagePaths()
+        self.productPageNames = tagCollector.currentProductPageNames()
         self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
         self.purchaseTransactions = self.createPurchaseTransactions()
         self.accounts = database.MemberAccountDict(self.config,
@@ -440,7 +459,7 @@ class EnrichedDatabase(database.Database):
             self.log.info(
                 'No inventoryQuantityDate given - not checking inventory')
             self.log.debug([p for p in self.products.values() if p.inventoryQuantity != 0])
-            if [p for p in self.products.values() if p.inventoryQuantity != 0]:
+            if [p for p in self.products.values() if p.inventoryQuantity is not None]:
                 raise Exception('Add an inventoryQuantityDate ' +
                         'or omit inventory quantities alltogether')
             return transactions
@@ -450,14 +469,12 @@ class EnrichedDatabase(database.Database):
         inventoryDifferenceAccount = self.config.get('tagtrail_account',
                 'inventory_difference_account')
         for product in self.products.values():
-            expectedQuantity = (product.previousQuantity
-                    - product.soldQuantity)
-            quantityDifference = expectedQuantity - product.inventoryQuantity
+            quantityDifference = product.expectedQuantity - product.inventoryQuantity
             purchasePriceDifference = quantityDifference * product.purchasePrice
             grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
 
             if quantityDifference != 0:
-                quantityDifferenceMsg = (f'{product.id}: expected = {expectedQuantity}, ' +
+                quantityDifferenceMsg = (f'{product.id}: expected = {product.expectedQuantity}, ' +
                         f'inventory = {product.inventoryQuantity}, ' +
                         f'difference = {quantityDifference}')
                 if quantityDifference < 3:

@@ -31,7 +31,7 @@ import traceback
 import gui_components
 
 class InputSheet(ProductSheet):
-    validationProbability = 0.05
+    validationProbability = 0.02
 
     def __init__(self, root, aspectRatio,
             database, path, accountedProductsPath):
