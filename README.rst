@@ -67,6 +67,6 @@ On Windows
 
 * install Microsoft Visual C++ 14.0 and if appropriate Windows 10 SDK from https://visualstudio.microsoft.com/de/downloads
 
-* install tesseract from https://github.com/tesseract-ocr/tesseract and add its location (e.g. C:\Program Files\Tesseract-OCR) to the PATH system environment variable 
+* install tesseract from https://github.com/tesseract-ocr/tesseract and add its location (e.g. C:\\Program Files\\Tesseract-OCR) to the PATH system environment variable 
 
 * pip install -r requirements.txt
