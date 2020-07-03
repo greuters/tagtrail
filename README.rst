@@ -45,3 +45,17 @@ processed by GnuCash.
 * tagtrail_send compiles and sends an email for each member, with a bill
   listing the quantity and price of each product they tagged and the total
   price
+
+Installation from source
+On Linux
+* sudo apt-get install git
+* sudo apt-get install python3
+* install tesseract from https://github.com/tesseract-ocr/tesseract
+* pip install -r requirements.txt
+
+On Windows
+* install git from https://git-scm.com/download/win
+* install python from https://www.python.org/downloads/windows/
+* install Microsoft Visual C++ 14.0 and if appropriate Windows 10 SDK from https://visualstudio.microsoft.com/de/downloads
+* install tesseract from https://github.com/tesseract-ocr/tesseract and add its location (e.g. C:\Program Files\Tesseract-OCR) to the PATH system environment variable 
+* pip install -r requirements.txt

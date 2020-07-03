@@ -283,7 +283,7 @@ class ProductSheet(ABC):
 
 class Box(ABC):
     fontColor = 'black'
-    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    font = ImageFont.truetype("dejavu-fonts-ttf-2.37/ttf/DejaVuSans-Bold.ttf",
                 50)
 
     def __init__(self, name, pt1, pt2, bgColor,

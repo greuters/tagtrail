@@ -340,6 +340,9 @@ class Gui:
                 f'{self.nextAccountingDataPath}0_input/accounted_products')
 
         inputAccountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'
+        if not os.path.isdir(inputAccountedProductsPath):
+            self.log.warn('No accounted sheets from last accounting available to copy')
+            return
         inputAccountedProductCsvFiles = sorted(filter(
             lambda f: os.path.splitext(f)[1] == '.csv',
             next(os.walk(inputAccountedProductsPath))[2]))

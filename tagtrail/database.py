@@ -632,7 +632,7 @@ class Bill(DatabaseDict):
         return self.__correctionJustification
 
     def setCorrection(self, transaction, justification):
-        if (transaction != 0) and (justification is ''):
+        if (transaction != 0) and (justification == ''):
             raise ValueError('if a correction transaction is made, ' + \
                     'a justification has to be given. ' + \
                     f'transaction={transaction}, justification={justification}')
