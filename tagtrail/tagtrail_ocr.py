@@ -25,6 +25,12 @@ import os
 import math
 import Levenshtein
 import slugify
+import tkinter
+from tkinter import ttk
+from tkinter import messagebox
+import imutils
+import functools
+from PIL import ImageTk,Image
 from abc import ABC, abstractmethod
 import helpers
 from sheets import ProductSheet
@@ -38,12 +44,12 @@ class ProcessingStep(ABC):
             log = helpers.Log()):
         self._name = name
         self._log = log
-        self._outputDir = outputDir
+        self.outputDir = outputDir
         super().__init__()
 
     @property
     def prefix(self):
-        return f'{self._outputDir}{self._name}'
+        return f'{self.outputDir}{self._name}'
 
     @abstractmethod
     def process(self, inputImg):
@@ -171,12 +177,16 @@ class SplitSheets(ProcessingStep):
                 cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
         adaptiveThresholdImg = cv.adaptiveThreshold(cv.medianBlur(grayImg,7), 255,
                 cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
-        testDilate = cv.dilate(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
-                (7,7)), 1)
-        adaptiveThresholdImg = np.where(
-                cv.erode(testDilate, self._mediumKernel, 1) == 0,
-                np.uint8(255.0), np.uint8(0.0))
-        minAreaRect, adaptiveThresholdImg = self.biggestComponentMinAreaRect(adaptiveThresholdImg)
+#        testDilate = cv.dilate(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
+#                (7,7)), 1)
+#        adaptiveThresholdImg = np.where(
+#                cv.erode(testDilate, self._mediumKernel, 1) == 0,
+#                np.uint8(255.0), np.uint8(0.0))
+        numComponents, labeledImg = cv.connectedComponents(adaptiveThresholdImg)
+        if numComponents < 2:
+            self._log.info('found empty sheet')
+            return False
+        minAreaRect, adaptiveThresholdImg = self.biggestComponentMinAreaRect(numComponents, labeledImg, adaptiveThresholdImg)
         cv.drawContours(adaptiveThresholdImg,[np.int0(cv.boxPoints(minAreaRect))],0,255,-1)
         thresholdImg = np.where(
                 np.all([otsuThresholdImg == 255, adaptiveThresholdImg == 255], 0),
@@ -193,11 +203,12 @@ class SplitSheets(ProcessingStep):
         self._thresholdImgs.append(thresholdImg)
         self._erodedImgs.append(erodedImg)
         self._dilatedImgs.append(dilatedImg)
-        if foregroundSize < sheetImgWidth * sheetImgHeight / 4:
+        numComponents, labeledImg = cv.connectedComponents(dilatedImg)
+        if foregroundSize < sheetImgWidth * sheetImgHeight / 4 or numComponents < 2:
             self._log.info('found empty sheet')
             return False
 
-        minAreaRect, foregroundImg = self.biggestComponentMinAreaRect(dilatedImg)
+        minAreaRect, foregroundImg = self.biggestComponentMinAreaRect(numComponents, labeledImg, dilatedImg)
         foregroundImg = cv.cvtColor(grayImg, cv.COLOR_GRAY2BGR)
         cv.drawContours(foregroundImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
         center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
@@ -217,12 +228,11 @@ class SplitSheets(ProcessingStep):
 
         return True
 
-    def biggestComponentMinAreaRect(self, img):
+    def biggestComponentMinAreaRect(self, numComponents, labeledImg, img):
         """
         Find the biggest white component in the img.
         Returns its minAreaRect and a black white image of the component.
         """
-        numComponents, labeledImg = cv.connectedComponents(img)
         componentIndices = [np.where(labeledImg == label) for label in range(numComponents)]
         componentAreas = [len(idx[0]) for idx in componentIndices]
         componentColors = [np.median(img[idx]) for idx in componentIndices]
@@ -479,13 +489,15 @@ class FindMarginsByLines(LineBasedStep):
                  minLineLength = 800,
                  rotPrecision = np.pi/4,
                  maxLineGap = 1,
-                 kernelSize = 9):
+                 kernelSize = 9,
+                 minExpectedImageSize = 800*600): # TODO: set correctly when merging patch to expect a certain input image size / rescaling
         super().__init__(name, outputDir, log)
         self._minLineLength = minLineLength
         self._rotPrecision = rotPrecision
         self._maxLineGap = maxLineGap
         self._cornerRadius = 6
         self._kernelSize = kernelSize
+        self._minExpectedImageSize = minExpectedImageSize
 
     def process(self, inputImg):
         super().process(inputImg)
@@ -494,7 +506,7 @@ class FindMarginsByLines(LineBasedStep):
         self._cannyImg = cv.Canny(self._grayImg,50,150,apertureSize = 3)
         kernel = cv.getStructuringElement(cv.MORPH_RECT, (self._kernelSize,
             self._kernelSize))
-        self._closedImg = self._cannyImg #cv.morphologyEx(self._cannyImg, cv.MORPH_CLOSE, kernel)
+        self._closedImg = cv.morphologyEx(self._cannyImg, cv.MORPH_CLOSE, kernel)
         self._closingImg = cv.dilate(self._closedImg, kernel, 1)
         _, self._thresholdImg = cv.threshold(self._grayImg, self.threshold, 1,
                 cv.THRESH_BINARY_INV)
@@ -542,6 +554,11 @@ class FindMarginsByLines(LineBasedStep):
         cv.circle(self._frameImg, (bottomRight.x, bottomRight.y), self._cornerRadius, (0,255,0), 2)
         x0, y0 = topLeft.x, topLeft.y
         x1, y1 = bottomRight.x, bottomRight.y
+        if (x1-x0)*(y1-y0) < self._minExpectedImageSize:
+            self._log.debug(f'x0={x0}, y0={y0}, x1={x1}, y1={y1}')
+            self._log.warn('Failed to find plausible image margins, not cropping image')
+            x0, y0 = 0, 0
+            x1, y1 = width, height
         cv.rectangle(self._frameImg, (x0, y0), (x1, y1), (255,0,0), 9)
         self._outputImg=inputImg[y0:y1, x0:x1]
 
@@ -570,13 +587,10 @@ class FitToSheet(ProcessingStep):
         cv.imwrite(f'{self.prefix}_1_output.jpg', self._outputImg)
 
 class RecognizeText(ProcessingStep):
-    nextFallbackPageNumber = 0
-
     def __init__(self,
             name,
             outputDir,
             db,
-            fallbackSheetName,
             marginSize = 5,
             minComponentArea = 100,
             minNormalizedAspectRatio = .1,
@@ -586,9 +600,8 @@ class RecognizeText(ProcessingStep):
         super().__init__(name, outputDir, log)
         self.__db = db
         self.__sheet = ProductSheet()
-        self.__fallbackSheetName = fallbackSheetName
-        self.__fallbackPageNumber = self.nextFallbackPageNumber
-        RecognizeText.nextFallbackPageNumber += 1
+        self.__fallbackSheetName = None
+        self.__fallbackPageNumber = 0
         self.marginSize = marginSize
         self.confidenceThreshold = confidenceThreshold
         self.minComponentArea = minComponentArea
@@ -603,7 +616,13 @@ class RecognizeText(ProcessingStep):
     def fileName(self):
         return self.__sheet.fileName()
 
+    def prepareProcessing(self, fallbackSheetName):
+        self.__fallbackSheetName = fallbackSheetName
+        self.__fallbackPageNumber += 1
+
     def process(self, inputImg):
+        assert(self.__fallbackSheetName is not None)
+
         super().process(inputImg)
         self._inputImg = inputImg
         self._grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
@@ -805,75 +824,342 @@ class RecognizeText(ProcessingStep):
         cv.imwrite(f'{self.prefix}_4_openedImg.jpg', self._openedImg)
         cv.imwrite(f'{self.prefix}_5_output.jpg', self._outputImg)
 
-def processFile(database, inputFile, outputDir, tmpDir):
-    print('Processing file: ', inputFile)
+class GUI():
+    previewColumnCount = 4
+    progressBarLength = 400
 
-    sheet0 = tuple(map(float,
-        database.config.getcsvlist('tagtrail_ocr', 'sheet0_coordinates')))
-    sheet1 = tuple(map(float,
-        database.config.getcsvlist('tagtrail_ocr', 'sheet1_coordinates')))
-    sheet2 = tuple(map(float,
-        database.config.getcsvlist('tagtrail_ocr', 'sheet2_coordinates')))
-    sheet3 = tuple(map(float,
-        database.config.getcsvlist('tagtrail_ocr', 'sheet3_coordinates')))
-    split = SplitSheets(
-            "0_splitSheets",
+    def __init__(self,
             tmpDir,
-            sheet0,
-            sheet1,
-            sheet2,
-            sheet3)
-    split.process(cv.imread(inputFile))
-    split.writeOutput()
-    for idx, sheetImg in enumerate(split._outputSheetImgs):
-        sheetName = f'{os.path.split(inputFile)[1]}_sheet{idx}'
-        print(f'sheetName = {sheetName}')
-        sheetDir = f'{tmpDir}sheet_{idx}'
-        helpers.recreateDir(sheetDir)
-        processSheet(database, sheetImg, sheetName, outputDir, sheetDir+'/')
-    return split.generatedSheets()
+            scanDir,
+            outputDir,
+            scanFilenames,
+            db,
+            log = helpers.Log()):
+        self.tmpDir = tmpDir
+        self.scanDir = scanDir
+        self.outputDir = outputDir
+        self.scanFilenames = scanFilenames
+        self.activeScanIdx = 0
+        self.db = db
+        self.log = log
+        self.selectedCorners = []
+        self.sheetCoordinates = list(range(4))
+        self.setActiveSheet(None)
+        self.loadConfig()
 
-def processSheet(database, sheetImg, sheetName, outputDir, tmpDir):
-    print('Processing sheet: ', sheetName)
-    processors=[]
-    processors.append(RotateSheet("1_rotateSheet", tmpDir))
-    processors.append(FindMarginsByLines("2_findMarginsByLines", tmpDir))
-    fit = FitToSheet("3_fitToSheet", tmpDir)
-    processors.append(fit)
-    recognizer = RecognizeText("4_recognizeText", tmpDir, database, sheetName)
-    processors.append(recognizer)
+        self.root = tkinter.Tk()
+        self.width=self.root.winfo_screenwidth()
+        self.height=self.root.winfo_screenheight()
+        self.root.geometry(str(self.width)+'x'+str(self.height))
+        self.buttonCanvasWidth=200
+        self.previewScrollbarWidth=20
+        self.initGUI()
+        self.root.mainloop()
 
-    img = sheetImg
-    for p in processors:
-        p.process(img)
-        p.writeOutput()
-        img = p._outputImg
-    if os.path.exists(f'{outputDir}{recognizer.fileName()}'):
-        print(f'reset sheet to fallback, as {recognizer.fileName()} already exists')
-        recognizer.resetSheetToFallback()
+    def rotateImage90(self):
+        self.rotationAngle = (self.rotationAngle + 90) % 360
+        self.resetGUI()
 
-    recognizer.storeSheet(outputDir)
-    cv.imwrite(f'{outputDir}{recognizer.productId()}_{recognizer.pageNumber()}_normalized_scan.jpg',
-            fit._outputImg)
+    def initGUI(self):
+        # canvas with first scan to configure rotation and select sheet areas
+        scannedImg = cv.imread(self.scanDir + self.scanFilenames[self.activeScanIdx])
+        rotatedImg = imutils.rotate_bound(scannedImg, self.rotationAngle)
+
+        o_h, o_w, _ = rotatedImg.shape
+        aspectRatio = min(self.height / o_h, (self.width - self.buttonCanvasWidth - self.previewScrollbarWidth) / 2 / o_w)
+        canvas_h, canvas_w = int(o_h * aspectRatio), int(o_w * aspectRatio)
+        resizedImg = cv.resize(rotatedImg, (canvas_w, canvas_h), Image.BILINEAR)
+
+        # Note: it is necessary to store the image locally for tkinter to show it
+        self.resizedImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
+        self.scanCanvas = tkinter.Canvas(self.root,
+               width=canvas_w,
+               height=canvas_h)
+        self.scanCanvas.place(x=0, y=0)
+        self.scanCanvas.bind("<Button-1>", self.onMouseDown)
+        self.resetScanCanvas()
+
+        # preview of split sheets with the current configuration
+        self.previewCanvas = tkinter.Canvas(self.root,
+               width=self.width - self.buttonCanvasWidth - self.previewScrollbarWidth - canvas_w,
+               height=canvas_h)
+        self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
+        self.previewCanvas.place(x=canvas_w, y=0)
+        self.scrollPreviewY = tkinter.Scrollbar(self.root, orient='vertical', command=self.previewCanvas.yview)
+        self.scrollPreviewY.place(
+                x=self.width - self.buttonCanvasWidth - self.previewScrollbarWidth,
+                y=0,
+                width=self.previewScrollbarWidth,
+                height=self.height)
+        self.previewCanvas.configure(yscrollcommand=self.scrollPreviewY.set)
+
+        # Additional buttons
+        self.buttonCanvas = tkinter.Frame(self.root,
+               width=self.buttonCanvasWidth,
+               height=canvas_h)
+        self.buttonCanvas.place(x=self.width - self.buttonCanvasWidth, y=0)
+        self.buttons = {}
+
+        self.buttons['loadConfig'] = tkinter.Button(self.buttonCanvas, text='Load configuration',
+            command=self.loadConfigAndResetGUI)
+        self.buttons['loadConfig'].bind('<Return>', self.loadConfigAndResetGUI)
+        self.buttons['saveConfig'] = tkinter.Button(self.buttonCanvas, text='Save configuration',
+            command=self.saveConfig)
+        self.buttons['saveConfig'].bind('<Return>', self.saveConfig)
+
+        self.buttons['rotateImage90'] = tkinter.Button(self.buttonCanvas, text='Rotate image',
+            command=self.rotateImage90)
+        self.buttons['rotateImage90'].bind('<Return>', self.rotateImage90)
+
+        for idx in range(4):
+            self.buttons[f'activateSheet{idx}'] = tkinter.Button(self.buttonCanvas, text=f'Edit sheet {idx}',
+                command=functools.partial(self.setActiveSheet, idx))
+            self.buttons[f'activateSheet{idx}'].bind('<Return>', functools.partial(self.setActiveSheet, idx))
+
+        self.buttons['splitSheets'] = tkinter.Button(self.buttonCanvas, text='Split sheets',
+            command=self.splitSheets)
+        self.buttons['splitSheets'].bind('<Return>', self.splitSheets)
+
+        self.buttons['recognizeTags'] = tkinter.Button(self.buttonCanvas, text='Recognize tags',
+            command=self.recognizeTags)
+        self.buttons['recognizeTags'].bind('<Return>', self.recognizeTags)
+        self.buttons['recognizeTags'].config(state='disabled')
+
+        y = 60
+        for b in self.buttons.values():
+            b.place(relx=.5, y=y, anchor="center",
+                    width=.8*self.buttonCanvasWidth)
+            b.update()
+            y += b.winfo_height()
+
+    def destroyCanvas(self):
+        self.scanCanvas.destroy()
+        self.buttonCanvas.destroy()
+
+    def resetGUI(self):
+        self.destroyCanvas()
+        self.initGUI()
+
+    def loadConfigAndResetGUI(self):
+        self.loadConfig()
+        self.resetGUI()
+
+    def loadConfig(self):
+        self.rotationAngle = self.db.config.getint('tagtrail_ocr', 'rotationAngle')
+        self.sheetCoordinates[0] = list(map(float,
+            self.db.config.getcsvlist('tagtrail_ocr', 'sheet0_coordinates')))
+        self.sheetCoordinates[1] = list(map(float,
+            self.db.config.getcsvlist('tagtrail_ocr', 'sheet1_coordinates')))
+        self.sheetCoordinates[2] = list(map(float,
+            self.db.config.getcsvlist('tagtrail_ocr', 'sheet2_coordinates')))
+        self.sheetCoordinates[3] = list(map(float,
+            self.db.config.getcsvlist('tagtrail_ocr', 'sheet3_coordinates')))
+
+    def saveConfig(self):
+        self.db.config.set('tagtrail_ocr', 'rotationAngle', str(self.rotationAngle))
+        self.db.config.set('tagtrail_ocr', 'sheet0_coordinates', str(', '.join(map(str, self.sheetCoordinates[0]))))
+        self.db.config.set('tagtrail_ocr', 'sheet1_coordinates', str(', '.join(map(str, self.sheetCoordinates[1]))))
+        self.db.config.set('tagtrail_ocr', 'sheet2_coordinates', str(', '.join(map(str, self.sheetCoordinates[2]))))
+        self.db.config.set('tagtrail_ocr', 'sheet3_coordinates', str(', '.join(map(str, self.sheetCoordinates[3]))))
+        self.db.writeConfig()
+
+    def setActiveSheet(self, index):
+        self.activeSheetIndex = index
+
+    def onMouseDown(self, event):
+        if self.activeSheetIndex is None:
+            return
+
+        if len(self.selectedCorners) < 2:
+            self.selectedCorners.append([event.x, event.y])
+
+        if len(self.selectedCorners) == 2:
+            self.root.update()
+            canvasWidth = self.scanCanvas.winfo_width()
+            canvasHeight = self.scanCanvas.winfo_height()
+            self.sheetCoordinates[self.activeSheetIndex] = [
+                    self.selectedCorners[0][0] / canvasWidth,
+                    self.selectedCorners[0][1] / canvasHeight,
+                    self.selectedCorners[1][0] / canvasWidth,
+                    self.selectedCorners[1][1] / canvasHeight
+                    ]
+            self.selectedCorners = []
+            self.setActiveSheet(None)
+
+        self.resetScanCanvas()
+
+    def resetScanCanvas(self):
+        self.scanCanvas.delete("all")
+        self.scanCanvas.create_image(0,0, anchor=tkinter.NW, image=self.resizedImg)
+
+        for corners in self.selectedCorners:
+            r = 2
+            self.scanCanvas.create_oval(
+                    corners[0]-r,
+                    corners[1]-r,
+                    corners[0]+r,
+                    corners[1]+r,
+                    outline = 'red')
+
+        self.root.update()
+        canvasWidth = self.scanCanvas.winfo_width()
+        canvasHeight = self.scanCanvas.winfo_height()
+        sheetColors = ['green', 'blue', 'red', 'orange']
+        for sheetIndex, sheetCoords in enumerate(self.sheetCoordinates):
+            if sheetIndex == self.activeSheetIndex:
+                continue
+
+            self.scanCanvas.create_rectangle(
+                    sheetCoords[0] * canvasWidth,
+                    sheetCoords[1] * canvasHeight,
+                    sheetCoords[2] * canvasWidth,
+                    sheetCoords[3] * canvasHeight,
+                    outline = sheetColors[sheetIndex],
+                    width = 2)
+
+    def abortGeneratingPreview(self):
+        self.__abortGeneratingPreview = True
+        if self.__previewProgressWindow:
+            self.__previewProgressWindow.destroy()
+            self.__previewProgressWindow = None
+        self.log.info('Aborting preview generation')
+
+    def splitSheets(self):
+        self.previewCanvas.delete('all')
+        self.previewCanvas.yview_moveto('0.00')
+        self.previewImages = []
+        self.__sheetImages = []
+        self.__sheetNames = []
+        self.partiallyFilledFiles = []
+        self.buttons['recognizeTags'].config(state='disabled')
+        self.__abortGeneratingPreview = False
+
+        self.root.update()
+        scanHeight, scanWidth, _ = cv.imread(self.scanDir + self.scanFilenames[self.activeScanIdx]).shape
+        canvasWidth = self.previewCanvas.winfo_width()
+        canvasHeight = self.previewCanvas.winfo_height()
+        maxPreviewWidth, maxPreviewHeight = 0, 0
+        for sheetCoords in self.sheetCoordinates:
+            width = (sheetCoords[2] - sheetCoords[0]) * scanWidth
+            height = (sheetCoords[3] - sheetCoords[1]) * scanHeight
+            resizeRatio = canvasWidth / (self.previewColumnCount * width)
+            resizedWidth, resizedHeight = int(width * resizeRatio), int(height * resizeRatio)
+            maxPreviewWidth = max(maxPreviewWidth, resizedWidth)
+            maxPreviewHeight = max(maxPreviewHeight, resizedHeight)
+
+        self.__previewProgressWindow = tkinter.Toplevel()
+        self.__previewProgressWindow.title('Splitting progress')
+        self.__previewProgressWindow.protocol("WM_DELETE_WINDOW", self.abortGeneratingPreview)
+        progressBar = tkinter.ttk.Progressbar(self.__previewProgressWindow, length=self.progressBarLength, mode='determinate')
+        progressBar.pack(pady=10, padx=20)
+        abortButton = tkinter.Button(self.__previewProgressWindow, text='Abort',
+            command=self.abortGeneratingPreview)
+        abortButton.bind('<Return>', self.abortGeneratingPreview)
+        abortButton.pack(pady=10)
+
+        for scanFileIndex, scanFile in enumerate(self.scanFilenames):
+            progressBar['value'] = scanFileIndex / len(self.scanFilenames) * 100
+            self.__previewProgressWindow.update()
+            self.root.update()
+
+            if self.__abortGeneratingPreview:
+                break
+
+            helpers.recreateDir(f'{self.tmpDir}/')
+            split = SplitSheets(
+                    f'{scanFile}/0_splitSheets',
+                    self.tmpDir,
+                    self.sheetCoordinates[0],
+                    self.sheetCoordinates[1],
+                    self.sheetCoordinates[2],
+                    self.sheetCoordinates[3])
+
+            rotatedImg = imutils.rotate_bound(cv.imread(self.scanDir + scanFile), self.rotationAngle)
+            split.process(rotatedImg)
+            split.writeOutput()
+            if len(split._outputSheetImgs) < SplitSheets.numberOfSheets:
+                self.partiallyFilledFiles.append(self.scanDir + scanFile)
+
+            for idx, sheetImg in enumerate(split._outputSheetImgs):
+                self.__sheetImages.append(sheetImg)
+                self.__sheetNames.append(f'{scanFile}_sheet{idx}')
+                height, width, _ = sheetImg.shape
+                resizeRatio = canvasWidth / (self.previewColumnCount * width)
+                resizedWidth, resizedHeight = int(width * resizeRatio), int(height * resizeRatio)
+                resizedImg = cv.resize(sheetImg, (resizedWidth, resizedHeight), Image.BILINEAR)
+                resizedImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
+                # Note: it is necessary to store the image locally for tkinter to show it
+                self.previewImages.append(resizedImg)
+
+                row = (len(self.previewImages)-1) // self.previewColumnCount
+                col = (len(self.previewImages)-1) % self.previewColumnCount
+                self.previewCanvas.create_image(col*maxPreviewWidth, row*maxPreviewHeight, anchor=tkinter.NW, image=resizedImg)
+                self.previewCanvas.create_rectangle(
+                        col*maxPreviewWidth,
+                        row*maxPreviewHeight,
+                        (col+1)*maxPreviewWidth,
+                        (row+1)*maxPreviewHeight
+                        )
+
+        if self.__previewProgressWindow:
+            self.__previewProgressWindow.destroy()
+            self.__previewProgressWindow = None
+
+        if not self.previewImages:
+            messagebox.showwarning('Nothing to preview',
+                f'All split sheets were found empty - probably sheet transformation settings are bad')
+            return
+
+        if not self.__abortGeneratingPreview:
+            self.buttons['recognizeTags'].config(state='normal')
+        self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
+
+    def recognizeTags(self):
+        self.log.info('Recognize tags:')
+        if self.__sheetImages == [] or self.__abortGeneratingPreview:
+            messagebox.showerror('Sheets missing', 'Unable to recognize tags - input images need to be split first')
+            return
+
+        processors = []
+        processors.append(RotateSheet("1_rotateSheet", self.tmpDir))
+        processors.append(FindMarginsByLines("2_findMarginsByLines", self.tmpDir))
+        fitToSheet = FitToSheet("3_fitToSheet", self.tmpDir)
+        processors.append(fitToSheet)
+        recognizer = RecognizeText("4_recognizeText", self.tmpDir, self.db)
+        processors.append(recognizer)
+
+        for sheetName, sheetImg in zip(self.__sheetNames, self.__sheetImages):
+            self.log.info(f'sheetName = {sheetName}')
+            sheetDir = f'{self.tmpDir}{sheetName}/'
+            helpers.recreateDir(sheetDir)
+
+            img = sheetImg
+            recognizer.prepareProcessing(sheetName)
+            for p in processors:
+                p.outputDir = sheetDir
+                p.process(img)
+                p.writeOutput()
+                img = p._outputImg
+            if os.path.exists(f'{self.outputDir}{recognizer.fileName()}'):
+                self.log.info(f'reset sheet to fallback, as {recognizer.fileName()} already exists')
+                recognizer.resetSheetToFallback()
+
+            recognizer.storeSheet(self.outputDir)
+            cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_normalized_scan.jpg',
+                    fitToSheet._outputImg)
 
 def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
     helpers.recreateDir(outputDir)
     helpers.recreateDir(tmpDir)
     db = Database(f'{accountingDir}0_input/')
-    partiallyFilledFiles = []
     for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
-        for f in fileNames:
-            helpers.recreateDir(tmpDir+f)
-            generatedSheets = processFile(db, parentDir + f, outputDir, tmpDir + f + '/')
-            if len(generatedSheets) < SplitSheets.numberOfSheets:
-                partiallyFilledFiles.append(f)
-
-        print()
-        print(f'processed {len(fileNames)} files')
-        print(f'the following files generated less than {SplitSheets.numberOfSheets} sheets')
-        for f in partiallyFilledFiles:
-            print(parentDir + f)
+        gui = GUI(tmpDir, parentDir, outputDir, fileNames, db)
+        gui.log.info('')
+        gui.log.info(f'processed {len(fileNames)} files')
+        gui.log.info(f'the following files generated less than {SplitSheets.numberOfSheets} sheets')
+        for f in gui.partiallyFilledFiles:
+            print(f)
         break
 
 if __name__== "__main__":

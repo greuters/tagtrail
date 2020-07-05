@@ -246,7 +246,7 @@ class Gui:
 
         foundPairToSanitize = False
         for csvFile in csvFiles:
-            scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
+            scanFile = csvFile + self.scanPostfix
             if scanFile in scanFiles:
                 # check if this csv needs sanitation
                 sheet = ProductSheet()
@@ -303,8 +303,7 @@ class Gui:
         if not self.inputSheet.pageNumber:
             raise ValueError('Unable to store sheet, pageNumber is missing')
         newCsvPath = f'{self.productPath}{self.inputSheet.fileName()}'
-        newScanPath = (f'{self.productPath}{self.inputSheet.productId()}' +
-                f'_{self.inputSheet.pageNumber}{self.scanPostfix}')
+        newScanPath = (f'{self.productPath}{self.inputSheet.fileName()}{self.scanPostfix}')
         if newCsvPath != self.csvPath and os.path.exists(newCsvPath):
             raise ValueError(f'Unable to store sheet, file {newCsvPath} already exists')
         if newScanPath != self.scanPath and os.path.exists(newScanPath):

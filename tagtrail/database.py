@@ -59,12 +59,16 @@ class Database(ABC):
                     'newlinelist': lambda x: [i.strip() for i in x.splitlines()
                         if i.strip() != '']})
         self.log.info(f'Reading configuration from {configFilePath}')
+        self.configFilePath = configFilePath
         self.config.read(configFilePath)
         self.log.info(f'Reading members from {self.memberFilePath}')
         self.members = self.readCsv(self.memberFilePath, MemberDict)
         self.log.info(f'Reading products from {self.productFilePath}')
         self.products = self.readCsv(self.productFilePath, ProductDict)
 
+    def writeConfig(self):
+        with open(self.configFilePath, 'w') as configFile:
+            self.config.write(configFile)
 
     def readCsv(self, path, containerClass):
         """

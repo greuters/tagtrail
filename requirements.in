@@ -4,3 +4,4 @@ python-Levenshtein
 python-slugify
 keyrings.cryptfile
 requests
+imutils
