@@ -225,11 +225,12 @@ class TagCollector(ABC):
 class Gui:
     scanPostfix = '_normalized_scan.jpg'
 
-    def __init__(self, accountingDataPath, nextAccountingDataPath,
+    def __init__(self, accountingDataPath, renamedAccountingDataPath, nextAccountingDataPath,
             accountingDate, configFilePath, updateCo2Statistics):
         self.log = helpers.Log()
         self.accountingDate = accountingDate
         self.accountingDataPath = accountingDataPath
+        self.renamedAccountingDataPath = renamedAccountingDataPath
         self.nextAccountingDataPath = nextAccountingDataPath
 
         self.root = tkinter.Tk()
@@ -283,6 +284,8 @@ class Gui:
         try:
             self.writeBills()
             self.writeGnuCashFiles()
+            if self.renamedAccountingDataPath != self.accountingDataPath:
+                shutil.move(self.accountingDataPath, self.renamedAccountingDataPath)
             self.prepareNextAccounting()
         finally:
             self.root.quit()
@@ -313,7 +316,7 @@ class Gui:
         self.copyAccountedSheets()
         self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/correctionTransactions.csv',
                 database.CorrectionTransactionDict(self.db.config))
-        shutil.copytree(f'{self.accountingDataPath}0_input/templates',
+        shutil.copytree(f'{self.renamedAccountingDataPath}0_input/templates',
                 f'{self.nextAccountingDataPath}0_input/templates')
 
     def writeMemberCSV(self):
@@ -321,13 +324,13 @@ class Gui:
         newMembers.accountingDate = self.accountingDate
         for m in newMembers.values():
             m.balance = self.db.bills[m.id].currentBalance()
-        self.db.writeCsv(f'{self.accountingDataPath}5_output/members.tsv',
+        self.db.writeCsv(f'{self.renamedAccountingDataPath}5_output/members.tsv',
                 newMembers)
         self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/members.tsv',
                 newMembers)
 
     def writeProductsCSVs(self):
-        self.db.writeCsv(f'{self.accountingDataPath}5_output/products.csv',
+        self.db.writeCsv(f'{self.renamedAccountingDataPath}5_output/products.csv',
                 self.db.products)
         self.db.writeCsv(f'{self.nextAccountingDataPath}0_input/products.csv',
                 self.db.products.copyForNextAccounting(self.accountingDate))
@@ -336,10 +339,10 @@ class Gui:
         # we keep all newly tagged product sheets, plus the ones we had as an
         # input but didn't scan any more. accounted sheets should only ever be
         # deleted when replacing them with tagtrail_gen
-        shutil.copytree(f'{self.accountingDataPath}2_taggedProductSheets',
+        shutil.copytree(f'{self.renamedAccountingDataPath}2_taggedProductSheets',
                 f'{self.nextAccountingDataPath}0_input/accounted_products')
 
-        inputAccountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'
+        inputAccountedProductsPath = f'{self.renamedAccountingDataPath}0_input/accounted_products/'
         if not os.path.isdir(inputAccountedProductsPath):
             self.log.warn('No accounted sheets from last accounting available to copy')
             return
@@ -348,13 +351,15 @@ class Gui:
             next(os.walk(inputAccountedProductsPath))[2]))
 
         for csvFile in inputAccountedProductCsvFiles:
+            dst = f'{self.nextAccountingDataPath}0_input/accounted_products/'
+            scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
             if csvFile in self.db.productPageNames:
+                assert(os.path.isfile(f'{dst}{csvFile}'))
+                assert(os.path.isfile(f'{dst}{scanFile}'))
                 continue # newer version of this file already copied
             else:
                 self.log.info(f'Copied accounted product {csvFile} ' +
                         'directly from input to next accounting')
-                scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
-                dst = f'{self.nextAccountingDataPath}0_input/accounted_products/'
                 shutil.copy(f'{inputAccountedProductsPath}{csvFile}', dst)
                 shutil.copy(f'{inputAccountedProductsPath}{scanFile}', dst)
 
@@ -532,8 +537,6 @@ class EnrichedDatabase(database.Database):
 def main(accountingDir, renamedAccountingDir, accountingDate,
         nextAccountingDir, configFilePath, updateCo2Statistics):
     newDir = renamedAccountingDir.format(accountingDate = accountingDate)
-    if accountingDir != newDir:
-        shutil.move(accountingDir, newDir)
     Gui(newDir, nextAccountingDir, accountingDate, configFilePath, updateCo2Statistics)
 
 if __name__ == '__main__':
