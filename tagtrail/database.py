@@ -518,36 +518,22 @@ class ProductDict(DatabaseDict):
 
         The copy will be ready to export as an initial template for the next
         accounting. All quantities but the previousQuantity will be reset, and the
-        previousQuantity is either initialized from self.inventoryQuantity (if
-        inventory happened on accountingDate) or from self.expectedQuantity.
+        previousQuantity is either initialized from self.inventoryQuantity (specified)
+        or from self.expectedQuantity.
         """
+        assert(self.inventoryQuantityDate is None or self.inventoryQuantityDate == accountingDate)
+
         newProducts = copy.deepcopy(self)
         newProducts.previousQuantityDate = accountingDate
         newProducts.expectedQuantityDate = None
         newProducts.inventoryQuantityDate = None
-        if self.inventoryQuantityDate and self.inventoryQuantityDate != accountingDate:
-            # TODO might need a user / GUI warning
-            self.log.warn(f'Not taking inventory of ' + \
-                    f'({self.inventoryQuantityDate}) into account, ' + \
-                    'inventory has to be done on same date as ' + \
-                    f'accounting ({accountingDate})!')
-        quantitySelector = None
-        if self.inventoryQuantityDate and self.inventoryQuantityDate == accountingDate:
-            quantitySelector = lambda _, inventoryQuantity: inventoryQuantity
-        elif self.expectedQuantityDate == accountingDate:
-            quantitySelector = lambda expectedQuantity, _: expectedQuantity
-        else:
-            raise ValueError(
-                    'accountingDate must be inventoryQuantityDate or ' + \
-                    f'expectedQuantityDate, but {accountingDate} is neither ' + \
-                    f'{self.inventoryQuantityDate} nor {self.expectedQuantityDate}')
 
         for productId, product in self.items():
-            newProducts[productId].previousQuantity = quantitySelector(
-                    product.expectedQuantity,
-                    product.inventoryQuantity)
-            if newProducts[productId].previousQuantity is None:
-                raise ValueError(f'failed to compute quantity for {productId}')
+            if product.inventoryQuantity is None:
+                newProducts[productId].previousQuantity = product.expectedQuantity
+            else:
+                newProducts[productId].previousQuantity = product.inventoryQuantity
+            assert(newProducts[productId].previousQuantity is not None)
             newProducts[productId].pagesToPrint = None
             newProducts[productId].inventoryQuantity = None
             newProducts[productId].addedQuantity = None

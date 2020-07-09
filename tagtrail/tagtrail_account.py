@@ -240,6 +240,14 @@ class Gui:
         self.db = EnrichedDatabase(accountingDataPath, accountingDate,
                 configFilePath, updateCo2Statistics)
 
+        if self.db.products.inventoryQuantityDate and self.db.products.inventoryQuantityDate != accountingDate:
+            messagebox.showerror('Abort Accounting',
+                """Inventory (when you check the actually remaining products)
+                must be done on the same day as the accounting (when you scan
+                the product pages, download the payments)
+                inventoryQuantityDate != accountingDate ({inventoryQuantityDate} != {accountingDate})
+                To do a valid accounting, either redo the inventory or the accounting""")
+
         accountedProducts = [fileName.split('_')[0] for fileName in self.db.productPageNames]
         accountedProductsOverview = gui_components.Checkbar(self.root,
                 'Accounted pages:',
@@ -282,6 +290,11 @@ class Gui:
 
     def saveAndQuit(self):
         try:
+
+            # TODO set product inventory quantities = 0 if product was scanned but deselected
+            # TODO set product inventory quantities = 0 if product was not scanned, but user claimed its actually empty
+            # if any inventory quantity was updated, set inventoryQuantityDate to current accountingDate
+            # assert(self.db.products.inventoryQuantityDate is None or self.db.products.inventoryQuantityDate == self.accountingDate)
             self.writeBills()
             self.writeGnuCashFiles()
             if self.renamedAccountingDataPath != self.accountingDataPath:
@@ -352,7 +365,7 @@ class Gui:
 
         for csvFile in inputAccountedProductCsvFiles:
             dst = f'{self.nextAccountingDataPath}0_input/accounted_products/'
-            scanFile = os.path.splitext(csvFile)[0] + self.scanPostfix
+            scanFile = csvFile + self.scanPostfix
             if csvFile in self.db.productPageNames:
                 assert(os.path.isfile(f'{dst}{csvFile}'))
                 assert(os.path.isfile(f'{dst}{scanFile}'))
@@ -463,20 +476,15 @@ class EnrichedDatabase(database.Database):
 
     def createInventoryDifferenceTransactions(self):
         transactions = database.GnucashTransactionList(self.config)
-        if not self.products.inventoryQuantityDate:
-            self.log.info(
-                'No inventoryQuantityDate given - not checking inventory')
-            self.log.debug([p for p in self.products.values() if p.inventoryQuantity != 0])
-            if [p for p in self.products.values() if p.inventoryQuantity is not None]:
-                raise Exception('Add an inventoryQuantityDate ' +
-                        'or omit inventory quantities alltogether')
-            return transactions
 
         inventoryDifference = self.config.get('tagtrail_account',
                 'inventory_difference')
         inventoryDifferenceAccount = self.config.get('tagtrail_account',
                 'inventory_difference_account')
         for product in self.products.values():
+            if product.inventoryQuantity is None:
+                continue
+
             quantityDifference = product.expectedQuantity - product.inventoryQuantity
             purchasePriceDifference = quantityDifference * product.purchasePrice
             grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
@@ -537,7 +545,9 @@ class EnrichedDatabase(database.Database):
 def main(accountingDir, renamedAccountingDir, accountingDate,
         nextAccountingDir, configFilePath, updateCo2Statistics):
     newDir = renamedAccountingDir.format(accountingDate = accountingDate)
-    Gui(newDir, nextAccountingDir, accountingDate, configFilePath, updateCo2Statistics)
+    if newDir == nextAccountingDir:
+        raise ValueError(f'nextAccountingDir must not be named {newDir}')
+    Gui(accountingDir, newDir, nextAccountingDir, accountingDate, configFilePath, updateCo2Statistics)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
