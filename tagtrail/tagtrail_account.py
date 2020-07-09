@@ -412,6 +412,9 @@ class EnrichedDatabase(database.Database):
         self.correctionTransactions = self.readCsv(
                 self.accountingDataPath+'0_input/correctionTransactions.csv',
                 database.CorrectionTransactionDict)
+        unknownMembers = [memberId for memberId in self.correctionTransactions if memberId not in self.members.keys()]
+        if unknownMembers:
+            raise ValueError(f'invalid memberIds in correctionTransactions: {unknownMembers}')
         self.paymentTransactions = self.loadPaymentTransactions()
         self.bills = self.createBills(tagCollector)
         self.productPageNames = tagCollector.currentProductPageNames()
