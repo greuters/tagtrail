@@ -134,6 +134,7 @@ class InputSheet(ProductSheet):
         if  self.boxByName('pageNumberBox').confidence != 1:
             return
         accountedSheetPath = f'{self.accountedProductsPath}{self.productId()}_{self.pageNumber}.csv'
+        print(f'accountedSheetPath = {accountedSheetPath}')
         self._log.debug(f'loading previous tags from {accountedSheetPath}')
         if not os.path.exists(accountedSheetPath):
             return
@@ -145,7 +146,7 @@ class InputSheet(ProductSheet):
             raise ValueError(
                     f'{accountedSheetPath} has boxes with confidence != 1')
         if accountedSheet.productId() != self.productId():
-            raise ValueError(f'{accountedSheetPath} has wrong productId')
+            raise ValueError(f'{accountedSheetPath} has wrong productId ({accountedSheet.productId()} != {self.productId()})')
         if accountedSheet.pageNumber != self.pageNumber:
             raise ValueError(f'{accountedSheetPath} has wrong pageNumber')
 
@@ -323,7 +324,7 @@ class Gui:
                 f'{self.numCorrectValidatedBoxes} out of ' + \
                 f'{self.numValidatedValidatedBoxes} validated texts were correct')
 
-        self.log.debug(f'deleting {self.csvPath}')
+        self.log.info(f'deleting {self.csvPath}')
         os.remove(self.csvPath)
         self.inputSheet.store(self.productPath)
         self.csvPath = newCsvPath
@@ -338,6 +339,8 @@ class Gui:
         self.buttonCanvas.destroy()
 
     def loadProductSheet(self):
+        self.root.title(self.scanPath)
+
         # Scanned input image
         # Note: it is necessary to store the image locally for tkinter to show it
         self.scannedImg = Image.open(self.scanPath)

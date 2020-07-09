@@ -251,7 +251,7 @@ class ProductSheet(ABC):
         quotechar = '"'
 
         numDataBoxes = 0
-        with open(path, newline='') as csvfile:
+        with open(path, newline='', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile, delimiter=csvDelimiter,
                     quotechar=quotechar)
             for cnt, row in enumerate(reader):
@@ -276,7 +276,7 @@ class ProductSheet(ABC):
     def store(self, path):
         filePath = f'{path}{self.fileName()}'
         self._log.info(f'storing sheet {filePath}')
-        with open(filePath, "w+") as fout:
+        with open(filePath, "w+", encoding='utf-8') as fout:
             fout.write(f'boxName;text;confidence\n')
             for box in self.boxes():
                 fout.write(f'{box.name};{box.text};{box.confidence}\n')

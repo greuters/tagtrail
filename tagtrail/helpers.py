@@ -90,7 +90,11 @@ class DateUtility:
     def strptime(cls, dateStr, dateFormat = None):
         if dateFormat is None:
             dateFormat = cls.dateFormat
-        t = time.strptime(dateStr, cls.dateFormat)
+        try: 
+            t = time.strptime(dateStr, dateFormat)
+        except ValueError as e:
+            print(f'Error: expected format: {dateFormat}')
+            raise ValueError(f'Expected format: {dateFormat}') from e
         return datetime.date(t.tm_year, t.tm_mon, t.tm_mday)
 
 def readPrefixRow(prefix, row):
