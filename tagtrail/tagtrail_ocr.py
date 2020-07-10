@@ -130,17 +130,19 @@ class SplitSheets(ProcessingStep):
                  sheet2 = (0, .5, .5, 1), # x0, y0, x1, y1 relative
                  sheet3 = (.5, .5, 1, 1), # x0, y0, x1, y1 relative
                  threshold = 140,
-                 kernelSize = 15,
+                 kernelSize = 7,
                  log = helpers.Log(),
                  ):
         super().__init__(name, outputDir, log)
         self._sheets = [sheet0, sheet1, sheet2, sheet3]
-        self._log = helpers.Log()
+        self._log = log
         self._threshold = threshold
         self._smallKernel = cv.getStructuringElement(cv.MORPH_RECT,
                 (kernelSize, kernelSize))
         self._mediumKernel = cv.getStructuringElement(cv.MORPH_RECT,
-                (kernelSize*4, kernelSize*2))
+                (kernelSize*5, kernelSize*4))
+        self._bigKernel = cv.getStructuringElement(cv.MORPH_RECT,
+                (kernelSize*10, kernelSize*8))
 
     def process(self, inputImg):
         super().process(inputImg)
@@ -149,11 +151,15 @@ class SplitSheets(ProcessingStep):
         self._outputImg = np.copy(inputImg)
 
         self._grayImgs = []
-        self._thresholdImgs = []
         self._adaptiveThresholdImgs = []
+        self._dilatedAdaptiveThresholdImgs = []
+        self._erodedAdaptiveThresholdImgs = []
+        self._labeledAdaptiveThresholdImgs = []
+        self._biggestComponentImgs = []
         self._otsuThresholdImgs = []
-        self._erodedImgs = []
-        self._dilatedImgs = []
+        self._erodedOtsuThresholdImgs = []
+        self._dilatedOtsuThresholdImgs = []
+        self._thresholdImgs = []
         self._labeledImgs = []
         self._foregroundImgs = []
         self._rotatedImgs = []
@@ -173,42 +179,39 @@ class SplitSheets(ProcessingStep):
         """
         sheetImgWidth, sheetImgHeight, _ = sheetImg.shape
         grayImg = cv.cvtColor(sheetImg, cv.COLOR_BGR2GRAY)
-        otsuThresholdImg = cv.threshold(grayImg, self._threshold, 255,
-                cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
-        adaptiveThresholdImg = cv.adaptiveThreshold(cv.medianBlur(grayImg,7), 255,
-                cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
-#        testDilate = cv.dilate(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
-#                (7,7)), 1)
-#        adaptiveThresholdImg = np.where(
-#                cv.erode(testDilate, self._mediumKernel, 1) == 0,
-#                np.uint8(255.0), np.uint8(0.0))
-        numComponents, labeledImg = cv.connectedComponents(adaptiveThresholdImg)
-        if numComponents < 2:
-            self._log.info('found empty sheet')
-            return False
-        minAreaRect, adaptiveThresholdImg = self.biggestComponentMinAreaRect(numComponents, labeledImg, adaptiveThresholdImg)
-        cv.drawContours(adaptiveThresholdImg,[np.int0(cv.boxPoints(minAreaRect))],0,255,-1)
-        thresholdImg = np.where(
-                np.all([otsuThresholdImg == 255, adaptiveThresholdImg == 255], 0),
-                np.uint8(255.0), np.uint8(0.0))
 
-        erodedImg = cv.erode(thresholdImg, self._smallKernel, 1)
-        dilatedImg = cv.dilate(erodedImg, self._mediumKernel, 1)
-        foregroundSize = len(np.where(dilatedImg == 255)[0])
+        biggestComponentImg = self.biggestComponentFromAdaptiveThreshold(grayImg)
+        if biggestComponentImg is None:
+            # fallback to simple otsu thresholding
+            otsuThresholdImg = cv.threshold(grayImg, self._threshold, 255,
+                   cv.THRESH_BINARY | cv.THRESH_OTSU)[1]
+            erodedOtsuThresholdImg = cv.erode(otsuThresholdImg, self._smallKernel, 1)
+            dilatedOtsuThresholdImg = cv.dilate(erodedOtsuThresholdImg, self._mediumKernel, 1)
+            thresholdImg = cv.erode(dilatedOtsuThresholdImg, self._bigKernel, 1)
+        else:
+            otsuThresholdImg = None
+            erodedOtsuThresholdImg = None
+            dilatedOtsuThresholdImg = None
+            thresholdImg = biggestComponentImg
+
+        foregroundSize = len(np.where(thresholdImg == 255)[0])
         self._log.debug(f'foregroundSize = {foregroundSize}')
         self._log.debug(f'imageSize = {sheetImgWidth * sheetImgHeight}')
+
         self._grayImgs.append(grayImg)
-        self._adaptiveThresholdImgs.append(adaptiveThresholdImg)
-        self._otsuThresholdImgs.append(otsuThresholdImg)
+        self._biggestComponentImgs.append(biggestComponentImg)
         self._thresholdImgs.append(thresholdImg)
-        self._erodedImgs.append(erodedImg)
-        self._dilatedImgs.append(dilatedImg)
-        numComponents, labeledImg = cv.connectedComponents(dilatedImg)
+        self._otsuThresholdImgs.append(otsuThresholdImg)
+        self._erodedOtsuThresholdImgs.append(erodedOtsuThresholdImg)
+        self._dilatedOtsuThresholdImgs.append(dilatedOtsuThresholdImg)
+
+        numComponents, labeledImg = cv.connectedComponents(thresholdImg)
+        self._labeledImgs.append(labeledImg) 
         if foregroundSize < sheetImgWidth * sheetImgHeight / 4 or numComponents < 2:
             self._log.info('found empty sheet')
             return False
 
-        minAreaRect, foregroundImg = self.biggestComponentMinAreaRect(numComponents, labeledImg, dilatedImg)
+        minAreaRect, foregroundImg = self.biggestComponentMinAreaRect(numComponents, labeledImg, thresholdImg)
         foregroundImg = cv.cvtColor(grayImg, cv.COLOR_GRAY2BGR)
         cv.drawContours(foregroundImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
         center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
@@ -219,14 +222,46 @@ class SplitSheets(ProcessingStep):
             rotationAngle += 90.0
             minAreaRectWidth, minAreaRectHeight = minAreaRectHeight, minAreaRectWidth
         rotationMatrix = cv.getRotationMatrix2D(center, rotationAngle, 1.0)
-        rotatedImg = cv.warpAffine(sheetImg, rotationMatrix, (sheetImgHeight, sheetImgWidth), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
-        outputSheetImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
+        rotatedImg = cv.warpAffine(
+                sheetImg,
+                rotationMatrix,
+                (sheetImgHeight, sheetImgWidth),
+                flags=cv.INTER_CUBIC,
+                borderMode=cv.BORDER_REPLICATE)
+        outputSheetImg = cv.getRectSubPix(
+                rotatedImg,
+                (int(minAreaRectWidth), int(minAreaRectHeight)),
+                center)
 
         self._foregroundImgs.append(foregroundImg)
         self._rotatedImgs.append(rotatedImg)
         self._outputSheetImgs.append(outputSheetImg)
-
         return True
+
+    def biggestComponentFromAdaptiveThreshold(self, grayImg):
+        adaptiveThresholdImg = cv.adaptiveThreshold(cv.medianBlur(grayImg,7), 255,
+                cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
+        dilatedAdaptiveThresholdImg = cv.dilate(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
+                (7,7)), 1)
+        erodedAdaptiveThresholdImg = np.where(
+                cv.erode(dilatedAdaptiveThresholdImg, self._mediumKernel, 1) == 0,
+                np.uint8(255.0), np.uint8(0.0))
+        numComponents, labeledAdaptiveThresholdImg = cv.connectedComponents(erodedAdaptiveThresholdImg)
+
+        self._adaptiveThresholdImgs.append(adaptiveThresholdImg)
+        self._dilatedAdaptiveThresholdImgs.append(dilatedAdaptiveThresholdImg)
+        self._erodedAdaptiveThresholdImgs.append(erodedAdaptiveThresholdImg)
+        self._labeledAdaptiveThresholdImgs.append(labeledAdaptiveThresholdImg)
+
+        if numComponents < 2:
+            self._log.debug('unable to identify biggest component from adaptive threshold img')
+            return None
+        else:
+            minAreaRect, biggestComponentImg = self.biggestComponentMinAreaRect(
+                    numComponents,
+                    labeledAdaptiveThresholdImg,
+                    erodedAdaptiveThresholdImg)
+            return biggestComponentImg
 
     def biggestComponentMinAreaRect(self, numComponents, labeledImg, img):
         """
@@ -236,6 +271,7 @@ class SplitSheets(ProcessingStep):
         componentIndices = [np.where(labeledImg == label) for label in range(numComponents)]
         componentAreas = [len(idx[0]) for idx in componentIndices]
         componentColors = [np.median(img[idx]) for idx in componentIndices]
+        self._log.debug('component colors (label, median color) = {}', [(idx, color) for idx, color in enumerate(componentColors)])
 
         # filter out black components, sort by size
         components = [(label, componentAreas[label], componentColors[label]) for label in
@@ -244,34 +280,52 @@ class SplitSheets(ProcessingStep):
         self._log.debug('components (label, size) = {}', list(components))
 
         selectedLabel = components[0][0]
+        self._log.debug(f'selectedLabel = {selectedLabel}')
         selectedImg = np.where(labeledImg == selectedLabel,
                 np.uint8(255.0), np.uint8(0.0))
         contours, _ = cv.findContours(selectedImg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-        return cv.minAreaRect(contours[0]), selectedImg
+        minAreaRect = cv.minAreaRect(contours[0])
+        box = np.int0(cv.boxPoints(minAreaRect))
+        cv.drawContours(selectedImg, [box], 0, (255), thickness=cv.FILLED)
+        return minAreaRect, selectedImg
 
     def writeOutput(self):
-        cv.imwrite(f'{self.prefix}_0_0_input.jpg', self._inputImg)
-        for idx, grayImg in enumerate(self._grayImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_1_grayImg.jpg', grayImg)
-        for idx, thresholdImg in enumerate(self._adaptiveThresholdImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_2_adaptiveThresholdImg.jpg', thresholdImg)
-        for idx, thresholdImg in enumerate(self._otsuThresholdImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_3_otsuThresholdImg.jpg', thresholdImg)
-        for idx, thresholdImg in enumerate(self._thresholdImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_4_thresholdImg.jpg', thresholdImg)
-        for idx, erodedImg in enumerate(self._erodedImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_5_erodedImg.jpg', erodedImg)
-        for idx, dilatedImg in enumerate(self._dilatedImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_6_dilatedImg.jpg', dilatedImg)
-        for idx, foregroundImg in enumerate(self._foregroundImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_7_foregroundImg.jpg', foregroundImg)
-        for idx, rotatedImg in enumerate(self._rotatedImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_8_rotatedImg.jpg', rotatedImg)
-        for idx, outputSheetImg in enumerate(self._outputSheetImgs):
-            cv.imwrite(f'{self.prefix}_{idx}_9_outputSheetImg.jpg', outputSheetImg)
+        def writeImg(img, sheetIdx, imgName):
+            if img is not None:
+                cv.imwrite(f'{self.prefix}_{sheetIdx}_{imgName}.jpg', img)
+
+        writeImg(self._inputImg, 0, '00_input.jpg')
+        for idx, img in enumerate(self._grayImgs):
+            writeImg(img, idx, '01_grayImg.jpg')
+        for idx, img in enumerate(self._adaptiveThresholdImgs):
+            writeImg(img, idx, '02_adaptiveThresholdImg.jpg')
+        for idx, img in enumerate(self._dilatedAdaptiveThresholdImgs):
+            writeImg(img, idx, '03_dilatedAdaptiveThresholdImg.jpg')
+        for idx, img in enumerate(self._erodedAdaptiveThresholdImgs):
+            writeImg(img, idx, '04_erodedAdaptiveThresholdImg.jpg')
+        for idx, img in enumerate(self._labeledAdaptiveThresholdImgs):
+            writeImg(img, idx, '05_labeledAdaptiveThresholdImg.jpg')
+        for idx, img in enumerate(self._biggestComponentImgs):
+            writeImg(img, idx, '06_biggestComponentImg.jpg')
+        for idx, img in enumerate(self._otsuThresholdImgs):
+            writeImg(img, idx, '07_otsuThresholdImg.jpg')
+        for idx, img in enumerate(self._erodedOtsuThresholdImgs):
+            writeImg(img, idx, '08_erodedOtsuThresholdImg.jpg')
+        for idx, img in enumerate(self._dilatedOtsuThresholdImgs):
+            writeImg(img, idx, '09_dilatedOtsuThresholdImg.jpg')
+        for idx, img in enumerate(self._thresholdImgs):
+            writeImg(img, idx, '10_thresholdImg.jpg')
+        for idx, img in enumerate(self._labeledImgs):
+            writeImg(img, idx, '11_labeledImg.jpg')
+        for idx, img in enumerate(self._foregroundImgs):
+            writeImg(img, idx, '12_foregroundImg.jpg')
+        for idx, img in enumerate(self._rotatedImgs):
+            writeImg(img, idx, '13_rotatedImg.jpg')
+        for idx, img in enumerate(self._outputSheetImgs):
+            writeImg(img, idx, '14_outputSheetImg.jpg')
 
     def generatedSheets(self):
-        return [f'{self.prefix}_{idx}_9_outputSheetImg.jpg'
+        return [f'{self.prefix}_{idx}_14_outputSheetImg.jpg'
                 for idx, _ in enumerate(self._outputSheetImgs)]
 
 class RotateSheet(LineBasedStep):
@@ -1065,17 +1119,19 @@ class GUI():
             if self.__abortGeneratingPreview:
                 break
 
-            helpers.recreateDir(f'{self.tmpDir}/')
+            splitDir = f'{self.tmpDir}/{scanFile}/'
+            helpers.recreateDir(splitDir)
             split = SplitSheets(
-                    f'{scanFile}/0_splitSheets',
-                    self.tmpDir,
+                    '0_splitSheets',
+                    splitDir,
                     self.sheetCoordinates[0],
                     self.sheetCoordinates[1],
                     self.sheetCoordinates[2],
                     self.sheetCoordinates[3])
 
             rotatedImg = imutils.rotate_bound(cv.imread(self.scanDir + scanFile), self.rotationAngle)
-            split.process(rotatedImg)
+            resizedImg = cv.resize(rotatedImg, (1836*2, 3264*2), Image.BILINEAR)
+            split.process(resizedImg)
             split.writeOutput()
             if len(split._outputSheetImgs) < SplitSheets.numberOfSheets:
                 self.partiallyFilledFiles.append(self.scanDir + scanFile)
@@ -1150,8 +1206,8 @@ class GUI():
 
 def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
-    helpers.recreateDir(outputDir)
     helpers.recreateDir(tmpDir)
+    helpers.recreateDir(outputDir)
     db = Database(f'{accountingDir}0_input/')
     for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         gui = GUI(tmpDir, parentDir, outputDir, fileNames, db)
@@ -1159,7 +1215,7 @@ def main(accountingDir, tmpDir):
         gui.log.info(f'processed {len(fileNames)} files')
         gui.log.info(f'the following files generated less than {SplitSheets.numberOfSheets} sheets')
         for f in gui.partiallyFilledFiles:
-            print(f)
+            gui.log.info(f)
         break
 
 if __name__== "__main__":
