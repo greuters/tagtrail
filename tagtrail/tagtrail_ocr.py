@@ -587,27 +587,37 @@ class FindMarginsByLines(LineBasedStep):
             mapToCorner(x2, y2)
             self.drawLinePts((x1, y1), (x2, y2))
 
-        # select the top left and bottom right corner - they probably span the
-        # frame printed on each product sheet
-        if len(corners) < 2:
+        # select the corners closest to the image corners (top left, top right, bottom left, bottom right)
+        # they probably span the frame printed on each product sheet
+        if len(corners) < 4:
             raise AssertionError('failed to find enough corner candidates')
         height, width, _ = self._linesImg.shape
         topLeft, topLeftDist = corners[0], width+height
+        topRight, topRightDist = topLeft, topLeftDist
+        bottomLeft, bottomLeftDist = topLeft, topLeftDist
         bottomRight, bottomRightDist = topLeft, topLeftDist
         for c in corners:
             cv.circle(self._linesImg, (c.x, c.y), self._cornerRadius, (0,255,0), 2)
             if c.distanceToPoint(0, 0) < topLeftDist:
                 topLeft = c
                 topLeftDist = c.distanceToPoint(0, 0)
+            if c.distanceToPoint(width, 0) < topRightDist:
+                topRight = c
+                topRightDist = c.distanceToPoint(width, 0)
+            if c.distanceToPoint(0, height) < bottomLeftDist:
+                bottomLeft = c
+                bottomLeftDist = c.distanceToPoint(0, height)
             if c.distanceToPoint(width, height) < bottomRightDist:
                 bottomRight = c
                 bottomRightDist = c.distanceToPoint(width, height)
 
         # draw corners and selected rectangle, crop output image
-        cv.circle(self._frameImg, (topLeft.x, topLeft.y), self._cornerRadius, (0,255,0), 2)
-        cv.circle(self._frameImg, (bottomRight.x, bottomRight.y), self._cornerRadius, (0,255,0), 2)
-        x0, y0 = topLeft.x, topLeft.y
-        x1, y1 = bottomRight.x, bottomRight.y
+        cv.circle(self._frameImg, (topLeft.x, topLeft.y), self._cornerRadius, (255,0,0), 2)
+        cv.circle(self._frameImg, (topRight.x, topRight.y), self._cornerRadius, (255,0,0), 2)
+        cv.circle(self._frameImg, (bottomRight.x, bottomRight.y), self._cornerRadius, (255,0,0), 2)
+        cv.circle(self._frameImg, (bottomLeft.x, bottomLeft.y), self._cornerRadius, (255,0,0), 2)
+        x0, y0 = min(topLeft.x, bottomLeft.x), min(topLeft.y, topRight.y)
+        x1, y1 = max(topRight.x, bottomRight.x), max(bottomLeft.y, bottomRight.y)
         if (x1-x0)*(y1-y0) < self._minExpectedImageSize:
             self._log.debug(f'x0={x0}, y0={y0}, x1={x1}, y1={y1}')
             self._log.warn('Failed to find plausible image margins, not cropping image')
