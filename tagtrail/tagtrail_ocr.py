@@ -1062,6 +1062,11 @@ class GUI():
         self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
         self.previewCanvas.place(x=canvas_w, y=0)
         self.previewCanvas.bind('<Button-1>', self.onMouseDownOnPreviewCanvas)
+        # with Windows OS
+        self.previewCanvas.bind("<MouseWheel>", self.onMouseWheelPreviewCanvas)
+        # with Linux OS
+        self.previewCanvas.bind("<Button-4>", self.onMouseWheelPreviewCanvas)
+        self.previewCanvas.bind("<Button-5>", self.onMouseWheelPreviewCanvas)
         self.scrollPreviewY = tkinter.Scrollbar(self.root, orient='vertical', command=self.previewCanvas.yview)
         self.scrollPreviewY.place(
                 x=self.width - self.buttonFrameWidth - self.previewScrollbarWidth,
@@ -1231,6 +1236,15 @@ class GUI():
             sheet.outputImg = self.fitSplitSheet(dialog.outputImg, sheet.tmpDir)
             self.resetPreviewCanvas()
 
+    def onMouseWheelPreviewCanvas(self, event):
+        increment = 0
+        # respond to Linux or Windows wheel event
+        if event.num == 5 or event.delta < 0:
+            increment = 1
+        if event.num == 4 or event.delta > 0:
+            increment = -1
+        self.previewCanvas.yview_scroll(increment, "units")
+
     def abortGeneratingPreview(self):
         self.__abortGeneratingPreview = True
         if self.__previewProgressWindow:
@@ -1313,7 +1327,6 @@ class GUI():
 
     def resetPreviewCanvas(self):
         self.previewCanvas.delete('all')
-        self.previewCanvas.yview_moveto('0.00')
         self.previewImages = []
 
         for sheet in self.sheets:
