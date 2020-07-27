@@ -152,6 +152,7 @@ class SplitSheets(ProcessingStep):
 
         self._grayImgs = []
         self._adaptiveThresholdImgs = []
+        self._denoisedAdaptiveThresholdImgs = []
         self._dilatedAdaptiveThresholdImgs = []
         self._erodedAdaptiveThresholdImgs = []
         self._labeledAdaptiveThresholdImgs = []
@@ -206,9 +207,12 @@ class SplitSheets(ProcessingStep):
         self._dilatedOtsuThresholdImgs.append(dilatedOtsuThresholdImg)
 
         numComponents, labeledImg = cv.connectedComponents(thresholdImg)
-        self._labeledImgs.append(labeledImg) 
-        if foregroundSize < sheetImgWidth * sheetImgHeight / 4 or numComponents < 2:
+        self._labeledImgs.append(labeledImg)
+        if foregroundSize < sheetImgWidth * sheetImgHeight / 4:
             self._log.info('found empty sheet')
+            self._foregroundImgs.append(None)
+            self._rotatedImgs.append(None)
+            self._outputSheetImgs.append(None)
             return False
 
         minAreaRect, foregroundImg = self.biggestComponentMinAreaRect(numComponents, labeledImg, thresholdImg)
@@ -241,7 +245,9 @@ class SplitSheets(ProcessingStep):
     def biggestComponentFromAdaptiveThreshold(self, grayImg):
         adaptiveThresholdImg = cv.adaptiveThreshold(cv.medianBlur(grayImg,7), 255,
                 cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY,11,2)
-        dilatedAdaptiveThresholdImg = cv.dilate(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
+        denoisedAdaptiveThresholdImg = cv.erode(adaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
+                (2,2)), 1)
+        dilatedAdaptiveThresholdImg = cv.dilate(denoisedAdaptiveThresholdImg, cv.getStructuringElement(cv.MORPH_RECT,
                 (7,7)), 1)
         erodedAdaptiveThresholdImg = np.where(
                 cv.erode(dilatedAdaptiveThresholdImg, self._mediumKernel, 1) == 0,
@@ -249,6 +255,7 @@ class SplitSheets(ProcessingStep):
         numComponents, labeledAdaptiveThresholdImg = cv.connectedComponents(erodedAdaptiveThresholdImg)
 
         self._adaptiveThresholdImgs.append(adaptiveThresholdImg)
+        self._denoisedAdaptiveThresholdImgs.append(denoisedAdaptiveThresholdImg)
         self._dilatedAdaptiveThresholdImgs.append(dilatedAdaptiveThresholdImg)
         self._erodedAdaptiveThresholdImgs.append(erodedAdaptiveThresholdImg)
         self._labeledAdaptiveThresholdImgs.append(labeledAdaptiveThresholdImg)
@@ -299,30 +306,32 @@ class SplitSheets(ProcessingStep):
             writeImg(img, idx, '01_grayImg.jpg')
         for idx, img in enumerate(self._adaptiveThresholdImgs):
             writeImg(img, idx, '02_adaptiveThresholdImg.jpg')
+        for idx, img in enumerate(self._denoisedAdaptiveThresholdImgs):
+            writeImg(img, idx, '03_denoisedAdaptiveThresholdImg.jpg')
         for idx, img in enumerate(self._dilatedAdaptiveThresholdImgs):
-            writeImg(img, idx, '03_dilatedAdaptiveThresholdImg.jpg')
+            writeImg(img, idx, '04_dilatedAdaptiveThresholdImg.jpg')
         for idx, img in enumerate(self._erodedAdaptiveThresholdImgs):
-            writeImg(img, idx, '04_erodedAdaptiveThresholdImg.jpg')
+            writeImg(img, idx, '05_erodedAdaptiveThresholdImg.jpg')
         for idx, img in enumerate(self._labeledAdaptiveThresholdImgs):
-            writeImg(img, idx, '05_labeledAdaptiveThresholdImg.jpg')
+            writeImg(img, idx, '06_labeledAdaptiveThresholdImg.jpg')
         for idx, img in enumerate(self._biggestComponentImgs):
-            writeImg(img, idx, '06_biggestComponentImg.jpg')
+            writeImg(img, idx, '07_biggestComponentImg.jpg')
         for idx, img in enumerate(self._otsuThresholdImgs):
-            writeImg(img, idx, '07_otsuThresholdImg.jpg')
+            writeImg(img, idx, '08_otsuThresholdImg.jpg')
         for idx, img in enumerate(self._erodedOtsuThresholdImgs):
-            writeImg(img, idx, '08_erodedOtsuThresholdImg.jpg')
+            writeImg(img, idx, '09_erodedOtsuThresholdImg.jpg')
         for idx, img in enumerate(self._dilatedOtsuThresholdImgs):
-            writeImg(img, idx, '09_dilatedOtsuThresholdImg.jpg')
+            writeImg(img, idx, '10_dilatedOtsuThresholdImg.jpg')
         for idx, img in enumerate(self._thresholdImgs):
-            writeImg(img, idx, '10_thresholdImg.jpg')
+            writeImg(img, idx, '11_thresholdImg.jpg')
         for idx, img in enumerate(self._labeledImgs):
-            writeImg(img, idx, '11_labeledImg.jpg')
+            writeImg(img, idx, '12_labeledImg.jpg')
         for idx, img in enumerate(self._foregroundImgs):
-            writeImg(img, idx, '12_foregroundImg.jpg')
+            writeImg(img, idx, '13_foregroundImg.jpg')
         for idx, img in enumerate(self._rotatedImgs):
-            writeImg(img, idx, '13_rotatedImg.jpg')
+            writeImg(img, idx, '14_rotatedImg.jpg')
         for idx, img in enumerate(self._outputSheetImgs):
-            writeImg(img, idx, '14_outputSheetImg.jpg')
+            writeImg(img, idx, '15_outputSheetImg.jpg')
 
     def generatedSheets(self):
         return [f'{self.prefix}_{idx}_14_outputSheetImg.jpg'
@@ -912,8 +921,13 @@ class GUI():
         self.loadConfig()
 
         self.root = tkinter.Tk()
-        self.width=self.root.winfo_screenwidth()
-        self.height=self.root.winfo_screenheight()
+        self.rotationAngle = self.db.config.getint('tagtrail_ocr', 'rotationAngle')
+        self.width = self.db.config.getint('general', 'screen_width')
+        self.height = self.db.config.getint('general', 'screen_height')
+        if self.width == -1:
+            self.width=self.root.winfo_screenwidth()
+        if self.height == -1:
+            self.height=self.root.winfo_screenheight()
         self.root.geometry(str(self.width)+'x'+str(self.height))
         self.buttonCanvasWidth=200
         self.previewScrollbarWidth=20
@@ -988,6 +1002,10 @@ class GUI():
             command=self.recognizeTags)
         self.buttons['recognizeTags'].bind('<Return>', self.recognizeTags)
         self.buttons['recognizeTags'].config(state='disabled')
+
+        self.buttons['splitAndRecognize'] = tkinter.Button(self.buttonCanvas, text='Split&Recognize',
+            command=self.splitAndRecognize)
+        self.buttons['splitAndRecognize'].bind('<Return>', self.splitAndRecognize)
 
         y = 60
         for b in self.buttons.values():
@@ -1088,6 +1106,10 @@ class GUI():
             self.__previewProgressWindow = None
         self.log.info('Aborting preview generation')
 
+    def splitAndRecognize(self):
+        self.splitSheets()
+        self.recognizeTags()
+
     def splitSheets(self):
         self.previewCanvas.delete('all')
         self.previewCanvas.yview_moveto('0.00')
@@ -1121,18 +1143,23 @@ class GUI():
         abortButton.bind('<Return>', self.abortGeneratingPreview)
         abortButton.pack(pady=10)
 
-        for scanFileIndex, scanFile in enumerate(self.scanFilenames):
-            progressBar['value'] = scanFileIndex / len(self.scanFilenames) * 100
-            self.__previewProgressWindow.update()
-            self.root.update()
+        sheetProcessors = []
+        sheetProcessors.append(RotateSheet("1_rotateSheet", self.tmpDir))
+        sheetProcessors.append(FindMarginsByLines("2_findMarginsByLines", self.tmpDir))
+        fitToSheetProcessor = FitToSheet("3_fitToSheet", self.tmpDir)
+        sheetProcessors.append(fitToSheetProcessor)
 
+        for scanFileIndex, scanFile in enumerate(self.scanFilenames):
             if self.__abortGeneratingPreview:
                 break
+            progressBar['value'] = scanFileIndex / len(self.scanFilenames) * 100
+            self.__previewProgressWindow.update()
 
             splitDir = f'{self.tmpDir}/{scanFile}/'
             helpers.recreateDir(splitDir)
+
             split = SplitSheets(
-                    '0_splitSheets',
+                    f'0_splitSheets',
                     splitDir,
                     self.sheetCoordinates[0],
                     self.sheetCoordinates[1],
@@ -1140,15 +1167,33 @@ class GUI():
                     self.sheetCoordinates[3])
 
             rotatedImg = imutils.rotate_bound(cv.imread(self.scanDir + scanFile), self.rotationAngle)
-            resizedImg = cv.resize(rotatedImg, (1836*2, 3264*2), Image.BILINEAR)
+            resizedImg = cv.resize(rotatedImg, (3672, 6528), Image.BILINEAR)
+            self.log.info(f'Splitting scanned file: {scanFile}')
             split.process(resizedImg)
             split.writeOutput()
-            if len(split._outputSheetImgs) < SplitSheets.numberOfSheets:
+            if any(img is None for img in split._outputSheetImgs):
                 self.partiallyFilledFiles.append(self.scanDir + scanFile)
 
-            for idx, sheetImg in enumerate(split._outputSheetImgs):
+            for idx, splitImg in enumerate(split._outputSheetImgs):
+                if self.__abortGeneratingPreview:
+                    break
+                if splitImg is None:
+                    continue
+
+                sheetName = f'{scanFile}_sheet{idx}'
+                self.log.info(f'sheetName = {sheetName}')
+                sheetDir = f'{self.tmpDir}{sheetName}/'
+                helpers.recreateDir(sheetDir)
+                img = splitImg
+                for p in sheetProcessors:
+                    p.outputDir = sheetDir
+                    p.process(img)
+                    p.writeOutput()
+                    img = p._outputImg
+                sheetImg = fitToSheetProcessor._outputImg
+
                 self.__sheetImages.append(sheetImg)
-                self.__sheetNames.append(f'{scanFile}_sheet{idx}')
+                self.__sheetNames.append(sheetName)
                 height, width, _ = sheetImg.shape
                 resizeRatio = canvasWidth / (self.previewColumnCount * width)
                 resizedWidth, resizedHeight = int(width * resizeRatio), int(height * resizeRatio)
@@ -1166,6 +1211,7 @@ class GUI():
                         (col+1)*maxPreviewWidth,
                         (row+1)*maxPreviewHeight
                         )
+                self.root.update()
 
         if self.__previewProgressWindow:
             self.__previewProgressWindow.destroy()
@@ -1186,33 +1232,18 @@ class GUI():
             messagebox.showerror('Sheets missing', 'Unable to recognize tags - input images need to be split first')
             return
 
-        processors = []
-        processors.append(RotateSheet("1_rotateSheet", self.tmpDir))
-        processors.append(FindMarginsByLines("2_findMarginsByLines", self.tmpDir))
-        fitToSheet = FitToSheet("3_fitToSheet", self.tmpDir)
-        processors.append(fitToSheet)
         recognizer = RecognizeText("4_recognizeText", self.tmpDir, self.db)
-        processors.append(recognizer)
 
         for sheetName, sheetImg in zip(self.__sheetNames, self.__sheetImages):
-            self.log.info(f'sheetName = {sheetName}')
-            sheetDir = f'{self.tmpDir}{sheetName}/'
-            helpers.recreateDir(sheetDir)
-
-            img = sheetImg
             recognizer.prepareProcessing(sheetName)
-            for p in processors:
-                p.outputDir = sheetDir
-                p.process(img)
-                p.writeOutput()
-                img = p._outputImg
+            recognizer.process(sheetImg)
+            recognizer.writeOutput()
             if os.path.exists(f'{self.outputDir}{recognizer.fileName()}'):
                 self.log.info(f'reset sheet to fallback, as {recognizer.fileName()} already exists')
                 recognizer.resetSheetToFallback()
-
             recognizer.storeSheet(self.outputDir)
             cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_normalized_scan.jpg',
-                    fitToSheet._outputImg)
+                    sheetImg)
 
 def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'

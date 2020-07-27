@@ -49,16 +49,20 @@ processed by GnuCash.
 
 Installation from source
 
-On Linux
+On Ubuntu
 
-* sudo apt-get install git
+* sudo apt install git python3 python3-tk python3-venv
 
-* sudo apt-get install python3
+* cd tagtrail
+
+* python3 -m venv tagtrail-env
+
+* source tagtrail-env/bin/activate
+
+* pip install --upgrade pip && pip install -r requirements.txt
 
 * install tesseract from https://github.com/tesseract-ocr/tesseract
   
-* pip install -r requirements.txt
-
 On Windows
 
 * install git from https://git-scm.com/download/win
