@@ -25,6 +25,8 @@ import csv
 import imaplib
 import smtplib
 import ssl
+import os
+import shutil
 from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -40,13 +42,21 @@ class MailSender(ABC):
             ):
         self.accessCode = accessCode
         self.log = helpers.Log(helpers.Log.LEVEL_DEBUG)
-        self.billPath = accountingPath + '3_bills/'
+        self.billsToBeSentPath = f'{accountingPath}3_bills/to_be_sent/'
+        self.billsAlreadySentPath = f'{accountingPath}3_bills/already_sent/'
         self.templatePath = accountingPath + '0_input/templates/'
         self.db = database.Database(f'{accountingPath}0_input/',
                 configFilePath=configFilePath)
-        self.bills = [self.db.readCsv(
-            f'{self.billPath}{member.id}.csv', database.Bill)
-            for member in self.db.members.values()]
+        self.billsToBeSent = []
+        for member in self.db.members.values():
+            if os.path.isfile(f'{self.billsToBeSentPath}{member.id}.csv'):
+                self.billsToBeSent.append(self.db.readCsv(
+                    f'{self.billsToBeSentPath}{member.id}.csv',
+                    database.Bill))
+            elif not os.path.isfile(f'{self.billsAlreadySentPath}{member.id}.csv'):
+                answer = input('No bill found for {member.id} - Continue (yes/no)?')
+                if answer != 'yes' and answer != 'y':
+                    return
 
         self.emailTemplate = self.readTemplate(self.templatePath+'email.txt')
         self.invoiceAboveThresholdTemplate = self.readTemplate(
@@ -69,7 +79,7 @@ class MailSender(ABC):
         return Template(template_file_content)
 
     def sendBills(self):
-        billedMembersWithoutEmails = [bill.memberId for bill in self.bills
+        billedMembersWithoutEmails = [bill.memberId for bill in self.billsToBeSent
                 if self.db.members[bill.memberId].emails == []]
         if billedMembersWithoutEmails != []:
             answer = input('Bills cannot be sent to these members, ' + \
@@ -79,7 +89,7 @@ class MailSender(ABC):
             if answer != 'yes' and answer != 'y':
                 return
 
-        for bill in self.bills:
+        for bill in self.billsToBeSent:
             if (self.db.config.getint('general', 'liquidity_threshold')
                     < bill.currentBalance()):
                 invoiceTextTemplate = self.invoiceAboveThresholdTemplate
@@ -94,6 +104,7 @@ class MailSender(ABC):
                             self.db.config.get('general', 'currency')),
                         CORRECTION_JUSTIFICATION=bill.correctionJustification)
 
+            filename = bill.memberId+'.csv'
             for email in self.db.members[bill.memberId].emails:
                 if not self.testRecipient is None:
                     self.log.info(f'would send email to {email}, replaced by {self.testRecipient}: ')
@@ -131,10 +142,23 @@ class MailSender(ABC):
                             ACCOUNTANT_NAME=self.accountantName
                             )
 
-                filename = bill.memberId+'.csv'
-                self.sendEmail(email,
-                        'Abrechnung vom {}'.format(bill.currentAccountingDate),
-                        body, f'{self.billPath}{filename}', filename)
+                try:
+                    self.sendEmail(email,
+                            'Abrechnung vom {}'.format(bill.currentAccountingDate),
+                            body, f'{self.billsToBeSentPath}{filename}', filename)
+                except smtplib.SMTPRecipientsRefused as e:
+                    if str(e).find('451') != -1:
+                        self.log.info("""Sending quota exceeded - Run tagtrail_send again later to send the remaining emails""")
+                        return
+                    else:
+                        raise e
+            # only move bill after it has been successfully sent to all
+            # recipient emails
+            if self.testRecipient is None:
+                shutil.move(f'{self.billsToBeSentPath}{filename}',
+                        f'{self.billsAlreadySentPath}{filename}')
+            else:
+                self.log.info(f'would move {self.billsToBeSentPath}{filename} to {self.billsAlreadySentPath}{filename}')
 
     def sendEmail(self, to, subject, body, path, attachmentName):
         message = MIMEMultipart()

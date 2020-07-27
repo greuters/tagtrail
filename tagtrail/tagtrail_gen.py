@@ -204,9 +204,9 @@ class Gui:
                 raise ValueError(f'failed to generate sheet {path}')
 
         for pageFileName in self.pageFileNamesToBeReplaced + self.pageFileNamesToBeRemoved:
-            path = f'{self.accountedProductsDir}/{pageFileName}'
+            path = f'{self.accountedProductsDir}/{pageFileName}.csv'
             self.log.info(f'removing sheet {path}')
-            os.path.os.remove(f'{path}.csv')
+            os.path.os.remove(f'{path}')
             os.path.os.remove(f'{path}{self.scanPostfix}')
 
         for productId in self.missingProductIds:

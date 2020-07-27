@@ -304,8 +304,9 @@ class Gui:
             self.root.quit()
 
     def writeBills(self):
-        destPath = f'{self.accountingDataPath}3_bills/'
+        destPath = f'{self.accountingDataPath}3_bills/to_be_sent/'
         helpers.recreateDir(destPath, self.log)
+        helpers.recreateDir(f'{self.accountingDataPath}3_bills/already_sent/', self.log)
         for member in self.db.members.values():
             self.db.writeCsv(destPath+member.id+'.csv',
                     self.db.bills[member.id])
