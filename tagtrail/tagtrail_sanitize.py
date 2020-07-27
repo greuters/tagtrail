@@ -167,6 +167,10 @@ class InputSheet(ProductSheet):
                 autocompleteEntry.enabled = False
 
     def nextUnclearBox(self, selectedBox):
+        if self.boxByName('nameBox').confidence != 1:
+            return self.boxByName('nameBox')
+        if  self.boxByName('pageNumberBox').confidence != 1:
+            return self.boxByName('pageNumberBox')
         sortedBoxes = self.sortedBoxes()
         indicesOfUnclearBoxes = [idx for idx, b in enumerate(sortedBoxes) if b.confidence<1]
         if not indicesOfUnclearBoxes:
