@@ -594,6 +594,10 @@ class FindMarginsByLines(LineBasedStep):
             if not foundCorner:
                 corners.append(FindMarginsByLines.Corner(x, y))
 
+        if lines is None:
+            self._outputImg=inputImg
+            return
+
         for line in lines:
             x1,y1,x2,y2 = line[0]
             mapToCorner(x1, y1)
@@ -603,7 +607,10 @@ class FindMarginsByLines(LineBasedStep):
         # select the corners closest to the image corners (top left, top right, bottom left, bottom right)
         # they probably span the frame printed on each product sheet
         if len(corners) < 4:
-            raise AssertionError('failed to find enough corner candidates')
+            self._log.warn('failed to find enough corner candidates, not cropping image')
+            self._outputImg=inputImg
+            return
+
         height, width, _ = self._linesImg.shape
         topLeft, topLeftDist = corners[0], width+height
         topRight, topRightDist = topLeft, topLeftDist
@@ -732,7 +739,7 @@ class RecognizeText(ProcessingStep):
         for box in self.__sheet.boxes():
             if box.name == "nameBox":
                 name, confidence = self.recognizeBoxText(box, names)
-                if name == '' or confidence < 1:
+                if name == '' or confidence < 0.5:
                     box.text, box.confidence = self.__fallbackSheetName, 0
                 else:
                     box.text, box.confidence = name, confidence
@@ -742,7 +749,7 @@ class RecognizeText(ProcessingStep):
                     box.confidence = 0
             elif box.name == "priceBox":
                 box.text, box.confidence = self.recognizeBoxText(box, prices)
-                if box.text == '':
+                if box.text == '' or confidence < 1:
                     box.confidence = 0
             elif box.name == "pageNumberBox":
                 pageNumber, confidence = self.recognizeBoxText(box,
@@ -911,6 +918,7 @@ class SplitSheetDialog(Dialog):
         self.inputImg = inputImg
         self.log = log
         self.outputImg = None
+        self.isEmpty = False
         self.selectedCorners = []
         self.sheetCoordinates = None
         super().__init__(root)
@@ -932,6 +940,26 @@ class SplitSheetDialog(Dialog):
         self.canvas.pack()
         self.resetCanvas()
         return None
+
+    def buttonbox(self):
+        box = tkinter.Frame(self)
+
+        w = tkinter.Button(box, text="OK", width=10, command=self.ok,
+                default=tkinter.ACTIVE)
+        w.pack(side=tkinter.LEFT, padx=5, pady=5)
+        w = tkinter.Button(box, text="Cancel", width=10, command=self.cancel)
+        w.pack(side=tkinter.LEFT, padx=5, pady=5)
+        w = tkinter.Button(box, text="Empty sheet", width=10, command=self.markEmpty)
+        w.pack(side=tkinter.LEFT, padx=5, pady=5)
+
+        self.bind("<Return>", self.ok)
+        self.bind("<Escape>", self.cancel)
+
+        box.pack()
+
+    def markEmpty(self):
+        self.isEmpty = True
+        self.ok()
 
     def apply(self):
         if self.sheetCoordinates is not None:
@@ -985,15 +1013,19 @@ class SplitSheetDialog(Dialog):
 
 class SplitSheet():
     def __init__(self,
+            inputScanFilepath,
             name,
             tmpDir,
             inputImg,
-            outputImg
+            outputImg,
+            isEmpty
             ):
+        self.inputScanFilepath=inputScanFilepath
         self.name=name
         self.tmpDir=tmpDir
         self.inputImg=inputImg
         self.outputImg=outputImg
+        self.isEmpty=isEmpty
 
 class GUI():
     previewColumnCount = 4
@@ -1231,9 +1263,14 @@ class GUI():
 
         sheet = self.sheets[sheetIdx]
         dialog = SplitSheetDialog(self.root, sheet.inputImg)
-        if dialog.outputImg is not None:
+        if dialog.isEmpty:
+            sheet.outputImg = self.crossedOutCopy(sheet.inputImg)
+            sheet.isEmpty = True
+            self.resetPreviewCanvas()
+        elif dialog.outputImg is not None:
             helpers.recreateDir(sheet.tmpDir)
             sheet.outputImg = self.fitSplitSheet(dialog.outputImg, sheet.tmpDir)
+            sheet.isEmpty = False
             self.resetPreviewCanvas()
 
     def onMouseWheelPreviewCanvas(self, event):
@@ -1245,11 +1282,11 @@ class GUI():
             increment = -1
         self.previewCanvas.yview_scroll(increment, "units")
 
-    def abortGeneratingPreview(self):
-        self.__abortGeneratingPreview = True
-        if self.__previewProgressWindow:
-            self.__previewProgressWindow.destroy()
-            self.__previewProgressWindow = None
+    def abortProcess(self):
+        self.abortProcess = True
+        if self.__progressWindow:
+            self.__progressWindow.destroy()
+            self.__progressWindow = None
         self.log.info('Aborting preview generation')
 
     def splitAndRecognize(self):
@@ -1258,25 +1295,24 @@ class GUI():
 
     def splitSheets(self):
         self.sheets = []
-        self.partiallyFilledFiles = []
         self.buttons['recognizeTags'].config(state='disabled')
-        self.__abortGeneratingPreview = False
+        self.abortProcess = False
 
-        self.__previewProgressWindow = tkinter.Toplevel()
-        self.__previewProgressWindow.title('Splitting progress')
-        self.__previewProgressWindow.protocol("WM_DELETE_WINDOW", self.abortGeneratingPreview)
-        progressBar = tkinter.ttk.Progressbar(self.__previewProgressWindow, length=self.progressBarLength, mode='determinate')
+        self.__progressWindow = tkinter.Toplevel()
+        self.__progressWindow.title('Splitting progress')
+        self.__progressWindow.protocol("WM_DELETE_WINDOW", self.abortProcess)
+        progressBar = tkinter.ttk.Progressbar(self.__progressWindow, length=self.progressBarLength, mode='determinate')
         progressBar.pack(pady=10, padx=20)
-        abortButton = tkinter.Button(self.__previewProgressWindow, text='Abort',
-            command=self.abortGeneratingPreview)
-        abortButton.bind('<Return>', self.abortGeneratingPreview)
+        abortButton = tkinter.Button(self.__progressWindow, text='Abort',
+            command=self.abortProcess)
+        abortButton.bind('<Return>', self.abortProcess)
         abortButton.pack(pady=10)
 
         for scanFileIndex, scanFile in enumerate(self.scanFilenames):
-            if self.__abortGeneratingPreview:
+            if self.abortProcess:
                 break
             progressBar['value'] = scanFileIndex / len(self.scanFilenames) * 100
-            self.__previewProgressWindow.update()
+            self.__progressWindow.update()
 
             splitDir = f'{self.tmpDir}/{scanFile}/'
             helpers.recreateDir(splitDir)
@@ -1294,38 +1330,45 @@ class GUI():
             self.log.info(f'Splitting scanned file: {scanFile}')
             splitter.process(resizedImg)
             splitter.writeOutput()
-            if any(img is None for img in splitter._outputSheetImgs):
-                self.partiallyFilledFiles.append(self.scanDir + scanFile)
-
             for idx, splitImg in enumerate(splitter._outputSheetImgs):
-                if self.__abortGeneratingPreview:
+                if self.abortProcess:
                     break
-                if splitImg is None:
-                    continue
 
                 sheetName = f'{scanFile}_sheet{idx}'
                 self.log.info(f'sheetName = {sheetName}')
                 sheetTmpDir = f'{self.tmpDir}{sheetName}/'
                 helpers.recreateDir(sheetTmpDir)
-                outputImg = self.fitSplitSheet(splitImg, sheetTmpDir)
-                self.sheets.append(SplitSheet(
-                    sheetName, sheetTmpDir, splitter.unprocessedSheetImgs[idx], outputImg))
-                self.resetPreviewCanvas()
+                if splitImg is None:
+                    self.sheets.append(SplitSheet(
+                        self.scanDir + scanFile,
+                        sheetName,
+                        sheetTmpDir,
+                        splitter.unprocessedSheetImgs[idx],
+                            self.crossedOutCopy(splitter.unprocessedSheetImgs[idx]),
+                        True))
+                else:
+                    self.sheets.append(SplitSheet(
+                        self.scanDir + scanFile,
+                        sheetName,
+                        sheetTmpDir,
+                        splitter.unprocessedSheetImgs[idx],
+                        self.fitSplitSheet(splitImg, sheetTmpDir),
+                        False))
+                self.resetPreviewCanvas(scrollToBottom=True)
 
-        if self.__previewProgressWindow:
-            self.__previewProgressWindow.destroy()
-            self.__previewProgressWindow = None
+        if self.__progressWindow:
+            self.__progressWindow.destroy()
+            self.__progressWindow = None
 
         if not self.previewImages:
             messagebox.showwarning('Nothing to preview',
                 f'All split sheets were found empty - probably sheet transformation settings are bad')
             return
 
-        if not self.__abortGeneratingPreview:
+        if not self.abortProcess:
             self.buttons['recognizeTags'].config(state='normal')
-        self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
 
-    def resetPreviewCanvas(self):
+    def resetPreviewCanvas(self, scrollToBottom=False):
         self.previewCanvas.delete('all')
         self.previewImages = []
 
@@ -1347,7 +1390,18 @@ class GUI():
                     (col+1)*self.previewColumnWidth,
                     (row+1)*self.previewRowHeight
                     )
+
+        self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
+        if scrollToBottom:
+            self.previewCanvas.yview_moveto('1.0')
         self.root.update()
+
+    def crossedOutCopy(self, img):
+        height, width, _ = img.shape
+        outputImg = np.copy(img)
+        cv.line(outputImg, (0, 0), (width, height), (255,0,0), 20)
+        cv.line(outputImg, (0, height), (width, 0), (255,0,0), 20)
+        return outputImg
 
     def fitSplitSheet(self, splitImg, sheetDir):
         sheetProcessors = []
@@ -1367,13 +1421,34 @@ class GUI():
 
     def recognizeTags(self):
         self.log.info('Recognize tags:')
-        if self.sheets == [] or self.__abortGeneratingPreview:
+        if self.sheets == [] or self.abortProcess:
             messagebox.showerror('Sheets missing', 'Unable to recognize tags - input images need to be split first')
             return
 
-        recognizer = RecognizeText("4_recognizeText", self.tmpDir, self.db)
+        self.abortProcess = False
+        self.__progressWindow = tkinter.Toplevel()
+        self.__progressWindow.title('Splitting progress')
+        self.__progressWindow.protocol("WM_DELETE_WINDOW", self.abortProcess)
+        progressBar = tkinter.ttk.Progressbar(self.__progressWindow, length=self.progressBarLength, mode='determinate')
+        progressBar.pack(pady=10, padx=20)
+        abortButton = tkinter.Button(self.__progressWindow, text='Abort',
+            command=self.abortProcess)
+        abortButton.bind('<Return>', self.abortProcess)
+        abortButton.pack(pady=10)
 
-        for sheet in self.sheets:
+        helpers.recreateDir(self.outputDir)
+        recognizer = RecognizeText("4_recognizeText", self.tmpDir, self.db)
+        self.partiallyFilledFiles = set()
+        for idx, sheet in enumerate(self.sheets):
+            if self.abortProcess:
+                break
+            progressBar['value'] = idx / len(self.sheets) * 100
+            self.__progressWindow.update()
+
+            if sheet.isEmpty:
+                self.partiallyFilledFiles.add(sheet.inputScanFilepath)
+                continue
+
             recognizer.prepareProcessing(sheet.name)
             recognizer.process(sheet.outputImg)
             recognizer.writeOutput()
@@ -1384,15 +1459,22 @@ class GUI():
             cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_normalized_scan.jpg',
                 sheet.outputImg)
 
+        if self.__progressWindow:
+            self.__progressWindow.destroy()
+            self.__progressWindow = None
+        self.abortProcess = False
+
 def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
     helpers.recreateDir(tmpDir)
-    helpers.recreateDir(outputDir)
     db = Database(f'{accountingDir}0_input/')
     for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
         gui = GUI(tmpDir, parentDir, outputDir, fileNames, db)
+        if gui.sheets == [] or gui.abortProcess:
+            break
+
         gui.log.info('')
-        gui.log.info(f'processed {len(fileNames)} files')
+        gui.log.info(f'successfully processed {len(fileNames)} files')
         gui.log.info(f'the following files generated less than {SheetSplitter.numberOfSheets} sheets')
         for f in gui.partiallyFilledFiles:
             gui.log.info(f)
