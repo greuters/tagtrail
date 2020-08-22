@@ -497,7 +497,7 @@ class EnrichedDatabase(database.Database):
                 quantityDifferenceMsg = (f'{product.id}: expected = {product.expectedQuantity}, ' +
                         f'inventory = {product.inventoryQuantity}, ' +
                         f'difference = {quantityDifference}')
-                if quantityDifference < 3:
+                if abs(quantityDifference) < 3:
                     self.log.debug(quantityDifferenceMsg)
                 else:
                     self.log.info(quantityDifferenceMsg)
