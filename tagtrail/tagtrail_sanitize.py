@@ -33,8 +33,7 @@ import gui_components
 class InputSheet(ProductSheet):
     validationProbability = 0.02
 
-    def __init__(self, root, aspectRatio,
-            database, path, accountedProductsPath):
+    def __init__(self, root, database, path, accountedProductsPath):
         super().__init__(log=Log())
         self.accountedProductsPath = accountedProductsPath
         self.load(path)
@@ -53,6 +52,8 @@ class InputSheet(ProductSheet):
              formatPrice(p.grossSalesPrice(), currency).upper())
             for p in database.products.values()]))
 
+        scaleFactor = min(root.winfo_height() / self.yRes,
+                root.winfo_width() / self.xRes)
         self._box_to_widget = {}
         self.validationBoxTexts = {}
         for box in self.boxes():
@@ -85,9 +86,9 @@ class InputSheet(ProductSheet):
                 box.confidence = 0
 
             (x1, y1) = box.pt1
-            x1, y1 = x1*aspectRatio, y1*aspectRatio
+            x1, y1 = x1*scaleFactor, y1*scaleFactor
             (x2, y2) = box.pt2
-            x2, y2 = x2*aspectRatio, y2*aspectRatio
+            x2, y2 = x2*scaleFactor, y2*scaleFactor
             entry = gui_components.AutocompleteEntry(box.text, box.confidence,
                     choices, self.switchFocus, True, root)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
@@ -195,7 +196,8 @@ class InputSheet(ProductSheet):
         return (numCorrect, numValidated)
 
 class Gui:
-    scanPostfix = '_normalized_scan.jpg'
+    originalScanPostfix = '_original_scan.jpg'
+    normalizedScanPostfix = '_normalized_scan.jpg'
 
     def __init__(self, accountingDataPath):
         self.log = Log()
@@ -219,9 +221,9 @@ class Gui:
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
 
-        self.pairToSanitizeGenerator = self.nextPairToSanitize()
+        self.productToSanitizeGenerator = self.nextProductToSanitize()
         try:
-            self.csvPath, self.scanPath = next(self.pairToSanitizeGenerator)
+            self.csvPath = next(self.productToSanitizeGenerator)
         except StopIteration:
             messagebox.showinfo('Nothing to do',
                 f'No file needing sanitation in input path {self.productPath}')
@@ -235,44 +237,52 @@ class Gui:
         traceback.print_exception(exception, value, tb)
         messagebox.showerror('Abort Accounting', value)
 
-    def nextPairToSanitize(self):
-        # assuming each product is stored in productPath as a pair of
-        # ({productName}_{page}.csv, {productName}_{page}_normalized_scan.jpg)
+    def nextProductToSanitize(self):
+        # assuming each product is stored in productPath as a triple of
+        # {productName}_{page}.csv,
+        # {productName}_{page}_{originalScanPostfix},
+        # {productName}_{page}_{normalizedScanPostfix}
         csvFiles = None
         for (_, _, fileNames) in os.walk(self.productPath):
             csvFiles = sorted(filter(lambda f: os.path.splitext(f)[1] ==
                 '.csv', fileNames))
-            scanFiles = sorted(filter(lambda f: f.find(self.scanPostfix)
+            originalScanFiles = sorted(filter(lambda f: f.find(self.originalScanPostfix)
+                != -1, fileNames))
+            normalizedScanFiles = sorted(filter(lambda f: f.find(self.normalizedScanPostfix)
                 != -1, fileNames))
             break
 
         if not csvFiles:
             raise StopIteration
 
-        foundPairToSanitize = False
+        foundProductToSanitize = False
         for csvFile in csvFiles:
-            scanFile = csvFile + self.scanPostfix
-            if scanFile in scanFiles:
-                # check if this csv needs sanitation
-                sheet = ProductSheet()
-                sheet.load(self.productPath + csvFile)
-                if list(filter(lambda box: box.confidence < 1,
-                    sheet.boxes())):
-                    foundPairToSanitize = True
-                    yield (self.productPath + csvFile, self.productPath + scanFile)
-            else:
-                self.log.warn('{} omitted, corresponding scan is missing'
-                        .format(csvFile))
+            originalScanFile = csvFile + self.originalScanPostfix
+            normalizedScanFile = csvFile + self.normalizedScanPostfix
+            if originalScanFile not in originalScanFiles:
+                self.log.warn(f'{csvFile} omitted, {originalScanFile} is missing')
+                continue
+            if normalizedScanFile not in normalizedScanFiles:
+                self.log.warn(f'{csvFile} omitted, {normalizedScanFile} is missing')
+                continue
 
-        if foundPairToSanitize:
+            # check if this csv needs sanitation
+            sheet = ProductSheet()
+            sheet.load(self.productPath + csvFile)
+            if list(filter(lambda box: box.confidence < 1,
+                sheet.boxes())):
+                foundProductToSanitize = True
+                yield self.productPath + csvFile
+
+        if foundProductToSanitize:
             # start a new round, as there are still files to sanitize
-            for p in self.nextPairToSanitize():
+            for p in self.nextProductToSanitize():
                 yield p
 
     def saveAndContinue(self, event=None):
         self.save()
         try:
-            self.csvPath, self.scanPath = next(self.pairToSanitizeGenerator)
+            self.csvPath = next(self.productToSanitizeGenerator)
         except StopIteration:
             if self.numCorrectValidatedBoxes == self.numValidatedValidatedBoxes:
                 messagebox.showinfo('Sanitation complete',
@@ -307,12 +317,19 @@ class Gui:
             raise ValueError('Unable to store sheet, grossSalesPrice is missing')
         if not self.inputSheet.pageNumber:
             raise ValueError('Unable to store sheet, pageNumber is missing')
+        oldCsvPath = self.csvPath
+        oldOriginalScanPath = f'{oldCsvPath}{self.originalScanPostfix}'
+        oldNormalizedScanPath = f'{oldCsvPath}{self.normalizedScanPostfix}'
         newCsvPath = f'{self.productPath}{self.inputSheet.fileName()}'
-        newScanPath = (f'{self.productPath}{self.inputSheet.fileName()}{self.scanPostfix}')
-        if newCsvPath != self.csvPath and os.path.exists(newCsvPath):
-            raise ValueError(f'Unable to store sheet, file {newCsvPath} already exists')
-        if newScanPath != self.scanPath and os.path.exists(newScanPath):
-            raise ValueError(f'Unable to store sheet, file {newScanPath} already exists')
+        newOriginalScanPath = f'{newCsvPath}{self.originalScanPostfix}'
+        newNormalizedScanPath = f'{newCsvPath}{self.normalizedScanPostfix}'
+        if newCsvPath != oldCsvPath:
+            if os.path.exists(newCsvPath):
+                raise ValueError(f'Unable to store sheet, file {newCsvPath} already exists')
+            if os.path.exists(newOriginalScanPath):
+                raise ValueError(f'Unable to store sheet, file {newOriginalScanPath} already exists')
+            if os.path.exists(newNormalizedScanPath):
+                raise ValueError(f'Unable to store sheet, file {newNormalizedScanPath} already exists')
 
         assert(self.inputSheet.productId() in self.db.products.keys())
         assert(not [b for b in self.inputSheet.dataBoxes()
@@ -328,13 +345,14 @@ class Gui:
                 f'{self.numCorrectValidatedBoxes} out of ' + \
                 f'{self.numValidatedValidatedBoxes} validated texts were correct')
 
-        self.log.info(f'deleting {self.csvPath}')
-        os.remove(self.csvPath)
+        self.log.info(f'deleting {oldCsvPath}')
+        os.remove(oldCsvPath)
         self.inputSheet.store(self.productPath)
         self.csvPath = newCsvPath
-        self.log.debug(f'renaming {self.scanPath} to {newScanPath}')
-        os.rename(self.scanPath, newScanPath)
-        self.scanPath = newScanPath
+        self.log.debug(f'renaming {oldOriginalScanPath} to {newOriginalScanPath}')
+        os.rename(oldOriginalScanPath, newOriginalScanPath)
+        self.log.debug(f'renaming {oldNormalizedScanPath} to {newNormalizedScanPath}')
+        os.rename(oldNormalizedScanPath, newNormalizedScanPath)
         self.destroyCanvas()
 
     def destroyCanvas(self):
@@ -343,37 +361,31 @@ class Gui:
         self.buttonCanvas.destroy()
 
     def loadProductSheet(self):
-        self.root.title(self.scanPath)
+        self.root.title(self.csvPath)
 
-        # Scanned input image
-        # Note: it is necessary to store the image locally for tkinter to show it
-        self.scannedImg = Image.open(self.scanPath)
-        o_w, o_h = self.scannedImg.size
-        aspectRatio = min(self.height / o_h, (self.width - self.buttonCanvasWidth) / 2 / o_w)
-        canvas_w, canvas_h = int(o_w * aspectRatio), int(o_h * aspectRatio)
-        self.scannedImg = self.scannedImg.resize((canvas_w, canvas_h), Image.BILINEAR)
-        self.scannedImg = ImageTk.PhotoImage(self.scannedImg)
+        canvasWidth = (self.width - self.buttonCanvasWidth)/2
         self.scanCanvas = tkinter.Canvas(self.root,
-               width=canvas_w,
-               height=canvas_h)
+               width=canvasWidth,
+               height=self.height)
         self.scanCanvas.place(x=0, y=0)
-        self.scanCanvas.create_image(0,0, anchor=tkinter.NW, image=self.scannedImg)
-        self.__focusAreaImage = None
-        self.__focusAreaBorderRect = None
+        self.scanCanvas.update()
+        self.scannedImgPath = self.csvPath+self.normalizedScanPostfix
+        self.loadScannedImg()
 
         # Input mask to correct product sheet
         self.inputCanvas = tkinter.Canvas(self.root,
-               width=canvas_w,
-               height=canvas_h)
-        self.inputCanvas.place(x=canvas_w, y=0)
-        self.inputSheet = InputSheet(self.inputCanvas, aspectRatio, self.db,
-                self.csvPath, self.accountedProductsPath)
+               width=canvasWidth,
+               height=self.height)
+        self.inputCanvas.place(x=canvasWidth, y=0)
+        self.inputCanvas.update()
+        self.inputSheet = InputSheet(self.inputCanvas, self.db, self.csvPath,
+                self.accountedProductsPath)
 
         # Additional buttons
         self.buttonCanvas = tkinter.Frame(self.root,
                width=self.buttonCanvasWidth,
-               height=canvas_h)
-        self.buttonCanvas.place(x=2*canvas_w, y=0)
+               height=self.height)
+        self.buttonCanvas.place(x=2*canvasWidth, y=0)
         self.buttons = {}
         self.buttons['saveAndContinue'] = tkinter.Button(self.buttonCanvas, text='Save and continue',
             command=self.saveAndContinue)
@@ -382,6 +394,11 @@ class Gui:
             text='Save and reload current',
             command=self.saveAndReloadDB)
         self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
+        self.buttons['switchScan'] = tkinter.Button(self.buttonCanvas,
+            text='Show original',
+            command=self.switchScan)
+        self.buttons['switchScan'].bind('<Return>', self.switchScan)
+
 
         y = 60
         for b in self.buttons.values():
@@ -389,6 +406,33 @@ class Gui:
                     width=.8*self.buttonCanvasWidth)
             b.update()
             y += b.winfo_height()
+
+    def switchScan(self, event=None):
+        if self.scannedImgPath == self.csvPath+self.normalizedScanPostfix:
+            self.scannedImgPath = self.csvPath+self.originalScanPostfix
+            self.buttons['switchScan']['text']='Show normalized'
+        elif self.scannedImgPath == self.csvPath+self.originalScanPostfix:
+            self.scannedImgPath = self.csvPath+self.normalizedScanPostfix
+            self.buttons['switchScan']['text']='Show original'
+        else:
+            assert(false)
+        self.loadScannedImg()
+
+    def loadScannedImg(self):
+        self.scanCanvas.delete('all')
+        img = Image.open(self.scannedImgPath)
+        originalWidth, originalHeight = img.size
+        scaleFactor = min(self.scanCanvas.winfo_height() / originalHeight,
+                self.scanCanvas.winfo_width() / originalWidth)
+        resizedImg = img.resize((int(originalWidth * scaleFactor),
+                    int(originalHeight * scaleFactor)),
+                    Image.BILINEAR)
+        # Note: it is necessary to store the image locally for tkinter to show it
+        self.scannedImg = ImageTk.PhotoImage(resizedImg)
+
+        self.scanCanvas.create_image(0,0, anchor=tkinter.NW, image=self.scannedImg)
+        self.__focusAreaImage = None
+        self.__focusAreaBorderRect = None
 
     def switchInputFocus(self, event):
         focused = self.root.focus_displayof()

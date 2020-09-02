@@ -1456,8 +1456,17 @@ class GUI():
                 self.log.info(f'reset sheet to fallback, as {recognizer.fileName()} already exists')
                 recognizer.resetSheetToFallback()
             recognizer.storeSheet(self.outputDir)
+
+            compressedImgWidth = self.db.config.getint('tagtrail_ocr',
+                    'output_img_width')
+            compressedImgQuality = self.db.config.getint('tagtrail_ocr',
+                    'output_img_jpeg_quality')
+            cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_original_scan.jpg',
+                    imutils.resize(sheet.inputImg, width=compressedImgWidth),
+                    [int(cv.IMWRITE_JPEG_QUALITY), compressedImgQuality])
             cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_normalized_scan.jpg',
-                sheet.outputImg)
+                    imutils.resize(sheet.outputImg, width=compressedImgWidth),
+                    [int(cv.IMWRITE_JPEG_QUALITY), compressedImgQuality])
 
         if self.__progressWindow:
             self.__progressWindow.destroy()
