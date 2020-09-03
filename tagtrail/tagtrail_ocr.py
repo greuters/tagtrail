@@ -1152,10 +1152,6 @@ class GUI():
         self.buttons['recognizeTags'].bind('<Return>', self.recognizeTags)
         self.buttons['recognizeTags'].config(state='disabled')
 
-        self.buttons['splitAndRecognize'] = tkinter.Button(self.buttonFrame, text='Split&Recognize',
-            command=self.splitAndRecognize)
-        self.buttons['splitAndRecognize'].bind('<Return>', self.splitAndRecognize)
-
         y = 60
         for b in self.buttons.values():
             b.place(relx=.5, y=y, anchor="center",
@@ -1288,10 +1284,6 @@ class GUI():
             self.__progressWindow.destroy()
             self.__progressWindow = None
         self.log.info('Aborting preview generation')
-
-    def splitAndRecognize(self):
-        self.splitSheets()
-        self.recognizeTags()
 
     def splitSheets(self):
         self.sheets = []
@@ -1472,6 +1464,9 @@ class GUI():
             self.__progressWindow.destroy()
             self.__progressWindow = None
         self.abortProcess = False
+        if messagebox.askyesno('OCR completed',
+                'tagtrail_ocr is done - exit now?'):
+            self.root.destroy()
 
 def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
