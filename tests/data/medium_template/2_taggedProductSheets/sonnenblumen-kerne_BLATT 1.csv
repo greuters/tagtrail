@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;SONNENBLUMEN KERNE;1.0
 unitBox;200G;1.0
 priceBox;3.80 CHF;1.0
-pageNumberBox;BLATT 1;1
+sheetNumberBox;BLATT 1;1
 dataBox0(0,0);DGL;1.0
 dataBox1(0,1);ANGE;1
 dataBox2(0,2);;1

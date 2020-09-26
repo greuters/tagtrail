@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;KICHERERBSEN (SCHWARZ / HELL);1
 unitBox;1KG;1
 priceBox;11.60 CHF;1
-pageNumberBox;BLATT 1;1
+sheetNumberBox;BLATT 1;1
 dataBox0(0,0);MMJQ;1
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0

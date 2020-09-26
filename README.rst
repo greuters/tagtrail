@@ -51,7 +51,7 @@ Installation from source
 
 On Ubuntu
 
-* sudo apt install git python3 python3-tk python3-venv
+* sudo apt install git python3 python3-tk python3-venv tesseract-ocr libtesseract-dev libleptonica-dev pkg-config
 
 * cd tagtrail
 
@@ -61,16 +61,16 @@ On Ubuntu
 
 * pip install --upgrade pip && pip install -r requirements.txt
 
-* install tesseract from https://github.com/tesseract-ocr/tesseract
-  
+* python -m tests.scenario_medium
+
 On Windows
 
 * install git from https://git-scm.com/download/win
 
-* install python from https://www.python.org/downloads/windows/
+* install python3 from https://www.python.org/downloads/windows/
 
-* install Microsoft Visual C++ 14.0 and if appropriate Windows 10 SDK from https://visualstudio.microsoft.com/de/downloads
-
-* install tesseract from https://github.com/tesseract-ocr/tesseract and add its location (e.g. C:\\Program Files\\Tesseract-OCR) to the PATH system environment variable 
+* install tesserocr: https://pypi.org/project/tesserocr/
 
 * pip install -r requirements.txt
+
+* python -m tests.scenario_medium

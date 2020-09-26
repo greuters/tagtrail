@@ -1,6 +1,6 @@
 opencv-python
-pytesseract
-python-Levenshtein
+tesserocr
+python-Levenshtein-wheels
 python-slugify
 keyrings.cryptfile
 requests

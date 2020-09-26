@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;ZUCKER VOLLROHR;1
 unitBox;1KG;1
 priceBox;4.80 CHF;1
-pageNumberBox;BLATT 1;1.0
+sheetNumberBox;BLATT 1;1.0
 dataBox0(0,0);JOY;1.0
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0

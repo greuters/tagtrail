@@ -1,7 +1,7 @@
 Previous Quantity Date;2020-10-25
 Expected Quantity Date;
 Inventory Quantity Date;
-Name;Amount;Unit [kg, g, l, cl, ml];Purchase Price;Previous Quantity;Added Quantity;Sold Quantity;Expected Quantity;Inventory Quantity;Pages to print;Comment;Eaternity Name;Origin [country];Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish];Transport [air, ground];Conservation [fresh, frozen, dried, conserved, canned, boiled-down];gCo2e
+Name;Amount;Unit [kg, g, l, cl, ml];Purchase Price;Previous Quantity;Added Quantity;Sold Quantity;Expected Quantity;Inventory Quantity;Sheets to print;Comment;Eaternity Name;Origin [country];Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish];Transport [air, ground];Conservation [fresh, frozen, dried, conserved, canned, boiled-down];gCo2e
 Aceto Balsamico;500;ml;7.7;9;;;;;;;essig;italien;organic;ground;canned;491
 Allzweckreiniger;1;l;5.2;6;;;;;;;putzmittel;niederlande;;ground;;979
 Apfelringli;100;g;3.6;0;;;;;;;apfel;schweiz;organic;ground;dried;92

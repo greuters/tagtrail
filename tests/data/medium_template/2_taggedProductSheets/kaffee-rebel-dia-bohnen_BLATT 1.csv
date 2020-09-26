@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;KAFFEE REBEL DIA (BOHNEN);1
 unitBox;1KG;1
 priceBox;19.00 CHF;1
-pageNumberBox;BLATT 1;1
+sheetNumberBox;BLATT 1;1
 dataBox0(0,0);KATR;1
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0

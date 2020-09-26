@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;KÜRBISKERNE;1
 unitBox;200G;1.0
 priceBox;4.40 CHF;1
-pageNumberBox;BLATT 1;1
+sheetNumberBox;BLATT 1;1
 dataBox0(0,0);DGL;1
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0

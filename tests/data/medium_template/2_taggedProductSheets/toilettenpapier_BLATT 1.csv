@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;TOILETTENPAPIER;1.0
 unitBox;1PACKUNG;1.0
 priceBox;4.55 CHF;1.0
-pageNumberBox;BLATT 1;1.0
+sheetNumberBox;BLATT 1;1.0
 dataBox0(0,0);DGL;1.0
 dataBox1(0,1);RER;1.0
 dataBox2(0,2);;1

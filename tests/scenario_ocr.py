@@ -9,13 +9,15 @@ import unittest
 import configparser
 import shutil
 import os
+import cProfile
+import re
 
 class OcrTest(unittest.TestCase):
     """ Tests of tagtrail_ocr """
-    minSheetPrecision = 0.9
-    minSheetRecall = 0.6
-    minAveragePrecision = 0.95
-    minAverageRecall = 0.8
+    minSheetPrecision = 0.95
+    minSheetRecall = 0.78
+    minAveragePrecision = 0.99
+    minAverageRecall = 0.93
 
 
     def setUp(self):
@@ -66,8 +68,8 @@ class OcrTest(unittest.TestCase):
 
     def processScan(self, scanFilename, precisions, recalls):
         model = tagtrail_ocr.Model(self.tmpDir, self.testScanDir,
-                self.testOutputDir, [scanFilename], self.db,
-                helpers.Log(helpers.Log.LEVEL_ERROR))
+                self.testOutputDir, [scanFilename], self.db, False,
+                self.log)
         model.prepareScanSplitting()
 
         self.assertTrue(os.path.exists(f'{self.testScanDir}{scanFilename}'))
@@ -85,29 +87,29 @@ class OcrTest(unittest.TestCase):
 
         model.splitScan(scanFilename, sheetCoordinates, rotationAngle)
 
-        model.prepareTagRecognition()
-        for idx, sheet in enumerate(model.sheets):
-            expectedSheetName = self.scanConfig.get(scanFilename,
-                    f'sheet{idx}_name')
-            with self.subTest(expectedSheetName = expectedSheetName,
-                    sheetIdx = idx):
-                model.recognizeTags(sheet)
-                if expectedSheetName == '':
-                    self.assertTrue(sheet.isEmpty,
-                        f'{scanFilename}, sheet{idx} ' +
-                        'wrongly classified as not being empty')
-                else:
-                    self.assertFalse(sheet.isEmpty,
-                        f'{scanFilename}, sheet{idx} ' +
-                        'wrongly classified as being empty')
-                    precision, recall = self.computePerformanceMetrics(
-                            expectedSheetName, sheet.name)
-                    precisions.append(precision)
-                    recalls.append(recall)
-                    self.assertGreaterEqual(precision, self.minSheetPrecision,
-                            'sheet precision not high enough')
-                    self.assertGreaterEqual(recall, self.minSheetRecall,
-                            'sheet recall not high enough')
+        with model:
+            for idx, sheet in enumerate(model.sheetRegions):
+                expectedSheetName = self.scanConfig.get(scanFilename,
+                        f'sheet{idx}_name')
+                with self.subTest(expectedSheetName = expectedSheetName,
+                        sheetIdx = idx):
+                    model.recognizeTags(sheet)
+                    if expectedSheetName == '':
+                        self.assertTrue(sheet.isEmpty,
+                            f'{scanFilename}, sheet{idx} ' +
+                            'wrongly classified as not being empty')
+                    else:
+                        self.assertFalse(sheet.isEmpty,
+                            f'{scanFilename}, sheet{idx} ' +
+                            'wrongly classified as being empty')
+                        precision, recall = self.computePerformanceMetrics(
+                                expectedSheetName, sheet.name)
+                        precisions.append(precision)
+                        recalls.append(recall)
+                        self.assertGreaterEqual(precision, self.minSheetPrecision,
+                                'sheet precision not high enough')
+                        self.assertGreaterEqual(recall, self.minSheetRecall,
+                                'sheet recall not high enough')
 
     def computePerformanceMetrics(self, templateSheetName, testedSheetName):
         templateSheet = sheets.ProductSheet(log = self.log)
@@ -138,4 +140,5 @@ class OcrTest(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    #unittest.main()
+    cProfile.run('unittest.main()', 'restats')

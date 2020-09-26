@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;GESCHIRRSPÜLMITTEL;1
 unitBox;1L;1
 priceBox;4.95 CHF;1
-pageNumberBox;BLATT 1;1
+sheetNumberBox;BLATT 1;1
 dataBox0(0,0);MUH;1
 dataBox1(0,1);IRIA;1
 dataBox2(0,2);;1.0

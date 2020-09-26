@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;ERDNÜSSE GESALZEN + GERÖSTET;1
 unitBox;200G;1.0
 priceBox;1.55 CHF;1
-pageNumberBox;BLATT 1;1.0
+sheetNumberBox;BLATT 1;1.0
 dataBox0(0,0);KATR;1.0
 dataBox1(0,1);KRIS;1.0
 dataBox2(0,2);HEL;1.0

@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;KAFFEE REBEL DIA (GEMAHLEN);1
 unitBox;500G;1.0
 priceBox;10.55 CHF;1
-pageNumberBox;BLATT 1;1.0
+sheetNumberBox;BLATT 1;1.0
 dataBox0(0,0);MASM;1
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0

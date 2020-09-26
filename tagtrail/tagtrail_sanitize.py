@@ -41,11 +41,11 @@ class InputSheet(ProductSheet):
         self.originalPath = path
 
         # prepare choices
-        maxNumPages = database.config.getint('tagtrail_gen',
-                'max_num_pages_per_product')
-        pageNumberString = database.config.get('tagtrail_gen', 'page_number_string')
-        pageNumbers = [pageNumberString.format(pageNumber=str(n))
-                            for n in range(1, maxNumPages+1)]
+        maxNumSheets = database.config.getint('tagtrail_gen',
+                'max_num_sheets_per_product')
+        sheetNumberString = database.config.get('tagtrail_gen', 'sheet_number_string')
+        sheetNumbers = [sheetNumberString.format(sheetNumber=str(n))
+                            for n in range(1, maxNumSheets+1)]
         currency = database.config.get('general', 'currency')
         names, units, prices = map(set, zip(*[
             (p.description.upper(),
@@ -64,14 +64,17 @@ class InputSheet(ProductSheet):
                 choices = units
             elif box.name == "priceBox":
                 choices = prices
-            elif box.name == "pageNumberBox":
-                choices = pageNumbers
+            elif box.name == "sheetNumberBox":
+                choices = sheetNumbers
             elif box.name.find("dataBox") != -1:
                 choices = list(sorted(database.members.keys()))
             else:
                 continue
 
-            # TODO make this concept more clear
+            # TODO make this concept more clear or switch to a better system
+            # (use boxes from already accounted sheets to check, make sure that
+            # e.g. 100 boxes are checked at least, regularly distributed among
+            # sheets)
             # prepare for OCR validation
             # 1. select some boxes with high confidence
             # 2. let the user correct them
@@ -110,7 +113,7 @@ class InputSheet(ProductSheet):
             if event.widget.enabled:
                 event.widget.box.text = event.widget.text
                 event.widget.box.confidence = event.widget.confidence
-                if event.widget.box.name in ['nameBox', 'pageNumberBox']:
+                if event.widget.box.name in ['nameBox', 'sheetNumberBox']:
                     self.loadTagsFromPreviousAccounting()
 
             shift_pressed = (event.state & 0x1)
@@ -133,14 +136,14 @@ class InputSheet(ProductSheet):
 
     def loadTagsFromPreviousAccounting(self):
         """
-        Load tags from last accounting, if name and page of this sheet
+        Load tags from last accounting if name and sheetNumber of this sheet
         are clear and the sheet already existed.
         """
         if self.boxByName('nameBox').confidence != 1:
             return
-        if  self.boxByName('pageNumberBox').confidence != 1:
+        if  self.boxByName('sheetNumberBox').confidence != 1:
             return
-        accountedSheetPath = f'{self.accountedProductsPath}{self.productId()}_{self.pageNumber}.csv'
+        accountedSheetPath = f'{self.accountedProductsPath}{self.productId()}_{self.sheetNumber}.csv'
         self._log.debug(f'loading previous tags from {accountedSheetPath}')
         if not os.path.exists(accountedSheetPath):
             return
@@ -153,8 +156,8 @@ class InputSheet(ProductSheet):
                     f'{accountedSheetPath} has boxes with confidence != 1')
         if accountedSheet.productId() != self.productId():
             raise ValueError(f'{accountedSheetPath} has wrong productId ({accountedSheet.productId()} != {self.productId()})')
-        if accountedSheet.pageNumber != self.pageNumber:
-            raise ValueError(f'{accountedSheetPath} has wrong pageNumber')
+        if accountedSheet.sheetNumber != self.sheetNumber:
+            raise ValueError(f'{accountedSheetPath} has wrong sheetNumber')
 
         for accountedBox in accountedSheet.boxes():
             self._log.debug(f'{accountedBox.name} : {accountedBox.text}')
@@ -174,8 +177,8 @@ class InputSheet(ProductSheet):
     def nextUnclearBox(self, selectedBox):
         if self.boxByName('nameBox').confidence != 1:
             return self.boxByName('nameBox')
-        if  self.boxByName('pageNumberBox').confidence != 1:
-            return self.boxByName('pageNumberBox')
+        if  self.boxByName('sheetNumberBox').confidence != 1:
+            return self.boxByName('sheetNumberBox')
         sortedBoxes = self.sortedBoxes()
         indicesOfUnclearBoxes = [idx for idx, b in enumerate(sortedBoxes) if b.confidence<1]
         if not indicesOfUnclearBoxes:
@@ -247,9 +250,9 @@ class Gui:
 
     def nextProductToSanitize(self):
         # assuming each product is stored in productPath as a triple of
-        # {productName}_{page}.csv,
-        # {productName}_{page}_{originalScanPostfix},
-        # {productName}_{page}_{normalizedScanPostfix}
+        # {productName}_{sheet}.csv,
+        # {productName}_{sheet}_{originalScanPostfix},
+        # {productName}_{sheet}_{normalizedScanPostfix}
         csvFiles = None
         for (_, _, fileNames) in os.walk(self.productPath):
             csvFiles = sorted(filter(lambda f: os.path.splitext(f)[1] ==
@@ -323,8 +326,8 @@ class Gui:
             raise ValueError('Unable to store sheet, amountAndUnit is missing')
         if not self.inputSheet.grossSalesPrice:
             raise ValueError('Unable to store sheet, grossSalesPrice is missing')
-        if not self.inputSheet.pageNumber:
-            raise ValueError('Unable to store sheet, pageNumber is missing')
+        if not self.inputSheet.sheetNumber:
+            raise ValueError('Unable to store sheet, sheetNumber is missing')
         oldCsvPath = self.csvPath
         oldOriginalScanPath = f'{oldCsvPath}{self.originalScanPostfix}'
         oldNormalizedScanPath = f'{oldCsvPath}{self.normalizedScanPostfix}'

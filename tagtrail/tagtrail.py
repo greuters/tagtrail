@@ -50,7 +50,7 @@ def main(accountingDir, accountingDate, accessCode, accountantName, password):
     # 4. products.csv:
     #    => need description, unit (validate, if not able to validate, warn
     #    user but ok. gCo2e cannot be calculated without), netprice
-    #    => numUnits (=> mandatory for tagtrail_gen, determines how many pages
+    #    => numUnits (=> mandatory for tagtrail_gen, determines how many sheets
     #    are created); also needed for inventory => update automagically, plus
     #    have one col for new inserted units
     #    => eaternity mandatory: warning wenn nicht gefüllt oder nicht zu

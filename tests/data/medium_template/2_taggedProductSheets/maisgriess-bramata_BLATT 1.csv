@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;MAISGRIESS BRAMATA;1.0
 unitBox;500G;1.0
 priceBox;3.90 CHF;1.0
-pageNumberBox;BLATT 1;1.0
+sheetNumberBox;BLATT 1;1.0
 dataBox0(0,0);MMJQ;1.0
 dataBox1(0,1);;1
 dataBox2(0,2);;1.0

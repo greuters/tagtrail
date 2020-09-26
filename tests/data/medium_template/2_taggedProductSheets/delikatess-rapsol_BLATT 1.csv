@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;DELIKATESS RAPSÖL;1
 unitBox;500ML;1
 priceBox;5.35 CHF;1
-pageNumberBox;BLATT 1;1.0
+sheetNumberBox;BLATT 1;1.0
 dataBox0(0,0);FAME;1.0
 dataBox1(0,1);;1
 dataBox2(0,2);;1.0

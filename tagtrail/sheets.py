@@ -32,10 +32,10 @@ random.seed()
 
 class ProductSheet(ABC):
     # Sheet Dimensions
-    topPageFrame = 20 # mm
-    bottomPageFrame = 15 # mm
-    leftPageFrame = 15 # mm
-    rightPageFrame = 15 # mm
+    topSheetFrame = 20 # mm
+    bottomSheetFrame = 15 # mm
+    leftSheetFrame = 15 # mm
+    rightSheetFrame = 15 # mm
     topMargin = 25 # mm
     leftMargin = 20 # mm
     xRes = 2480 # px
@@ -48,7 +48,7 @@ class ProductSheet(ABC):
     nameW = 85
     unitW = 30
     priceW = 30
-    pageNumberW = 25
+    sheetNumberW = 25
     dataBgColors = [[220, 220, 220], [190, 190, 190]]
     dataColCount = 5
     dataRowCount = 15
@@ -60,10 +60,10 @@ class ProductSheet(ABC):
         return self.dataColCount*self.dataRowCount
 
     @classmethod
-    def getPageFramePts(self):
-        return (self.pointFromMM(self.leftPageFrame, self.topPageFrame),
-                self.pointFromMM(self.sheetW-self.rightPageFrame,
-                    self.sheetH-self.bottomPageFrame))
+    def getSheetFramePts(self):
+        return (self.pointFromMM(self.leftSheetFrame, self.topSheetFrame),
+                self.pointFromMM(self.sheetW-self.rightSheetFrame,
+                    self.sheetH-self.bottomSheetFrame))
 
     @classmethod
     def pointFromMM(self, u, v):
@@ -78,8 +78,8 @@ class ProductSheet(ABC):
         self._box_to_pos={}
         self._pos_to_box={}
 
-        # Frame around page (for easier OCR)
-        p0, p1 = self.getPageFramePts()
+        # Frame around sheet (for easier OCR)
+        p0, p1 = self.getSheetFramePts()
         self.__boxes["frameBox"] = Box("frameBox", p0, p1, (255,255,255), lineW=20)
 
         # Header
@@ -110,9 +110,9 @@ class ProductSheet(ABC):
                 self.dataBgColors[1]), 0, 2)
 
         u0 = u1
-        u1 = u0+self.pageNumberW
+        u1 = u0+self.sheetNumberW
         self.addBox(Box(
-                "pageNumberBox",
+                "sheetNumberBox",
                 self.pointFromMM(u0, v0),
                 self.pointFromMM(u1, v1),
                 self.dataBgColors[1]), 0, 3)
@@ -177,13 +177,13 @@ class ProductSheet(ABC):
         self.__boxes['priceBox'].confidence = 1
 
     @property
-    def pageNumber(self):
-        return self.__boxes['pageNumberBox'].text
+    def sheetNumber(self):
+        return self.__boxes['sheetNumberBox'].text
 
-    @pageNumber.setter
-    def pageNumber(self, pageNumber):
-        self.__boxes['pageNumberBox'].text = pageNumber
-        self.__boxes['pageNumberBox'].confidence = 1
+    @sheetNumber.setter
+    def sheetNumber(self, sheetNumber):
+        self.__boxes['sheetNumberBox'].text = sheetNumber
+        self.__boxes['sheetNumberBox'].confidence = 1
 
     def addBox(self, box, row, col):
         self.__boxes[box.name]=box
@@ -264,7 +264,7 @@ class ProductSheet(ABC):
                     continue
                 elif boxName.find("dataBox") != -1:
                     numDataBoxes += 1
-                elif boxName not in ("nameBox", "unitBox", "priceBox", "pageNumberBox"):
+                elif boxName not in ("nameBox", "unitBox", "priceBox", "sheetNumberBox"):
                     self._log.warn("skipped unexpected box, row = {}", row)
                     continue
                 self.__boxes[boxName].name = boxName
@@ -272,7 +272,7 @@ class ProductSheet(ABC):
                 self.__boxes[boxName].confidence = confidence
 
     def fileName(self):
-        return f'{self.productId()}_{self.pageNumber}.csv'
+        return f'{self.productId()}_{self.sheetNumber}.csv'
 
     def store(self, path):
         filePath = f'{path}{self.fileName()}'

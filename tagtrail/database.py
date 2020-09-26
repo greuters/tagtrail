@@ -331,7 +331,7 @@ class Product(DatabaseObject):
             inventoryQuantity = None,
             addedQuantity = None,
             soldQuantity = None,
-            pagesToPrint = None,
+            sheetsToPrint = None,
             eaternityName = None,
             origin = None,
             production = None,
@@ -351,11 +351,11 @@ class Product(DatabaseObject):
             raise TypeError(f'marginPercentage is not a float, {marginPercentage}')
         if inventoryQuantity and not type(inventoryQuantity) is int:
             raise TypeError(f'inventoryQuantity is not an integer, {inventoryQuantity}')
-        if pagesToPrint:
-            if type(pagesToPrint) is str:
-                pagesToPrint = [pagesToPrint]
-            if not type(pagesToPrint) is list:
-                raise TypeError(f'pagesToPrint is not a list, {pagesToPrint}')
+        if sheetsToPrint:
+            if type(sheetsToPrint) is str:
+                sheetsToPrint = [sheetsToPrint]
+            if not type(sheetsToPrint) is list:
+                raise TypeError(f'sheetsToPrint is not a list, {sheetsToPrint}')
         if eaternityName and not type(eaternityName) is str:
             raise TypeError(f'eaternityName is not a string, {eaternityName}')
         if origin and not type(origin) is str:
@@ -384,7 +384,7 @@ class Product(DatabaseObject):
         self.inventoryQuantity = inventoryQuantity
         self.addedQuantity = addedQuantity
         self.soldQuantity = soldQuantity
-        self.pagesToPrint = pagesToPrint
+        self.sheetsToPrint = sheetsToPrint
         self.eaternityName = eaternityName
         self.origin = origin
         self.production = production
@@ -479,7 +479,7 @@ class ProductDict(DatabaseDict):
                 soldQuantity  = 0 if not rowValues[6] else int(rowValues[6]),
                 # not reading expectedQuantity
                 inventoryQuantity = None if not rowValues[8] else int(rowValues[8]),
-                pagesToPrint = rowValues[9],
+                sheetsToPrint = rowValues[9],
                 # Comment is not used within tagtrail
                 eaternityName = rowValues[11],
                 origin = rowValues[12],
@@ -503,7 +503,7 @@ class ProductDict(DatabaseDict):
                 '' if p.soldQuantity is None else str(p.soldQuantity),
                 '' if p.expectedQuantity is None else str(p.expectedQuantity),
                 '' if p.inventoryQuantity is None else str(p.inventoryQuantity),
-                '' if p.pagesToPrint is None else ','.join(p.pagesToPrint),
+                '' if p.sheetsToPrint is None else ','.join(p.sheetsToPrint),
                 '', # Comment is not used within tagtrail
                 p.eaternityName,
                 p.origin,
@@ -535,7 +535,7 @@ class ProductDict(DatabaseDict):
             else:
                 newProducts[productId].previousQuantity = product.inventoryQuantity
             assert(newProducts[productId].previousQuantity is not None)
-            newProducts[productId].pagesToPrint = None
+            newProducts[productId].sheetsToPrint = None
             newProducts[productId].inventoryQuantity = None
             newProducts[productId].addedQuantity = None
             newProducts[productId].soldQuantity = None

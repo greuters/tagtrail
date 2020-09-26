@@ -3,7 +3,7 @@ frameBox;;1
 nameBox;ZUCKER KRISTALL-ROHROHR;1
 unitBox;1KG;1
 priceBox;3.90 CHF;1
-pageNumberBox;BLATT 2;1
+sheetNumberBox;BLATT 2;1
 dataBox0(0,0);MAMA;1.0
 dataBox1(0,1);;1
 dataBox2(0,2);;1.0

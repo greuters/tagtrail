@@ -55,11 +55,11 @@ class TagCollector(ABC):
         self.accountingDate = accountingDate
         self.accountedSheets = self.loadProductSheets(self.accountedProductsPath)
         self.currentSheets = self.loadProductSheets(self.currentProductsToAccountPath)
-        self.checkPageConsistency()
+        self.checkSheetConsistency()
         self.informAboutPriceChanges()
         self.newTagsPerProduct = self.collectNewTagsPerProduct()
 
-    def currentProductPageNames(self):
+    def currentProductSheetNames(self):
         return [sheet.fileName for sheet in self.currentSheets.values()]
 
     def taggedGrossSalesPrice(self, productId):
@@ -83,7 +83,7 @@ class TagCollector(ABC):
                 if pId == productId]
         if amountAndUnits:
             if len(set(amountAndUnits)) != 1:
-                raise ValueError(f'{productId} pages have different ' +
+                raise ValueError(f'{productId} sheets have different ' +
                         f'amounts, {amountAndUnits}')
             return amountAndUnits[0]
         else:
@@ -99,8 +99,8 @@ class TagCollector(ABC):
         else:
             return 0
 
-    def newTags(self, productId, pageNumber):
-        key = (productId, pageNumber)
+    def newTags(self, productId, sheetNumber):
+        key = (productId, sheetNumber)
         accountedTags = self.accountedSheets[key].confidentTags()
         currentTags = self.currentSheets[key].confidentTags()
         assert(len(accountedTags) == len(currentTags))
@@ -118,11 +118,11 @@ class TagCollector(ABC):
                 'current accounting.\n\n' + \
                 'This situation indicates a tagging error and has ' + \
                 'to be resolved manually by correcting this file:\n\n' + \
-                f'{self.currentProductsToAccountPath}{productId}_{pageNumber}.csv\n\n' + \
+                f'{self.currentProductsToAccountPath}{productId}_{sheetNumber}.csv\n\n' + \
                 'Offending data boxes:\n\n' + \
                 f'{offendingDataboxes}\n\n' + \
                 'Corresponding file from last accounting:\n\n' + \
-                f'{self.accountedProductsPath}{productId}_{pageNumber}.csv')
+                f'{self.accountedProductsPath}{productId}_{sheetNumber}.csv')
 
         return list(map(lambda idx: currentTags[idx], changedIndices))
 
@@ -145,10 +145,10 @@ class TagCollector(ABC):
             self.log.debug(f'newTags[{key}]={newTags[key]}')
 
         newTagsPerProduct = {}
-        for productId, pageNumber in self.currentSheets.keys():
+        for productId, sheetNumber in self.currentSheets.keys():
             if productId not in newTagsPerProduct:
                 newTagsPerProduct[productId] = []
-            newTagsPerProduct[productId] += newTags[productId, pageNumber]
+            newTagsPerProduct[productId] += newTags[productId, sheetNumber]
         self.log.debug(f'newTagsPerProduct: {newTagsPerProduct.items()}')
         return newTagsPerProduct
 
@@ -160,8 +160,8 @@ class TagCollector(ABC):
 
         productSheets = {}
         for fileName in csvFileNames:
-            productId, pageNumber = os.path.splitext(fileName)[0].split('_')
-            self.log.debug(f'productId={productId}, pageNumber={pageNumber}')
+            productId, sheetNumber = os.path.splitext(fileName)[0].split('_')
+            self.log.debug(f'productId={productId}, sheetNumber={sheetNumber}')
             sheet = ProductSheet()
             sheet.load(path+fileName)
             sheet.fileName = fileName
@@ -171,22 +171,22 @@ class TagCollector(ABC):
             if sheet.productId() != productId:
                 raise ValueError(f'{path+fileName} is invalid.\n' +
                     '{sheet.productId()} != {productId}')
-            if sheet.pageNumber != pageNumber:
+            if sheet.sheetNumber != sheetNumber:
                 raise ValueError(f'{path+fileName} is invalid.\n' +
-                    '{sheet.pageNumber()} != {pageNumber}')
+                    '{sheet.sheetNumber()} != {sheetNumber}')
             if sheet.unconfidentTags():
                 raise ValueError(
                     f'{path+fileName} is not properly sanitized.\n' +
                     'Run tagtrail_sanitize before tagtrail_account!')
-            if (productId, pageNumber) in productSheets:
+            if (productId, sheetNumber) in productSheets:
                 raise ValueError(
-                    f'{(productId, pageNumber)} exists more than once')
-            productSheets[(productId, pageNumber)] = sheet
+                    f'{(productId, sheetNumber)} exists more than once')
+            productSheets[(productId, sheetNumber)] = sheet
         return productSheets
 
-    def checkPageConsistency(self):
+    def checkSheetConsistency(self):
         """
-        All pages of one product (current and already accounted ones) must have
+        All sheets of one product (current and already accounted ones) must have
         the same amount and price. Check and abort if this is not the case.
         """
         for productId in self.db.products.keys():
@@ -198,7 +198,7 @@ class TagCollector(ABC):
             if (accountedPrice is not None
                     and currentPrice is not None
                     and accountedPrice != currentPrice):
-                raise ValueError(f'{productId}: already accounted pages have '
+                raise ValueError(f'{productId}: already accounted sheets have '
                         + 'another price then current ones'
                         + f'({accountedPrice} != {currentPrice})')
 
@@ -211,7 +211,7 @@ class TagCollector(ABC):
             if (accountedAmount is not None
                     and currentAmount is not None
                     and accountedAmount != currentAmount):
-                raise ValueError(f'{productId}: already accounted pages have '
+                raise ValueError(f'{productId}: already accounted sheets have '
                         + 'another amount then current ones'
                         + f'({accountedAmount} != {currentAmount})')
 
@@ -245,14 +245,14 @@ class Gui:
             messagebox.showerror('Abort Accounting',
                 """Inventory (when you check the actually remaining products)
                 must be done on the same day as the accounting (when you scan
-                the product pages, download the payments)
+                the product sheets, download the payments)
                 inventoryQuantityDate != accountingDate ({inventoryQuantityDate} != {accountingDate})
                 To do a valid accounting, either redo the inventory or the accounting""")
 
-        accountedProducts = [fileName.split('_')[0] for fileName in self.db.productPageNames]
+        accountedProducts = [fileName.split('_')[0] for fileName in self.db.productSheetNames]
         accountedProductsOverview = gui_components.Checkbar(self.root,
-                'Accounted pages:',
-                self.db.productPageNames, False)
+                'Accounted sheets:',
+                self.db.productSheetNames, False)
         accountedProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         accountedProductsOverview.config(relief=tkinter.GROOVE, bd=2)
 
@@ -260,7 +260,7 @@ class Gui:
             p.id for p in self.db.products.values()
             if p.id not in accountedProducts and p.expectedQuantity <= 0
             ])
-        emptiedProductsOverview = gui_components.Checkbar(self.root, 'Emptied pages:', emptiedProducts, False)
+        emptiedProductsOverview = gui_components.Checkbar(self.root, 'Emptied sheets:', emptiedProducts, False)
         emptiedProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         emptiedProductsOverview.config(relief=tkinter.GROOVE, bd=2)
 
@@ -368,7 +368,7 @@ class Gui:
         for csvFile in inputAccountedProductCsvFiles:
             dst = f'{self.nextAccountingDataPath}0_input/accounted_products/'
             scanFile = csvFile + self.scanPostfix
-            if csvFile in self.db.productPageNames:
+            if csvFile in self.db.productSheetNames:
                 assert(os.path.isfile(f'{dst}{csvFile}'))
                 assert(os.path.isfile(f'{dst}{scanFile}'))
                 continue # newer version of this file already copied
@@ -419,7 +419,7 @@ class EnrichedDatabase(database.Database):
             raise ValueError(f'invalid memberIds in correctionTransactions: {unknownMembers}')
         self.paymentTransactions = self.loadPaymentTransactions()
         self.bills = self.createBills(tagCollector)
-        self.productPageNames = tagCollector.currentProductPageNames()
+        self.productSheetNames = tagCollector.currentProductSheetNames()
         self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
         self.purchaseTransactions = self.createPurchaseTransactions()
         self.accounts = database.MemberAccountDict(self.config,

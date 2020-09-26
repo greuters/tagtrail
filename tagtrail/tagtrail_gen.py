@@ -28,7 +28,6 @@
 import argparse
 import cv2 as cv
 import slugify
-import gui_components
 import math
 import tkinter
 from tkinter import messagebox
@@ -39,6 +38,7 @@ import shutil
 from . import helpers
 from .database import Database
 from .sheets import ProductSheet
+from . import gui_components
 
 class Gui:
     scanPostfix = '_normalized_scan.jpg'
@@ -64,35 +64,35 @@ class Gui:
 
         self.db = Database(f'{accountingDataPath}0_input/')
 
-        self.accountedPageFileNames= list(sorted(
+        self.accountedSheetFileNames= list(sorted(
             map(lambda f: os.path.splitext(f)[0],
             filter(lambda f: os.path.splitext(f)[1] == '.csv',
             next(os.walk(f'{accountingDataPath}0_input/accounted_products'))[2]))))
-        self.accountedProductIds = set([self.productIdFromPageFileName(pageFileName) for
-            pageFileName in self.accountedPageFileNames])
-        self.initializePageLists()
+        self.accountedProductIds = set([self.productIdFromSheetFileName(sheetFileName) for
+            sheetFileName in self.accountedSheetFileNames])
+        self.initializeSheetLists()
 
         overviewToBePrinted = gui_components.Checkbar(self.root,
-                'New accounted pages to be generated:',
-                self.pageFileNamesToBePrintedNew, False)
+                'New accounted sheets to be generated:',
+                self.sheetFileNamesToBePrintedNew, False)
         overviewToBePrinted.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         overviewToBePrinted.config(relief=tkinter.GROOVE, bd=2)
 
         overviewToBeReplaced = gui_components.Checkbar(self.root,
-                'Accounted pages to be replaced (make sure to replace them physically!):',
-                self.pageFileNamesToBeReplaced, False)
+                'Accounted sheets to be replaced (make sure to replace them physically!):',
+                self.sheetFileNamesToBeReplaced, False)
         overviewToBeReplaced.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         overviewToBeReplaced.config(relief=tkinter.GROOVE, bd=2)
 
         overviewToBeRemoved = gui_components.Checkbar(self.root,
-                'Accounted pages to be removed (make sure to remove them physically!):',
-                self.pageFileNamesToBeRemoved, False)
+                'Accounted sheets to be removed (make sure to remove them physically!):',
+                self.sheetFileNamesToBeRemoved, False)
         overviewToBeRemoved.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         overviewToBeRemoved.config(relief=tkinter.GROOVE, bd=2)
 
         overviewToBeKept = gui_components.Checkbar(self.root,
-                'Accounted pages to be kept - these should also be around physically:',
-                self.pageFileNamesToBeKept, False)
+                'Accounted sheets to be kept - these should also be around physically:',
+                self.sheetFileNamesToBeKept, False)
         overviewToBeKept.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         overviewToBeKept.config(relief=tkinter.GROOVE, bd=2)
 
@@ -125,68 +125,68 @@ class Gui:
         finally:
             self.root.quit()
 
-    def initializePageLists(self):
-        self.pageFileNamesToBePrintedNew = []
-        self.pageFileNamesToBeReplaced = []
-        self.pageFileNamesToBeKept = []
-        self.pageFileNamesToBeRemoved = []
+    def initializeSheetLists(self):
+        self.sheetFileNamesToBePrintedNew = []
+        self.sheetFileNamesToBeReplaced = []
+        self.sheetFileNamesToBeKept = []
+        self.sheetFileNamesToBeRemoved = []
         self.missingProductIds = []
 
-        maxNumPages = self.db.config.getint('tagtrail_gen',
-                'max_num_pages_per_product')
+        maxNumSheets = self.db.config.getint('tagtrail_gen',
+                'max_num_sheets_per_product')
         for productId, product in self.db.products.items():
-            if not product.pagesToPrint:
+            if not product.sheetsToPrint:
                 if productId in self.accountedProductIds:
-                    for pageFileName in self.accountedPageFileNames:
-                        if self.productIdFromPageFileName(pageFileName) != productId:
+                    for sheetFileName in self.accountedSheetFileNames:
+                        if self.productIdFromSheetFileName(sheetFileName) != productId:
                             continue
                         if product.expectedQuantity <= 0:
-                            self.pageFileNamesToBeRemoved.append(pageFileName)
+                            self.sheetFileNamesToBeRemoved.append(sheetFileName)
                         else:
-                            self.pageFileNamesToBeKept.append(pageFileName)
+                            self.sheetFileNamesToBeKept.append(sheetFileName)
                 elif product.expectedQuantity > 0:
                     self.missingProductIds.append(productId)
-            elif len(product.pagesToPrint) == 1 and product.pagesToPrint[0] == 'all':
+            elif len(product.sheetsToPrint) == 1 and product.sheetsToPrint[0] == 'all':
                 # one based, as this goes out to customers
-                numPages = math.ceil(product.expectedQuantity /
+                numSheets = math.ceil(product.expectedQuantity /
                         ProductSheet.maxQuantity())
-                if numPages > maxNumPages:
+                if numSheets > maxNumSheets:
                     raise ValueError(f'Quantity of {product.id} is too high, ' +
-                            f'would need {numPages}, max {maxNumPages} are allowed')
-                for pageNumber in range(1, numPages+1):
-                    self.addPageToBeGenerated(product, pageNumber)
+                            f'would need {numSheets}, max {maxNumSheets} are allowed')
+                for sheetNumber in range(1, numSheets+1):
+                    self.addSheetToBeGenerated(product, sheetNumber)
 
-                # remove additional accountedPageFileNames for this product
-                for pageFileName in self.accountedPageFileNames:
-                    if (self.productIdFromPageFileName(pageFileName) == productId and
-                            not pageFileName in self.pageFileNamesToBeReplaced):
-                        self.pageFileNamesToBeRemoved.append(pageFileName)
+                # remove additional accountedSheetFileNames for this product
+                for sheetFileName in self.accountedSheetFileNames:
+                    if (self.productIdFromSheetFileName(sheetFileName) == productId and
+                            not sheetFileName in self.sheetFileNamesToBeReplaced):
+                        self.sheetFileNamesToBeRemoved.append(sheetFileName)
             else:
-                for pageNumberStr in product.pagesToPrint:
+                for sheetNumberStr in product.sheetsToPrint:
                     try:
-                        pageNumber = int(pageNumberStr)
+                        sheetNumber = int(sheetNumberStr)
                     except:
-                        raise ValueError('Page numbers to print must be ' +
+                        raise ValueError('Sheet numbers to print must be ' +
                                 'one of "", "all" or a list of integers;' +
-                                f'{product.pagesToPrint} is invalid')
-                    if pageNumber > maxNumPages:
-                        raise ValueError(f'Page number {pageNumber} of {product.id} is too high, ' +
-                                f'max {maxNumPages} are allowed')
-                    self.addPageToBeGenerated(product, pageNumber)
+                                f'{product.sheetsToPrint} is invalid')
+                    if sheetNumber > maxNumSheets:
+                        raise ValueError(f'Sheet number {sheetNumber} of {product.id} is too high, ' +
+                                f'max {maxNumSheets} are allowed')
+                    self.addSheetToBeGenerated(product, sheetNumber)
 
-                # keep additional accountedPageFileNames for this product
-                for pageFileName in self.accountedPageFileNames:
-                    if (self.productIdFromPageFileName(pageFileName) == productId and
-                            not pageFileName in self.pageFileNamesToBeReplaced):
-                        self.pageFileNamesToBeKept.append(pageFileName)
+                # keep additional accountedSheetFileNames for this product
+                for sheetFileName in self.accountedSheetFileNames:
+                    if (self.productIdFromSheetFileName(sheetFileName) == productId and
+                            not sheetFileName in self.sheetFileNamesToBeReplaced):
+                        self.sheetFileNamesToBeKept.append(sheetFileName)
 
-    def addPageToBeGenerated(self, product, pageNumber):
-        pageFileName = product.id + '_' + self.db.config.get('tagtrail_gen',
-                'page_number_string').format(pageNumber=str(pageNumber)).upper()
-        if pageFileName in self.accountedPageFileNames:
-            self.pageFileNamesToBeReplaced.append(pageFileName)
+    def addSheetToBeGenerated(self, product, sheetNumber):
+        sheetFileName = product.id + '_' + self.db.config.get('tagtrail_gen',
+                'sheet_number_string').format(sheetNumber=str(sheetNumber)).upper()
+        if sheetFileName in self.accountedSheetFileNames:
+            self.sheetFileNamesToBeReplaced.append(sheetFileName)
         else:
-            self.pageFileNamesToBePrintedNew.append(pageFileName)
+            self.sheetFileNamesToBePrintedNew.append(sheetFileName)
 
     def writeAndRemoveSheets(self):
         shutil.copytree(self.accountedProductsDir, self.backupDir)
@@ -196,16 +196,16 @@ class Gui:
         helpers.recreateDir(sheetDir)
         helpers.recreateDir(generatedProductsDir)
 
-        for pageFileName in self.pageFileNamesToBeReplaced + self.pageFileNamesToBePrintedNew:
-            path = f'{generatedProductsDir}{pageFileName}.jpg'
-            sheet = self.generateSheet(pageFileName)
+        for sheetFileName in self.sheetFileNamesToBeReplaced + self.sheetFileNamesToBePrintedNew:
+            path = f'{generatedProductsDir}{sheetFileName}.jpg'
+            sheet = self.generateSheet(sheetFileName)
             if cv.imwrite(path, sheet.createImg()) is True:
                 self.log.info(f'generated sheet {path}')
             else:
                 raise ValueError(f'failed to generate sheet {path}')
 
-        for pageFileName in self.pageFileNamesToBeReplaced + self.pageFileNamesToBeRemoved:
-            path = f'{self.accountedProductsDir}/{pageFileName}.csv'
+        for sheetFileName in self.sheetFileNamesToBeReplaced + self.sheetFileNamesToBeRemoved:
+            path = f'{self.accountedProductsDir}/{sheetFileName}.csv'
             self.log.info(f'removing sheet {path}')
             os.path.os.remove(f'{path}')
             os.path.os.remove(f'{path}{self.scanPostfix}')
@@ -213,9 +213,9 @@ class Gui:
         for productId in self.missingProductIds:
             self.log.info(f'Found a missing, non-empty product! {productId}')
 
-    def generateSheet(self, pageFileName):
-        productId = self.productIdFromPageFileName(pageFileName)
-        pageNumber = self.pageNumberFromPageFileName(pageFileName)
+    def generateSheet(self, sheetFileName):
+        productId = self.productIdFromSheetFileName(sheetFileName)
+        sheetNumber = self.sheetNumberFromSheetFileName(sheetFileName)
         product = self.db.products[productId]
         sheet = ProductSheet(self.db, self.addTestTags)
         sheet.name = product.description
@@ -223,21 +223,21 @@ class Gui:
         sheet.grossSalesPrice = helpers.formatPrice(
                 product.grossSalesPrice(),
                 self.db.config.get('general', 'currency'))
-        sheet.pageNumber = self.db.config.get('tagtrail_gen',
-                'page_number_string').format(pageNumber=str(pageNumber))
+        sheet.sheetNumber = self.db.config.get('tagtrail_gen',
+                'sheet_number_string').format(sheetNumber=str(sheetNumber))
         return sheet
 
-    def productIdFromPageFileName(self, pageFileName):
-        productId, _ = pageFileName.split('_')
+    def productIdFromSheetFileName(self, sheetFileName):
+        productId, _ = sheetFileName.split('_')
         return productId
 
-    def pageNumberFromPageFileName(self, pageFileName):
-        _, pageNumberStr = pageFileName.split('_')
-        ints = [int(s) for s in pageNumberStr.split() if s.isdigit()]
+    def sheetNumberFromSheetFileName(self, sheetFileName):
+        _, sheetNumberStr = sheetFileName.split('_')
+        ints = [int(s) for s in sheetNumberStr.split() if s.isdigit()]
         assert(len(ints) == 1)
         assert(self.db.config.get('tagtrail_gen',
-            'page_number_string').format(pageNumber=str(ints[0])).upper() ==
-            pageNumberStr)
+            'sheet_number_string').format(sheetNumber=str(ints[0])).upper() ==
+            sheetNumberStr)
         return ints[0]
 
 if __name__== "__main__":
