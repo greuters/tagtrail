@@ -28,7 +28,7 @@ class AutocompleteEntry(tkinter.Entry):
         super().__init__(*args, **kwargs)
         self.possibleValues = [v.upper() for v in possibleValues]
         self.__releaseFocus = releaseFocus
-        self.__log = helpers.Log(helpers.Log.LEVEL_DEBUG)
+        self.__log = helpers.Log()
         self.__previousValue = ""
         self.__listBox = None
         self.__var = self["textvariable"]
@@ -87,6 +87,7 @@ class AutocompleteEntry(tkinter.Entry):
             self.__log.debug('possible words = {}', words)
             if not words:
                 self.text = self.__previousValue
+                self.__var.set(self.__previousValue)
             else:
                 longestCommonPrefix = self.longestCommonPrefix(words)
                 self.__log.debug('longestCommonPrefix(words) = {}', self.longestCommonPrefix(words))

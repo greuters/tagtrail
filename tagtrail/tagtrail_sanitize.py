@@ -90,35 +90,38 @@ class InputSheet(ProductSheet):
             (x2, y2) = box.pt2
             x2, y2 = x2*scaleFactor, y2*scaleFactor
             entry = gui_components.AutocompleteEntry(box.text, box.confidence,
-                    choices, self.switchFocus, True, root)
+                    choices, self.releaseFocus, True, root)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             entry.box = box
             self._box_to_widget[box] = entry
 
         self.loadTagsFromPreviousAccounting()
-        self._box_to_widget[self.boxByName('nameBox')].focus_set()
+        self._box_to_widget[self.nextUnclearBox(None)].focus_set()
 
-    def switchFocus(self, event):
+    def releaseFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
         if str(event.type) == "KeyPress" and event.char != event.keysym:
             # punctuation or special key, distinguish by event.keysym
-            if event.keysym in ["Return", "Tab"]:
-                if event.keysym == "Return":
-                    event.widget.confidence=1
-                if event.widget.enabled:
-                    event.widget.box.text = event.widget.text
-                    event.widget.box.confidence = event.widget.confidence
-                    if event.widget.box.name in ['nameBox', 'pageNumberBox']:
-                        self.loadTagsFromPreviousAccounting()
+            if event.keysym == "Return":
+                event.widget.confidence=1
+            if event.widget.enabled:
+                event.widget.box.text = event.widget.text
+                event.widget.box.confidence = event.widget.confidence
+                if event.widget.box.name in ['nameBox', 'pageNumberBox']:
+                    self.loadTagsFromPreviousAccounting()
 
+            shift_pressed = (event.state & 0x1)
+            if event.keysym == 'Return' and shift_pressed:
+                # keep focus on current box, this is only used to confirm the
+                # current selection
+                return 'break'
+
+            elif event.keysym in ["Tab", 'Return']:
                 nextBox = self.nextUnclearBox(event.widget.box)
-                if nextBox:
+                if nextBox and event.state != 'Shift':
                     self._box_to_widget[nextBox].focus_set()
 
             elif event.keysym in ["Up", "Down", "Left", "Right"]:
-                event.widget.box.text = event.widget.text
-                event.widget.box.confidence = event.widget.confidence
-
                 neighbourBox = self.neighbourBox(event.widget.box, event.keysym)
                 if neighbourBox:
                     self._box_to_widget[neighbourBox].focus_set()
@@ -135,7 +138,6 @@ class InputSheet(ProductSheet):
         if  self.boxByName('pageNumberBox').confidence != 1:
             return
         accountedSheetPath = f'{self.accountedProductsPath}{self.productId()}_{self.pageNumber}.csv'
-        print(f'accountedSheetPath = {accountedSheetPath}')
         self._log.debug(f'loading previous tags from {accountedSheetPath}')
         if not os.path.exists(accountedSheetPath):
             return
@@ -152,9 +154,8 @@ class InputSheet(ProductSheet):
             raise ValueError(f'{accountedSheetPath} has wrong pageNumber')
 
         for accountedBox in accountedSheet.boxes():
-            print(f'{accountedBox.name} : {accountedBox.text}')
+            self._log.debug(f'{accountedBox.name} : {accountedBox.text}')
             if accountedBox.text != '':
-                print('changing value')
                 inputBox = self.boxByName(accountedBox.name)
                 inputBox.text = accountedBox.text
                 inputBox.confidence = 1
@@ -177,7 +178,7 @@ class InputSheet(ProductSheet):
         if not indicesOfUnclearBoxes:
             return None
         else:
-            currentIndex = sortedBoxes.index(selectedBox)
+            currentIndex = 0 if selectedBox is None else sortedBoxes.index(selectedBox)
             if max(indicesOfUnclearBoxes) <= currentIndex:
                 return sortedBoxes[min(indicesOfUnclearBoxes)]
             else:

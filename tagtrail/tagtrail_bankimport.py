@@ -135,24 +135,31 @@ class Gui:
         possibleMemberIds = list(sorted(self.db.members.keys()))
         y = 0
         self.entries = []
-        for transaction in self.db.postfinanceTransactions:
+        backgroundColors = ['lightgray', 'darkgray']
+        for idx, transaction in enumerate(self.db.postfinanceTransactions):
             if transaction.creditAmount is None:
                 continue
 
-            label = tkinter.Message(self.inputCanvas,
+            backgroundColor = backgroundColors[idx % 2]
+            frame = tkinter.Frame(self.inputCanvas, relief=tkinter.RIDGE,
+                    background=backgroundColor, borderwidth=3, width=canvasWidth)
+            frame.pack(fill=tkinter.BOTH)
+
+            label = tkinter.Message(frame,
                     text=transaction.notificationText,
                     anchor=tkinter.E,
+                    background=backgroundColor,
                     width=canvasWidth-entryWidth)
-            label.place(x=0, y=y)
+            label.pack(side=tkinter.RIGHT)
 
             # need to update the screen to get the correct label height
             # caveat: during the update, a <Configure> event might be triggered
             # and invalidate the whole process => abort if we are outdated
-            label.update()
-            if not label.winfo_exists():
+            frame.update()
+            if not frame.winfo_exists():
                 return
 
-            h = label.winfo_height()
+            h = frame.winfo_height()
 
             if transaction.memberId is None:
                 mostLikely = transaction.mostLikelyMemberId(possibleMemberIds)
@@ -162,11 +169,15 @@ class Gui:
                 text = transaction.memberId
                 confidence = 1
             entry = gui_components.AutocompleteEntry(text, confidence, possibleMemberIds,
-                    self.switchFocus, self.inputCanvas)
+                    self.switchFocus, True, frame)
             entry.transaction = transaction
-            entry.place(x=canvasWidth-entryWidth, y=y, w=entryWidth, h=h)
+            entry.pack(side=tkinter.LEFT)
             self.entries.append(entry)
-            y += h
+            y += h+2
+
+        nextUnclearEntry = self.nextUnclearEntry(None)
+        if not nextUnclearEntry is None:
+            nextUnclearEntry.focus_set()
 
     def switchFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
@@ -197,7 +208,7 @@ class Gui:
         if not indicesOfUnclearEntries:
             return None
         else:
-            currentIndex = self.entries.index(selectedEntry)
+            currentIndex = 0 if selectedEntry is None else self.entries.index(selectedEntry)
             if max(indicesOfUnclearEntries) <= currentIndex:
                 return self.entries[min(indicesOfUnclearEntries)]
             else:
