@@ -1,11 +1,11 @@
-"Previous Quantity Date";"2019-10-03";;;;;;;;;;;;;
-"Expected Quantity Date";;;;;;;;;;;;;;
-"Inventory Quantity Date";;;;;;;;;;;;;;
-"Name";"Amount";"Unit [kg, g, l, cl, ml]";"Purchase Price";"Previous Quantity";"Added Quantity";"Sold Quantity";"Expected Quantity";"Inventory Quantity";"Eaternity Name";"Origin [country]";"Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish]";"Transport [air, ground]";"Conservation [fresh, frozen, dried, conserved, canned, boiled-down]";"gCo2e"
-"Pasta Rigatoni";500;"g";2.55;48;;;;;"pasta";"Italien";"organic";"ground";"dried";
-"Drink Hafer";1;"l";1.8;200;20;;;;"haferdrink";"österreich";"organic";"ground";"fresh";
-"Tomaten Pelato in Salsa";880;"ml";1.95;48;;;;;"tomaten";"Italien";"organic";"ground";"canned";
-"Pfiffikus Gemüse-Brühe";200;"g";3.95;30;;;;;"gemüsebrühe";"Schweiz";"organic";"ground";"dried";
-"Cashews nature";200;"g";4.4;50;20;;;;"cashew";"ghana";"fair-trade, organic";"air";"dried";
-"Zucker Kristall-Rohrohr";500;"g";1.9;50;20;;;;"sugar";"bolivia";"fair-trade, organic";"";"";
-"Zucker Vollrohr";1;"kg";4.8;50;20;;;;"sugar";"cuba";"fair-trade, organic";"air";"dried";
+Previous Quantity Date;2020-04-18
+Expected Quantity Date;
+Inventory Quantity Date;
+Name;Amount;Unit [kg, g, l, cl, ml];Purchase Price;Previous Quantity;Added Quantity;Sold Quantity;Expected Quantity;Inventory Quantity;Eaternity Name;Origin [country];Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish];Transport [air, ground];Conservation [fresh, frozen, dried, conserved, canned, boiled-down];gCo2e
+Pasta Rigatoni;500;g;2.55;48;;;;;pasta;Italien;organic;ground;dried;
+Drink Hafer;1;l;1.8;220;;;;;haferdrink;österreich;organic;ground;fresh;
+Tomaten Pelato in Salsa;880;ml;1.95;48;;;;;tomaten;Italien;organic;ground;canned;
+Pfiffikus Gemüse-Brühe;200;g;3.95;30;;;;;gemüsebrühe;Schweiz;organic;ground;dried;
+Cashews nature;200;g;4.4;70;;;;;cashew;ghana;fair-trade,organic;air;dried;
+Zucker Kristall-Rohrohr;500;g;1.9;66;;;;;sugar;bolivia;fair-trade,organic;;;
+Zucker Vollrohr;1;kg;4.8;62;;;;;sugar;cuba;fair-trade,organic;air;dried;

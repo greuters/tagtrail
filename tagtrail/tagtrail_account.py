@@ -273,6 +273,7 @@ class Gui:
         try:
             self.writeBills()
             self.writeGnuCashFiles()
+            #TODO: write compressed file
             self.prepareNextAccounting()
         finally:
             self.root.quit()

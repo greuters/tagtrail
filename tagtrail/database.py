@@ -42,7 +42,7 @@ class Database(ABC):
     are relevant during a single accounting run.
     """
 
-    log = helpers.Log()
+    log = helpers.Log(helpers.Log.LEVEL_DEBUG)
 
     def __init__(self,
             dataPath,
@@ -687,8 +687,10 @@ class Bill(DatabaseDict):
     def csvRows(self):
         return [[p.id, p.description, str(p.numTags),
             helpers.formatPrice(p.unitGrossSalesPrice),
-                 '' if p.totalgCo2e() is None else helpers.formatPrice(p.totalGrossSalesPrice()), str(p.totalgCo2e())]
-                for p in self.values()]
+                 'None' if p.totalGrossSalesPrice() is None else helpers.formatPrice(p.totalGrossSalesPrice()),
+                 'None' if p.totalgCo2e() is None else str(p.totalgCo2e())]
+
+        for p in self.values()]
 
     def __str__(self):
         text = self.textRepresentationHeader + '\n'
