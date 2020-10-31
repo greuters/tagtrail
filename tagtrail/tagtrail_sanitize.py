@@ -96,7 +96,9 @@ class InputSheet(ProductSheet):
             self._box_to_widget[box] = entry
 
         self.loadTagsFromPreviousAccounting()
-        self._box_to_widget[self.nextUnclearBox(None)].focus_set()
+        nextUnclearBox = self.nextUnclearBox(None)
+        if nextUnclearBox:
+            self._box_to_widget[nextUnclearBox].focus_set()
 
     def releaseFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python

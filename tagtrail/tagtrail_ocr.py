@@ -1317,7 +1317,12 @@ class GUI():
                     self.sheetCoordinates[2],
                     self.sheetCoordinates[3])
 
-            rotatedImg = imutils.rotate_bound(cv.imread(self.scanDir + scanFile), self.rotationAngle)
+            inputImg = cv.imread(self.scanDir + scanFile)
+            if inputImg is None:
+                self.log.warn(f'file {self.scanDir + scanFile} could not be ' + 
+                        'opened as an image')
+                continue
+            rotatedImg = imutils.rotate_bound(inputImg, self.rotationAngle)
             resizedImg = cv.resize(rotatedImg, (3672, 6528), Image.BILINEAR)
             self.log.info(f'Splitting scanned file: {scanFile}')
             splitter.process(resizedImg)
@@ -1472,7 +1477,7 @@ def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
     helpers.recreateDir(tmpDir)
     db = Database(f'{accountingDir}0_input/')
-    for (parentDir, dirNames, fileNames) in walk('{}0_input/scans/'.format(accountingDir)):
+    for (parentDir, dirNames, fileNames) in walk(f'{accountingDir}0_input/scans/'):
         gui = GUI(tmpDir, parentDir, outputDir, fileNames, db)
         if gui.sheets == [] or gui.abortProcess:
             break
