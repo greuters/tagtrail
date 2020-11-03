@@ -1,0 +1,120 @@
+Previous Quantity Date;2020-10-25
+Expected Quantity Date;
+Inventory Quantity Date;
+Name;Amount;Unit [kg, g, l, cl, ml];Purchase Price;Previous Quantity;Added Quantity;Sold Quantity;Expected Quantity;Inventory Quantity;Pages to print;Comment;Eaternity Name;Origin [country];Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish];Transport [air, ground];Conservation [fresh, frozen, dried, conserved, canned, boiled-down];gCo2e
+Aceto Balsamico;500;ml;7.7;9;;;;;;;essig;italien;organic;ground;canned;491
+Allzweckreiniger;1;l;5.2;6;;;;;;;putzmittel;niederlande;;ground;;979
+Apfelringli;100;g;3.6;0;;;;;;;apfel;schweiz;organic;ground;dried;92
+Balsamico bianco;500;ml;7.57;15;;;;;;;essig;italien;organic;ground;canned;491
+Bergkräuterseife;95;g;4.52;0;;;;;;;seife;schweiz;organic;ground;conserved;87
+Bianca Amabile (weiss);75;cl;13.375;33;;;;;;;wein;schweiz;organic;ground;canned;690
+Birnel;1;kg;8.8;9;;;;;;;birnel;schweiz;organic;ground;boiled-down;920
+Blütenhonig Fest;1;Glas;15.85;15;;;;;;;honig;schweiz;;;;
+Buchweizenkörner;500;g;2.85;4;;;;;;;buchweizen;schweiz;;;;460
+Buntwaschmittel Colora;3;kg;27.0;6;;;;;;;waschmittel;schweiz;;ground;;2759
+Carponata (Auberginen in Tomatensauce);1;Glas;5.67;0;;;;;;;;;;;;
+Cashews nature;200;g;4.97;56;;;;;;;Cashew;ghana;organic;ground;dried;342
+Dinkelflakes;400;g;5.33;27;;;;;;;dinkelflakes;schweiz;organic;;;368
+Chili Schoten;125;g;3.7;2;;;;;;;chili;;organic,fair-trade;;dried;160
+Cornflakes;400;g;4.88;24;;;;;;;cornflakes;schweiz;organic;;;368
+Couscous;500;g;2.908;11;;;;;;;couscous;;;;;642
+Curcuma (gemahlen);125;g;1.8;11;;;;;;;kurkuma;;organic,fair-trade;;dried;160
+Curry mild;125;g;3.45;5;;;;;;;curry;;organic,fair-trade;;dried;160
+Delikatess Rapsöl;500;ml;5.11307692307692;19;;;;;;;rapsöl;schweiz;organic;ground;canned;460
+Dinkelweissmehl;1;kg;4.7;14;;;;;;;mehl;schweiz;organic;ground;;920
+Ecover Geschirrspül-Tabs ;1;Packung;7.45;23;;;;;;;putzmittel;niederlande;;ground;;
+Eliche Vollkorn;500;g;2.40416666666667;40;;;;;;;pasta;italien;organic;ground;;491
+Erdnussbutter;330;g;4.5;0;;;;;;;erdnussbutter;burkina faso;organic;;canned;539
+Erdnüsse gesalzen + geröstet;200;g;1.49;-2;;;;;;;Erdnüsse;nicaragua;organic,fair-trade;ground;dried;227
+Fusili;500;g;2.40416666666667;0;;;;;;;pasta;italien;organic;ground;;491
+Geschirrspülmittel;1;l;4.7;28;;;;;;;putzmittel;niederlande;;ground;;979
+Getr. Tomaten im Öl;290;g;6.4;2;;;;;;;tomaten;italien;;ground;conserved;285
+Gnocchi di Patate;500;g;5.87666666666667;0;;;;;;;;;;;;
+Popcorn;500;g;3.35;9;;;;;;;mais;;;;;642
+Haferflocken fein;500;g;2.15456140350877;36;;;;;;;haferflocken;schweiz;organic;ground;;460
+iisziit Glace klein;75;ml;2.0;69;;;;;;;eiscreme;schweiz;organic;ground;frozen;89
+iisziit Glace gross;400;ml;10.0;5;;;;;;;eiscreme;schweiz;organic;ground;frozen;474
+Ingwer (gemahlen);125;g;2.55;4;;;;;;;ingwer;;organic,fair-trade;;dried;160
+Kaffee Lupinen;500;g;12.6;0;;;;;;;lupinen;schweiz;organic;ground;dried;460
+Kalkentferner;500;ml;5.95;7;;;;;;;putzmittel;niederlande;;ground;;489
+Kichererbsen hell;1;kg;11.35;21;;;;;;;kichererbsen;italien;standard;ground;dried;982
+Kichererbsen schwarz;1;kg;12.35;6;;;;;;;kichererbsen;italien;standard;ground;dried;982
+Kokosmilch;400;ml;2.67083333333333;10;;;;;;;kokosmilch;;;;canned;514
+Konfitüre Brombeer;1;Glas;5.35;9;;;;;;;marmelade;schweiz;organic;ground;conserved;
+Konfitüre Himbeer;1;Glas;5.35;9;;;;;;;marmelade;schweiz;organic;ground;conserved;
+Konfitüre Aprikose;1;Glas;5.35;0;;;;;;;marmelade;schweiz;organic;ground;conserved;
+Konfitüre Williams;1;Glas;5.35;0;;;;;;;marmelade;schweiz;organic;ground;conserved;
+Koriander (ganz);125;g;1.7;2;;;;;;;koriander;;organic,fair-trade;;dried;160
+Körner Einkorn;200;g;1.09;23;;;;;;;einkorn;schweiz;organic;ground;;184
+Körner Emmer;200;g;1.09;2;;;;;;;emmer;schweiz;organic;ground;;184
+Kreuzkümmel (ganz);125;g;2.65;5;;;;;;;kreuzkümmel;;organic,fair-trade;;dried;160
+Kümmel (ganz);125;g;1.85;-2;;;;;;;kümmel;;organic,fair-trade;;dried;160
+Kürbiskerne;200;g;4.19;30;;;;;;;kürbiskerne;;;;;257
+Langkorn Vollreis;1;kg;4.34;16;;;;;;;reis;;;;;1284
+Massageöl Lavendel;1;Packung;12.92;8;;;;;;;massageöl;;;ground;;
+Leinsamen;200;g;1.51;16;;;;;;;leinsamen;;;;;257
+Linsen klein;1;kg;11.35;7;;;;;;;linsen;italien;standard;ground;dried;982
+Linguine;2;kg;11.87;2;;;;;;;;;;;;
+Loorbeer Blätter;125;g;4.6;2;;;;;;;loorbeer;;organic,fair-trade;;dried;160
+Maisgriess Bramata;500;g;3.725;2;;;;;;;mais;;;;;642
+Mandeln;200;g;4.87;6;;;;;;;mandeln;spanien;organic,fair-trade;;dried;211
+Mandelpüree;1;kg;32.4475;9;;;;;;;mandel;italien;organic;ground;canned;982
+Mango Lippens;200;g;3.91666666666667;6;;;;;;;mango;burkina faso;organic,fair-trade;ground;dried;327
+Mohnsamen;100;g;2.8;6;;;;;;;mohnsamen;;;;;128
+Moutarde gros grain;1;Glas;6.15;8;;;;;;;senf;;;;;
+Muskatnuss (ganz);125;g;10.2;4;;;;;;;muskatnuss;;organic,fair-trade;;dried;160
+Natur Zahnpasta;1;Packung;4.85;14;;;;;;;zahnpasta;;;ground;;
+Sonnenblumenöl;1;l;12.07;20;;;;;;;sonnenblumenöl;;;ground;;1284
+Papier Mondi Nautilus;1;Packung;10.7;4;;;;;;;papier;;;;;
+Paprika edelsüss (gemahlen);125;g;3.45;1;;;;;;;paprika;;organic,fair-trade;;dried;160
+Paranüsse;200;g;4.71;21;;;;;;;paranüsse;;;;;257
+Paté di Carciofo (Artischocke);1;Glas;4.99842105263158;26;;;;;;;artischoke;;;ground;canned;
+Penne Vollkorn;500;g;2.26666666666667;23;;;;;;;pasta;italien;organic;ground;;491
+Penne;500;g;2.40416666666667;80;;;;;;;;;;;;
+Pelato Tomaten;400;g;1.67083333333333;153;;;;;;;tomaten;italien;organic;ground;canned;393
+Pelato Tomaten Gross;1;Dose;4.165;28;;;;;;;;;;;;
+Pfeffer schwarz ganz;125;g;4.5;10;;;;;;;pfeffer;;organic,fair-trade;;dried;160
+Pfiffikus Gemüsebrühe;200;g;3.78;11;;;;;;;gemüsebrühe;schweiz;organic;ground;boiled-down;184
+Basilicata Rosso (vegan);1;Flasche;16.25;1;;;;;;;wein;italien;organic;ground;canned;690
+Quinoa;500;g;8.85;12;;;;;;;quinoa;bolivien;organic,fair-trade;ground;;619
+Quinoa abgepackt;350;g;6.86666666666667;23;;;;;;;;;;;;
+Rebel Dia Kaffee (Bohnen);1;kg;16.5953125;27;;;;;;;kaffee;mexiko;organic,fair-trade;ground;dried;1182
+Rebel Dia Kaffee (Gemahlen);500;g;9.05;13;;;;;;;kaffee;mexiko;organic,fair-trade;ground;dried;591
+Basmatireis;500;g;5.6664;37;;;;;;;reis;;;;;1284
+Rigatoni;500;g;2.40416666666667;64;;;;;;;pasta;italien;organic;ground;;491
+Risottoreis;1;kg;4.97;42;;;;;;;reis;;;;;1284
+Rosinen;200;g;1.57;15;;;;;;;rosinen;chile;organic,fair-trade;ground;dried;236
+Rote Linsen;500;g;3.153;1;;;;;;;linsen;;organic;ground;dried;642
+Salz jodiert;1;kg;1.1;38;;;;;;;salz;schweiz;standard;ground;;920
+Schokolade Herb 80%;100;g;3.7;28;;;;;;;schokolade;ghana;organic,fair-trade;ground;;171
+Schokolade Seidigsanft 60%;100;g;3.7;21;;;;;;;schokolade;ghana;organic,fair-trade;ground;;171
+Senfkörner (ganz);125;g;1.15;2;;;;;;;senfkörner;;organic,fair-trade;;dried;160
+Sesam;200;g;1.57;20;;;;;;;sesam;;;;;257
+Sirup Himbeer;1;Flasche;12.35;19;;;;;;;sirup;schweiz;organic;ground;conserved;
+Sirup Ingwer-Limette;1;Flasche;10.35;10;;;;;;;sirup;schweiz;organic;ground;conserved;
+Sirup Johannisbeer;1;Flasche;12.35;14;;;;;;;sirup;schweiz;organic;ground;conserved;
+Sonnenblumen Kerne;200;g;3.62;1;;;;;;;sonnenblumen kerne;;;;;257
+Soya-Gehacktes;200;g;2.98243243243243;30;;;;;;;soya;;;;;257
+Soya-Kloesse;200;g;2.22;17;;;;;;;soya;;;;;257
+Spaghetti;500;g;2.15416666666667;69;;;;;;;pasta;italien;organic;ground;;491
+Spaghetti Vollkorn;500;g;2.40416666666667;38;;;;;;;pasta;italien;organic;ground;;491
+Steinpilze getrocknet;100;g;9.85;5;;;;;;;steinpilze;;;;;128
+Strozapreti (Dinkel Vollkorn);500;g;5.05;2;;;;;;;pasta;schweiz;organic;ground;;460
+Swiss Cereal Drink Hafer;1;l;2.63023622047244;47;;;;;;;haferdrink;;organic;ground;;1284
+Swiss Drink Reis;1;l;3.0;123;;;;;;;reisdrink;;organic;ground;;1284
+Swiss Drink Soya (ungesüsst);1;l;3.0;122;;;;;;;soyadrink;italien;organic;ground;;982
+Tahin (Sesammus);330;g;6.0;2;;;;;;;sesampaste;burkina faso;organic;;canned;539
+Tamari;500;ml;9.4;9;;;;;;;tamari;soyana;organic;ground;canned;460
+Toilettenpapier;1;Packung;4.33333333333333;23;;;;;;;papier;deutschland;standard,fair-trade;ground;;
+Tomatensauce in Flaschen;420;g;3.08333333333333;75;;;;;;;tomatensauce;;;;;539
+Trofie;2;kg;17.1033333333333;2;;;;;;;pasta;italien;organic;ground;dried;
+Vollrohrzucker Pulver;1;kg;4.66111111111111;8;;;;;;;zucker;;;;;1284
+WC-Reiniger;750;ml;3.7;5;;;;;;;putzmittel;niederlande;;ground;;734
+Wein Sacravite (rot);75;cl;16.25;15;;;;;;;wein;schweiz;organic;ground;canned;690
+Weissmehl;1;kg;4.7;41;;;;;;;mehl;schweiz;organic;ground;;920
+Weizenmehl Vollkorn;1;kg;4.42;1;;;;;;;;;;;;
+Zimt Ceylon (gemahlen);125;g;4.0;2;;;;;;;zimt;;;;;160
+Kristall-Rohrohrzucker;1;kg;3.044;41;;;;;;;zucker;;;;;1284
+Zucker weiss Kristall;1;kg;3.64;44;;;;;;;;;;;;
+Öl Oliven aus Griechenland;1;l;20.79;-2;;;;;;;olivenöl;griechenland;organic;ground;canned;1121
+Austernpilze;100;g;10.05;23;;;;;;;austernpilze;pilze;organic;ground;dried;119

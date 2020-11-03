@@ -16,13 +16,14 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import argparse
-import helpers
-import tagtrail_gen
-import tagtrail_ocr
-import tagtrail_sanitize
-import tagtrail_bankimport
-import tagtrail_account
-import tagtrail_send
+
+from . import helpers
+from . import tagtrail_gen
+from . import tagtrail_ocr
+from . import tagtrail_sanitize
+from . import tagtrail_bankimport
+from . import tagtrail_account
+from . import tagtrail_send
 
 
 def checkPreconditions():

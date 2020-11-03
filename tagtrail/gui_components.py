@@ -17,7 +17,8 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from tkinter import simpledialog, ttk
 import tkinter
-import helpers
+
+from . import helpers
 
 #TODO: adapt to use normal ttk.ComboBox functionality
 class AutocompleteEntry(tkinter.Entry):

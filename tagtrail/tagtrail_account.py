@@ -17,10 +17,6 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import argparse
 from abc import ABC, abstractmethod
-import helpers
-import gui_components
-from sheets import ProductSheet
-import database
 import tkinter
 from tkinter import messagebox
 import itertools
@@ -30,7 +26,12 @@ import os
 import shutil
 import csv
 import copy
-import eaternity
+
+from . import helpers
+from . import gui_components
+from .sheets import ProductSheet
+from . import database
+from . import eaternity
 
 class TagCollector(ABC):
     """

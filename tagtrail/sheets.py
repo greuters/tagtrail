@@ -23,10 +23,11 @@ import decimal
 import itertools
 import random
 import csv
-import helpers
 from abc import ABC, abstractmethod
 from PIL import ImageFont, Image, ImageDraw
 import slugify
+
+from . import helpers
 random.seed()
 
 class ProductSheet(ABC):

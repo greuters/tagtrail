@@ -18,8 +18,6 @@
 import argparse
 from abc import ABC, abstractmethod
 from string import Template
-import helpers
-import database
 import time
 import csv
 import imaplib
@@ -31,6 +29,9 @@ from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
+
+from . import helpers
+from . import database
 
 class MailSender(ABC):
     def __init__(self,

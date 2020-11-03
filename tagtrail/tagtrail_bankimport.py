@@ -23,9 +23,10 @@ import datetime
 import time
 import tkinter
 import traceback
-import database
-import helpers
-import gui_components
+
+from . import database
+from . import helpers
+from . import gui_components
 
 class EnrichedDatabase(database.Database):
 

@@ -27,7 +27,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
 import csv
-import helpers
 import datetime
 import slugify
 import copy
@@ -35,6 +34,8 @@ import re
 import itertools
 import configparser
 from collections import UserDict, UserList
+
+from . import helpers
 
 class Database(ABC):
     """
@@ -51,7 +52,7 @@ class Database(ABC):
             configFilePath = 'config/tagtrail.cfg'):
         self.memberFilePath = dataPath + memberFileName + '.tsv'
         self.productFilePath = dataPath + productFileName + '.csv'
-        self.config = configparser.SafeConfigParser(
+        self.config = configparser.ConfigParser(
                 interpolation=configparser.ExtendedInterpolation(),
                 converters={
                     'csvlist': lambda x: [i.strip() for i in x.split(',') if

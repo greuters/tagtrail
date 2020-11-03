@@ -1,7 +1,7 @@
 import requests
 import json
-from database import Database
-import helpers
+from .database import Database
+from . import helpers
 
 class EaternityApi:
     querystring = {'transient': 'true'}

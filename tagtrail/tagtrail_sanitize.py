@@ -23,12 +23,13 @@ from tkinter import messagebox
 import re
 import os
 from PIL import ImageTk,Image
-from sheets import ProductSheet
-from database import Database
-from helpers import Log, formatPrice
 import random
 import traceback
-import gui_components
+
+from .sheets import ProductSheet
+from .database import Database
+from .helpers import Log, formatPrice
+from . import gui_components
 
 class InputSheet(ProductSheet):
     validationProbability = 0.02
@@ -214,8 +215,12 @@ class Gui:
         self.root = tkinter.Tk()
         self.root.report_callback_exception = self.reportCallbackException
         self.buttonCanvasWidth=200
-        self.width=self.root.winfo_screenwidth()
-        self.height=self.root.winfo_screenheight()
+        self.width = self.db.config.getint('general', 'screen_width')
+        self.height = self.db.config.getint('general', 'screen_height')
+        if self.width == -1:
+            self.width=self.root.winfo_screenwidth()
+        if self.height == -1:
+            self.height=s
         self.root.geometry(str(self.width)+'x'+str(self.height))
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)

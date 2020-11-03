@@ -33,10 +33,10 @@ import imutils
 import functools
 from PIL import ImageTk,Image
 from abc import ABC, abstractmethod
-import helpers
-from sheets import ProductSheet
-from database import Database
-from os import walk
+
+from . import helpers
+from .sheets import ProductSheet
+from .database import Database
 
 class ProcessingStep(ABC):
     def __init__(self,
@@ -120,8 +120,10 @@ class LineBasedStep(ProcessingStep):
         b = np.sin(theta)
         self.drawLinePtAndVec((a*rho, b*rho), (-b, a))
 
-class SheetSplitter(ProcessingStep):
+class ScanSplitter(ProcessingStep):
     numberOfSheets = 4
+    normalizedWidth = 3672
+    normalizedHeight = 6528
 
     def __init__(self,
                  name,
@@ -148,8 +150,9 @@ class SheetSplitter(ProcessingStep):
     def process(self, inputImg):
         super().process(inputImg)
 
-        self._inputImg = inputImg
-        self._outputImg = np.copy(inputImg)
+        self._inputImg = cv.resize(inputImg, (self.normalizedWidth,
+            self.normalizedHeight), Image.BILINEAR)
+        self._outputImg = np.copy(self._inputImg)
 
         self.unprocessedSheetImgs = []
         self._grayImgs = []
@@ -1027,6 +1030,152 @@ class SplitSheet():
         self.outputImg=outputImg
         self.isEmpty=isEmpty
 
+class Model():
+    def __init__(self,
+            tmpDir,
+            scanDir,
+            outputDir,
+            scanFilenames,
+            db,
+            log = helpers.Log(helpers.Log.LEVEL_INFO)):
+        self.tmpDir = tmpDir
+        self.scanDir = scanDir
+        self.outputDir = outputDir
+        self.scanFilenames = scanFilenames
+        self.db = db
+        self.log = log
+        self.sheets = []
+        self.partiallyFilledFiles = set()
+
+    def prepareScanSplitting(self):
+        """
+        Prepare to walk over self.scanFilenames and invoke self.splitScan with
+        each of them
+        """
+        self.sheets = []
+
+    def splitScan(self, scanFilename, sheetCoordinates, rotationAngle):
+        """
+        Load a scanned image from scanFilename, split it into multiple sheets
+        and append them to self.sheets
+
+        scanFilename: filename under self.tmpDir to be loaded
+        sheetCoordinates:
+            list of relative coordinates (x0, y0, x1, y1) for all four sheets
+            on a scanned file, e.g.
+            [(0,0,.5,.5), (.5, 0, 1, .5), (0, .5, .5, 1), (.5, .5, 1, 1)]
+        rotationAngle: angle by which the scanned image should be rotated
+        """
+        splitDir = f'{self.tmpDir}/{scanFilename}/'
+        helpers.recreateDir(splitDir)
+
+        splitter = ScanSplitter(
+                f'0_splitSheets',
+                splitDir,
+                sheetCoordinates[0],
+                sheetCoordinates[1],
+                sheetCoordinates[2],
+                sheetCoordinates[3],
+                log = self.log)
+
+        inputImg = cv.imread(self.scanDir + scanFilename)
+        if inputImg is None:
+            self.log.warn(f'file {self.scanDir + scanFilename} could not be ' +
+                    'opened as an image')
+            return
+
+        rotatedImg = imutils.rotate_bound(inputImg, rotationAngle)
+        self.log.info(f'Splitting scanned file: {scanFilename}')
+        splitter.process(rotatedImg)
+        splitter.writeOutput()
+        for idx, splitImg in enumerate(splitter._outputSheetImgs):
+            sheetName = f'{scanFilename}_sheet{idx}'
+            self.log.info(f'sheetName = {sheetName}')
+            sheetTmpDir = f'{self.tmpDir}{sheetName}/'
+            helpers.recreateDir(sheetTmpDir)
+            if splitImg is None:
+                self.sheets.append(SplitSheet(
+                    self.scanDir + scanFilename,
+                    sheetName,
+                    sheetTmpDir,
+                    splitter.unprocessedSheetImgs[idx],
+                        self.crossedOutCopy(splitter.unprocessedSheetImgs[idx]),
+                    True))
+            else:
+                self.sheets.append(SplitSheet(
+                    self.scanDir + scanFilename,
+                    sheetName,
+                    sheetTmpDir,
+                    splitter.unprocessedSheetImgs[idx],
+                    self.fitSplitSheet(splitImg, sheetTmpDir),
+                    False))
+
+    def fitSplitSheet(self, splitImg, sheetDir):
+        sheetProcessors = []
+        sheetProcessors.append(RotateSheet("1_rotateSheet", self.tmpDir,
+            log = self.log))
+        sheetProcessors.append(FindMarginsByLines("2_findMarginsByLines",
+            self.tmpDir,
+            log = self.log))
+        fitToSheetProcessor = FitToSheet("3_fitToSheet", self.tmpDir,
+            log = self.log)
+        sheetProcessors.append(fitToSheetProcessor)
+
+        img = splitImg
+        for p in sheetProcessors:
+            p.outputDir = sheetDir
+            p.process(img)
+            p.writeOutput()
+            img = p._outputImg
+
+        return fitToSheetProcessor._outputImg
+
+    def crossedOutCopy(self, img):
+        height, width, _ = img.shape
+        outputImg = np.copy(img)
+        cv.line(outputImg, (0, 0), (width, height), (255,0,0), 20)
+        cv.line(outputImg, (0, height), (width, 0), (255,0,0), 20)
+        return outputImg
+
+    def prepareTagRecognition(self):
+        """
+        Prepare to walk over self.sheets and invoke self.recognizeTags with
+        each of them
+        """
+        self.log.info('Recognize tags:')
+        self.recognizer = RecognizeText("4_recognizeText", self.tmpDir,
+                self.db, log = self.log)
+        self.partiallyFilledFiles = set()
+
+    def recognizeTags(self, sheet):
+        """
+        Recognize tags on sheet and write the results to self.outputDir
+        """
+        if sheet.isEmpty:
+            self.partiallyFilledFiles.add(sheet.inputScanFilepath)
+            return
+
+        self.recognizer.prepareProcessing(sheet.name)
+        self.recognizer.process(sheet.outputImg)
+        self.recognizer.writeOutput()
+        if os.path.exists(f'{self.outputDir}{self.recognizer.fileName()}'):
+            self.log.info('reset sheet to fallback, as ' +
+                    f'{self.recognizer.fileName()} already exists')
+            self.recognizer.resetSheetToFallback()
+        self.recognizer.storeSheet(self.outputDir)
+        sheet.name = self.recognizer.fileName()
+
+        compressedImgWidth = self.db.config.getint('tagtrail_ocr',
+                'output_img_width')
+        compressedImgQuality = self.db.config.getint('tagtrail_ocr',
+                'output_img_jpeg_quality')
+        cv.imwrite(f'{self.outputDir}{self.recognizer.fileName()}_original_scan.jpg',
+                imutils.resize(sheet.inputImg, width=compressedImgWidth),
+                [int(cv.IMWRITE_JPEG_QUALITY), compressedImgQuality])
+        cv.imwrite(f'{self.outputDir}{self.recognizer.fileName()}_normalized_scan.jpg',
+                imutils.resize(sheet.outputImg, width=compressedImgWidth),
+                [int(cv.IMWRITE_JPEG_QUALITY), compressedImgQuality])
+
 class GUI():
     previewColumnCount = 4
     progressBarLength = 400
@@ -1034,19 +1183,13 @@ class GUI():
     previewScrollbarWidth = 20
 
     def __init__(self,
-            tmpDir,
-            scanDir,
-            outputDir,
-            scanFilenames,
+            model,
             db,
             log = helpers.Log(helpers.Log.LEVEL_DEBUG)):
-        self.tmpDir = tmpDir
-        self.scanDir = scanDir
-        self.outputDir = outputDir
-        self.scanFilenames = scanFilenames
-        self.activeScanIdx = 0
+        self.model = model
         self.db = db
         self.log = log
+        self.abortingProcess = False
         self.selectedCorners = []
         self.sheetCoordinates = list(range(4))
         self.setActiveSheet(None)
@@ -1069,8 +1212,14 @@ class GUI():
         self.resetGUI()
 
     def initGUI(self):
+        if self.model.scanFilenames == []:
+            messagebox.showwarning('No scanned files',
+                'No scanned files found, aborting program')
+            self.abortProcess()
+            return
+
         # canvas with first scan to configure rotation and select sheet areas
-        scannedImg = cv.imread(self.scanDir + self.scanFilenames[self.activeScanIdx])
+        scannedImg = cv.imread(self.model.scanDir + self.model.scanFilenames[0])
         rotatedImg = imutils.rotate_bound(scannedImg, self.rotationAngle)
 
         o_h, o_w, _ = rotatedImg.shape
@@ -1109,12 +1258,12 @@ class GUI():
 
         self.root.update()
         scanHeight, scanWidth, _ = imutils.rotate_bound(
-                cv.imread(self.scanDir + self.scanFilenames[self.activeScanIdx]),
+                cv.imread(self.model.scanDir + self.model.scanFilenames[0]),
                 self.rotationAngle).shape
         self.previewColumnWidth, self.previewRowHeight = 0, 0
         for sheetCoords in self.sheetCoordinates:
-            width = (sheetCoords[2] - sheetCoords[0]) * scanWidth
-            height = (sheetCoords[3] - sheetCoords[1]) * scanHeight
+            width = (sheetCoords[2] - sheetCoords[0]) * ScanSplitter.normalizedWidth
+            height = (sheetCoords[3] - sheetCoords[1]) * ScanSplitter.normalizedHeight
             resizeRatio = self.previewCanvas.winfo_width() / (self.previewColumnCount * width)
             resizedWidth, resizedHeight = int(width * resizeRatio), int(height * resizeRatio)
             self.previewColumnWidth = max(self.previewColumnWidth, resizedWidth)
@@ -1254,18 +1403,18 @@ class GUI():
         col = int(x // self.previewColumnWidth)
         sheetIdx = row*self.previewColumnCount + col
         self.log.debug(f'clicked on preview {sheetIdx}, row={row}, col={col}')
-        if len(self.sheets) <= sheetIdx:
+        if len(self.model.sheets) <= sheetIdx:
             return
 
-        sheet = self.sheets[sheetIdx]
+        sheet = self.model.sheets[sheetIdx]
         dialog = SplitSheetDialog(self.root, sheet.inputImg)
         if dialog.isEmpty:
-            sheet.outputImg = self.crossedOutCopy(sheet.inputImg)
+            sheet.outputImg = self.model.crossedOutCopy(sheet.inputImg)
             sheet.isEmpty = True
             self.resetPreviewCanvas()
         elif dialog.outputImg is not None:
             helpers.recreateDir(sheet.tmpDir)
-            sheet.outputImg = self.fitSplitSheet(dialog.outputImg, sheet.tmpDir)
+            sheet.outputImg = self.model.fitSplitSheet(dialog.outputImg, sheet.tmpDir)
             sheet.isEmpty = False
             self.resetPreviewCanvas()
 
@@ -1279,16 +1428,15 @@ class GUI():
         self.previewCanvas.yview_scroll(increment, "units")
 
     def abortProcess(self):
-        self.abortProcess = True
+        self.abortingProcess = True
         if self.__progressWindow:
             self.__progressWindow.destroy()
             self.__progressWindow = None
         self.log.info('Aborting preview generation')
 
     def splitSheets(self):
-        self.sheets = []
         self.buttons['recognizeTags'].config(state='disabled')
-        self.abortProcess = False
+        self.abortingProcess = False
 
         self.__progressWindow = tkinter.Toplevel()
         self.__progressWindow.title('Splitting progress')
@@ -1300,58 +1448,16 @@ class GUI():
         abortButton.bind('<Return>', self.abortProcess)
         abortButton.pack(pady=10)
 
-        for scanFileIndex, scanFile in enumerate(self.scanFilenames):
-            if self.abortProcess:
+        self.model.prepareScanSplitting()
+        for scanFileIndex, scanFilename in enumerate(self.model.scanFilenames):
+            if self.abortingProcess:
                 break
-            progressBar['value'] = scanFileIndex / len(self.scanFilenames) * 100
+            progressBar['value'] = scanFileIndex / len(self.model.scanFilenames) * 100
             self.__progressWindow.update()
 
-            splitDir = f'{self.tmpDir}/{scanFile}/'
-            helpers.recreateDir(splitDir)
-
-            splitter = SheetSplitter(
-                    f'0_splitSheets',
-                    splitDir,
-                    self.sheetCoordinates[0],
-                    self.sheetCoordinates[1],
-                    self.sheetCoordinates[2],
-                    self.sheetCoordinates[3])
-
-            inputImg = cv.imread(self.scanDir + scanFile)
-            if inputImg is None:
-                self.log.warn(f'file {self.scanDir + scanFile} could not be ' + 
-                        'opened as an image')
-                continue
-            rotatedImg = imutils.rotate_bound(inputImg, self.rotationAngle)
-            resizedImg = cv.resize(rotatedImg, (3672, 6528), Image.BILINEAR)
-            self.log.info(f'Splitting scanned file: {scanFile}')
-            splitter.process(resizedImg)
-            splitter.writeOutput()
-            for idx, splitImg in enumerate(splitter._outputSheetImgs):
-                if self.abortProcess:
-                    break
-
-                sheetName = f'{scanFile}_sheet{idx}'
-                self.log.info(f'sheetName = {sheetName}')
-                sheetTmpDir = f'{self.tmpDir}{sheetName}/'
-                helpers.recreateDir(sheetTmpDir)
-                if splitImg is None:
-                    self.sheets.append(SplitSheet(
-                        self.scanDir + scanFile,
-                        sheetName,
-                        sheetTmpDir,
-                        splitter.unprocessedSheetImgs[idx],
-                            self.crossedOutCopy(splitter.unprocessedSheetImgs[idx]),
-                        True))
-                else:
-                    self.sheets.append(SplitSheet(
-                        self.scanDir + scanFile,
-                        sheetName,
-                        sheetTmpDir,
-                        splitter.unprocessedSheetImgs[idx],
-                        self.fitSplitSheet(splitImg, sheetTmpDir),
-                        False))
-                self.resetPreviewCanvas(scrollToBottom=True)
+            self.model.splitScan(scanFilename, self.sheetCoordinates,
+                    self.rotationAngle)
+            self.resetPreviewCanvas(scrollToBottom=True)
 
         if self.__progressWindow:
             self.__progressWindow.destroy()
@@ -1362,14 +1468,14 @@ class GUI():
                 f'All split sheets were found empty - probably sheet transformation settings are bad')
             return
 
-        if not self.abortProcess:
+        if not self.abortingProcess:
             self.buttons['recognizeTags'].config(state='normal')
 
     def resetPreviewCanvas(self, scrollToBottom=False):
         self.previewCanvas.delete('all')
         self.previewImages = []
 
-        for sheet in self.sheets:
+        for sheet in self.model.sheets:
             height, width, _ = sheet.outputImg.shape
             resizeRatio = self.previewCanvas.winfo_width() / (self.previewColumnCount * width)
             resizedWidth, resizedHeight = int(width * resizeRatio), int(height * resizeRatio)
@@ -1393,36 +1499,12 @@ class GUI():
             self.previewCanvas.yview_moveto('1.0')
         self.root.update()
 
-    def crossedOutCopy(self, img):
-        height, width, _ = img.shape
-        outputImg = np.copy(img)
-        cv.line(outputImg, (0, 0), (width, height), (255,0,0), 20)
-        cv.line(outputImg, (0, height), (width, 0), (255,0,0), 20)
-        return outputImg
-
-    def fitSplitSheet(self, splitImg, sheetDir):
-        sheetProcessors = []
-        sheetProcessors.append(RotateSheet("1_rotateSheet", self.tmpDir))
-        sheetProcessors.append(FindMarginsByLines("2_findMarginsByLines", self.tmpDir))
-        fitToSheetProcessor = FitToSheet("3_fitToSheet", self.tmpDir)
-        sheetProcessors.append(fitToSheetProcessor)
-
-        img = splitImg
-        for p in sheetProcessors:
-            p.outputDir = sheetDir
-            p.process(img)
-            p.writeOutput()
-            img = p._outputImg
-
-        return fitToSheetProcessor._outputImg
-
     def recognizeTags(self):
-        self.log.info('Recognize tags:')
-        if self.sheets == [] or self.abortProcess:
+        if self.model.sheets == [] or self.abortingProcess:
             messagebox.showerror('Sheets missing', 'Unable to recognize tags - input images need to be split first')
             return
 
-        self.abortProcess = False
+        self.abortingProcess = False
         self.__progressWindow = tkinter.Toplevel()
         self.__progressWindow.title('Splitting progress')
         self.__progressWindow.protocol("WM_DELETE_WINDOW", self.abortProcess)
@@ -1433,42 +1515,19 @@ class GUI():
         abortButton.bind('<Return>', self.abortProcess)
         abortButton.pack(pady=10)
 
-        helpers.recreateDir(self.outputDir)
-        recognizer = RecognizeText("4_recognizeText", self.tmpDir, self.db)
-        self.partiallyFilledFiles = set()
-        for idx, sheet in enumerate(self.sheets):
-            if self.abortProcess:
+        self.model.prepareTagRecognition()
+        for idx, sheet in enumerate(self.model.sheets):
+            if self.abortingProcess:
                 break
-            progressBar['value'] = idx / len(self.sheets) * 100
+            progressBar['value'] = idx / len(self.model.sheets) * 100
             self.__progressWindow.update()
 
-            if sheet.isEmpty:
-                self.partiallyFilledFiles.add(sheet.inputScanFilepath)
-                continue
-
-            recognizer.prepareProcessing(sheet.name)
-            recognizer.process(sheet.outputImg)
-            recognizer.writeOutput()
-            if os.path.exists(f'{self.outputDir}{recognizer.fileName()}'):
-                self.log.info(f'reset sheet to fallback, as {recognizer.fileName()} already exists')
-                recognizer.resetSheetToFallback()
-            recognizer.storeSheet(self.outputDir)
-
-            compressedImgWidth = self.db.config.getint('tagtrail_ocr',
-                    'output_img_width')
-            compressedImgQuality = self.db.config.getint('tagtrail_ocr',
-                    'output_img_jpeg_quality')
-            cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_original_scan.jpg',
-                    imutils.resize(sheet.inputImg, width=compressedImgWidth),
-                    [int(cv.IMWRITE_JPEG_QUALITY), compressedImgQuality])
-            cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_normalized_scan.jpg',
-                    imutils.resize(sheet.outputImg, width=compressedImgWidth),
-                    [int(cv.IMWRITE_JPEG_QUALITY), compressedImgQuality])
+            self.model.recognizeTags(sheet)
 
         if self.__progressWindow:
             self.__progressWindow.destroy()
             self.__progressWindow = None
-        self.abortProcess = False
+        self.abortingProcess = False
         if messagebox.askyesno('OCR completed',
                 'tagtrail_ocr is done - exit now?'):
             self.root.destroy()
@@ -1476,16 +1535,18 @@ class GUI():
 def main(accountingDir, tmpDir):
     outputDir = f'{accountingDir}2_taggedProductSheets/'
     helpers.recreateDir(tmpDir)
+    helpers.recreateDir(outputDir)
     db = Database(f'{accountingDir}0_input/')
-    for (parentDir, dirNames, fileNames) in walk(f'{accountingDir}0_input/scans/'):
-        gui = GUI(tmpDir, parentDir, outputDir, fileNames, db)
-        if gui.sheets == [] or gui.abortProcess:
+    for (parentDir, dirNames, fileNames) in os.walk(f'{accountingDir}0_input/scans/'):
+        model = Model(tmpDir, parentDir, outputDir, fileNames, db)
+        gui = GUI(model, db)
+        if model.sheets == [] or gui.abortingProcess:
             break
 
         gui.log.info('')
         gui.log.info(f'successfully processed {len(fileNames)} files')
-        gui.log.info(f'the following files generated less than {SheetSplitter.numberOfSheets} sheets')
-        for f in gui.partiallyFilledFiles:
+        gui.log.info(f'the following files generated less than {ScanSplitter.numberOfSheets} sheets')
+        for f in model.partiallyFilledFiles:
             gui.log.info(f)
         break
 

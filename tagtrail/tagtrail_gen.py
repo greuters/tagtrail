@@ -28,16 +28,17 @@
 import argparse
 import cv2 as cv
 import slugify
-import helpers
 import gui_components
 import math
-from database import Database
-from sheets import ProductSheet
 import tkinter
 from tkinter import messagebox
 import traceback
 import os
 import shutil
+
+from . import helpers
+from .database import Database
+from .sheets import ProductSheet
 
 class Gui:
     scanPostfix = '_normalized_scan.jpg'
