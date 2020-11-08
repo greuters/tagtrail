@@ -65,12 +65,21 @@ On Ubuntu
 
 On Windows
 
-* install git from https://git-scm.com/download/win
+* install miniconda with Python 3.8 from https://docs.conda.io/en/latest/miniconda.html
 
-* install python3 from https://www.python.org/downloads/windows/
+* run Anaconda Prompt, the following commands are entered here
 
-* install tesserocr: https://pypi.org/project/tesserocr/
+* conda install git
 
+* change to the directory you want to install tagtrail to, e.g.
+  cd C:/Users/Username/AppData/ 
+
+* git clone https://github.com/greuters/tagtrail.git
+
+* cd tagtrail
+
+* conda install -c conda-forge tesserocr=2.5.1
+ 
 * pip install -r requirements.txt
 
 * python -m tests.scenario_medium

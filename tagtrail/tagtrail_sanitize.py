@@ -223,7 +223,7 @@ class Gui:
         if self.width == -1:
             self.width=self.root.winfo_screenwidth()
         if self.height == -1:
-            self.height=s
+            self.height=self.root.winfo_screenwidth()
         self.root.geometry(str(self.width)+'x'+str(self.height))
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)
