@@ -206,8 +206,8 @@ class ContourBasedFrameFinder():
     printed on white paper as input and identifies the contour of the bold
     frame on it.
 
-    ContourBasedFrameFinder is precise (almost no wrong contours detected) and
-    faster than LineBasedFrameFinder, but often misses distorted frames (e.g.
+    :class:`ContourBasedFrameFinder` is precise (almost no wrong contours detected) and
+    faster than :class:`LineBasedFrameFinder`, but often misses distorted frames (e.g.
     if a corner is folded or a tag placed over the frame)
 
     :param name: name of the processor, used to identify logs and debug images
@@ -310,8 +310,8 @@ class LineBasedFrameFinder():
     A processor that takes an image which presumably contains a ProductSheet printed on white
     paper as input and identifies the contour of the bold frame on it.
 
-    LineBasedFrameFinder finds frames even if they are not complete, but gets
-    confused by sheet boundaries if the sheet is not well detected.
+    :class:`LineBasedFrameFinder` finds frames even if they are not complete,
+    but gets confused by sheet boundaries if the sheet is not well detected.
 
     :param name: name of the processor, used to identify logs and debug images
     :type name: str
