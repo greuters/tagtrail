@@ -22,6 +22,7 @@ import traceback
 import tkinter
 import time
 import re
+import sys
 
 from . import helpers
 
@@ -30,7 +31,8 @@ class AutocompleteEntry(tkinter.Entry):
     """
     All input is uppercased before processing.
     """
-    def __init__(self, text, confidence, possibleValues, releaseFocus, enabled, *args, **kwargs):
+    def __init__(self, text, confidence, possibleValues, releaseFocus, enabled,
+            listBoxParent, listBoxX, listBoxY, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.possibleValues = [v.upper() for v in possibleValues]
         self.__releaseFocus = releaseFocus
@@ -43,6 +45,9 @@ class AutocompleteEntry(tkinter.Entry):
         self.text = text
         self.enabled = enabled
         self.confidence = confidence
+        self.listBoxParent = listBoxParent
+        self.listBoxX = listBoxX
+        self.listBoxY = listBoxY
 
         self.bind("<Return>", self.selection)
         self.bind("<Up>", self.up)
@@ -106,8 +111,8 @@ class AutocompleteEntry(tkinter.Entry):
 
                 else:
                     if not self.__listBox:
-                        self.__listBox = tkinter.Listbox(self.master)
-                        self.__listBox.place(x=self.winfo_x(), y=self.winfo_y()+self.winfo_height())
+                        self.__listBox = tkinter.Listbox(self.listBoxParent)
+                        self.__listBox.place(x=self.listBoxX, y=self.listBoxY)
 
                     self.__listBox.delete(0, tkinter.END)
                     for w in words:
@@ -278,6 +283,7 @@ class BaseGUI(ABC):
     :param log: logger to write messages to
     :type log: class: `helpers.Log`
     """
+    buttonFrameWidth=200
     progressBarLength = 400
     refreshTimeout = 50 # in ms
 
@@ -288,22 +294,27 @@ class BaseGUI(ABC):
         self.log = log
         self.abortingProcess = False
         self.__lastConfigureTimestamp = time.time_ns()
+        self.buttonFrame = None
+        self.buttons = {}
 
         self.root = tkinter.Tk()
         self.root.report_callback_exception = self.reportCallbackException
         self.root.minsize(*self.get_minsize())
 
-        width, height, _, _ = self.get_maximized_window_geometry()
-        if initWidth is None:
-            self.width = width
+        if initWidth is None or initHeight is None:
+            if sys.platform == "linux" or sys.platform == "linux2":
+                self.root.attributes('-zoomed', True)
+            elif sys.platform == "darwin":
+                self.root.attributes('-zoomed', True)
+            elif sys.platform == "win32":
+                self.root.state('zoomed')
         else:
-            self.width = initWidth
-        if initHeight is None:
-            self.height = height
-        else:
-            self.height = initHeight
+            self.root.geometry(f'{initWidth}x{initHeight}+0+0')
 
-        self.root.geometry(str(self.width)+'x'+str(self.height))
+        self.root.update()
+        self.width = self.root.winfo_width()
+        self.height = self.root.winfo_height()
+
         self.populateRoot()
         self.root.bind("<Configure>", self.__configure)
         self.root.mainloop()
@@ -311,7 +322,6 @@ class BaseGUI(ABC):
     def __configure(self, event):
         if not event.widget == self.root:
             return None
-
         now = time.time_ns()
         self.__lastConfigureTimestamp = now
         self.root.after(self.refreshTimeout, lambda: self.__deferredRefresh(event, now))
@@ -331,31 +341,7 @@ class BaseGUI(ABC):
         :return: (width, height)
         :rtype: (int, int)
         """
-        return (400, 300)
-
-    def get_maximized_window_geometry(self):
-        """
-        Workaround to get the size of the current screen in a multi-screen setup.
-
-        :return: tuple (width, height, left, top) parsed from the standard Tk geometry string
-        :rtype: tuple (int, int, int, int)
-        """
-        root = tkinter.Tk()
-        root.update_idletasks()
-    #    if sys.platform == "linux" or sys.platform == "linux2":
-    #        # linux
-    #    elif sys.platform == "darwin":
-    #        # OS X
-    #    elif sys.platform == "win32":
-    #        # Windows.
-    #    root.attributes('-fullscreen', True)
-        root.attributes('-zoomed', True)
-        root.state('iconic')
-        geometry = root.winfo_geometry()
-        root.destroy()
-        match = re.match('(\d+)x(\d+)\+(\d+)\+(\d+)', geometry)
-        width, height, left, top = match.groups()
-        return (int(width), int(height), int(left), int(top))
+        return (800, 600)
 
     @abstractmethod
     def populateRoot(self):
@@ -428,3 +414,41 @@ class BaseGUI(ABC):
     def reportCallbackException(self, exception, value, tb):
         traceback.print_exception(exception, value, tb)
         messagebox.showerror('Abort tagtrail', value)
+
+    def addButtonFrame(self, buttons):
+        """
+        Add a frame with buttons to the east side of self.root
+
+        :param buttons: list of triples (buttonId, text, command) to create
+            buttons from and add them to self.buttons. self.buttons[buttonId]
+            will have the given text and the command is a callback associated
+            with clicking the button or hitting Return while it is focused
+        :type buttons: list of triples (str, str, func), where func takes one
+            positional argument (event)
+        """
+        if self.buttonFrame is None:
+            self.buttonFrame = tkinter.Frame(self.root)
+        self.buttonFrame.place(x=self.width - self.buttonFrameWidth,
+                y=0,
+               width=self.buttonFrameWidth,
+               height=self.height)
+        for w in self.buttonFrame.winfo_children():
+            w.destroy()
+
+        y = 60
+        self.buttons = {}
+        for buttonId, text, command in buttons:
+            b = tkinter.Button(self.buttonFrame, text=text)
+            b.bind('<Button-1>', command)
+            b.bind('<Return>', command)
+            b.place(relx=.5, y=y, anchor="center",
+                    width=.8*self.buttonFrameWidth)
+
+            # need to update the screen to get the correct button height
+            # caveat: during the update, a <Configure> event might be triggered
+            # and invalidate the whole process => abort if we are outdated
+            b.update()
+            if not b.winfo_exists():
+                return
+            y += b.winfo_height()
+            self.buttons[buttonId] = b
