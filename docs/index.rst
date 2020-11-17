@@ -10,6 +10,9 @@ Contents:
 .. toctree::
    :maxdepth: 2
 
+   README <readme_link>
+   tagtrail
+   modules
 
 
 Indices and tables

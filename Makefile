@@ -2,4 +2,9 @@ init:
 	pip install -r requirements.txt
 
 test:
-	nosetests tests
+	python -m tests.scenario_medium
+
+docs:
+	$(MAKE) -C docs html
+
+.PHONY: init test docs

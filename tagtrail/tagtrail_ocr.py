@@ -93,6 +93,7 @@ class ScanSplitter():
         Process a scanned image
 
         For each processed scan
+
         - four images are appended to self.unprocessedSheetImgs
           (cropped sheet regions without further processing)
         - for each of the four possible sheets, a normalized image of the
@@ -207,8 +208,8 @@ class ContourBasedFrameFinder():
     printed on white paper as input and identifies the contour of the bold
     frame on it.
 
-    ContourBasedFrameFinder is precise (almost no wrong contours detected) and
-    faster than LineBasedFrameFinder, but often misses distorted frames (e.g.
+    :class:`ContourBasedFrameFinder` is precise (almost no wrong contours detected) and
+    faster than :class:`LineBasedFrameFinder`, but often misses distorted frames (e.g.
     if a corner is folded or a tag placed over the frame)
 
     :param name: name of the processor, used to identify logs and debug images
@@ -311,8 +312,8 @@ class LineBasedFrameFinder():
     A processor that takes an image which presumably contains a ProductSheet printed on white
     paper as input and identifies the contour of the bold frame on it.
 
-    LineBasedFrameFinder finds frames even if they are not complete, but gets
-    confused by sheet boundaries if the sheet is not well detected.
+    :class:`LineBasedFrameFinder` finds frames even if they are not complete,
+    but gets confused by sheet boundaries if the sheet is not well detected.
 
     :param name: name of the processor, used to identify logs and debug images
     :type name: str
@@ -591,9 +592,9 @@ class TagRecognizer():
         actual corners of a box are identified, their bounding rectangle is cropped
         by borderSize to only consider the area inside the box for ocr
     :type borderSize: int
-    :param minplausibleboxsize: Minimal size of a box to be considered sucessfully
-    detected. If the area identified as being inside the box is smaller than
-        this, identification is considered to have failed.
+    :param minplausibleboxsize: Minimal size of a box to be considered
+        sucessfully detected. If the area identified as being inside the box is
+        smaller than this, identification is considered to have failed.
     :type minPlausibleBoxSize: int
     :param minComponentArea: Minimal size of a component to be considered for
         OCR (aka minimal expected letter size). If a single component inside the
@@ -1425,9 +1426,12 @@ class Model():
         self.partiallFilledFiles if the region is empty
 
         Note: this call has to be invoked in a with-statement, e.g.
-              m = Model(...)
-              with m:
-                  m.recognizeTags(...)
+
+        .. code-block:: python
+
+            m = Model(...)
+            with m:
+                m.recognizeTags(...)
 
         :param sheetRegion: the region to be processed
         :type sheetRegion: class `SheetRegionData`

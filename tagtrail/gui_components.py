@@ -399,8 +399,8 @@ class BaseGUI(ABC):
         :type percentage: float
 
         :param progressMessage: optional one-line message to the user about
-        what happens. If None is given, the message is not updated.
-        :type progressMessage: str
+            what happens. If None is given, the message is not updated.
+            :type progressMessage: str
         """
         self.__progressBar['value'] = percentage
         if progressMessage is not None:
