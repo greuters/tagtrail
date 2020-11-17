@@ -16,7 +16,12 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from tkinter import simpledialog, ttk
+from tkinter import messagebox
+from abc import ABC, abstractmethod
+import traceback
 import tkinter
+import time
+import re
 
 from . import helpers
 
@@ -261,4 +266,165 @@ class ChoiceDialog(simpledialog.Dialog):
     def apply(self):
         self.selection = self.__items[self.__list.curselection()[0]]
 
+class BaseGUI(ABC):
+    """
+    Base class for graphical user interfaces interacting with a model.
+    Handles standard tasks like window resizing.
 
+    :param initWidth: initial width of the root window
+    :type initWidth: int
+    :param initHeight: initial width of the root window
+    :type initHeight: int
+    :param log: logger to write messages to
+    :type log: class: `helpers.Log`
+    """
+    progressBarLength = 400
+    refreshTimeout = 50 # in ms
+
+    def __init__(self,
+            initWidth = None,
+            initHeight = None,
+            log = helpers.Log(helpers.Log.LEVEL_INFO)):
+        self.log = log
+        self.abortingProcess = False
+        self.__lastConfigureTimestamp = time.time_ns()
+
+        self.root = tkinter.Tk()
+        self.root.report_callback_exception = self.reportCallbackException
+        self.root.minsize(*self.get_minsize())
+
+        width, height, _, _ = self.get_maximized_window_geometry()
+        if initWidth is None:
+            self.width = width
+        else:
+            self.width = initWidth
+        if initHeight is None:
+            self.height = height
+        else:
+            self.height = initHeight
+
+        self.root.geometry(str(self.width)+'x'+str(self.height))
+        self.populateRoot()
+        self.root.bind("<Configure>", self.__configure)
+        self.root.mainloop()
+
+    def __configure(self, event):
+        if not event.widget == self.root:
+            return None
+
+        now = time.time_ns()
+        self.__lastConfigureTimestamp = now
+        self.root.after(self.refreshTimeout, lambda: self.__deferredRefresh(event, now))
+
+    def __deferredRefresh(self, event, timestamp):
+        if timestamp != self.__lastConfigureTimestamp:
+            return
+
+        self.width = event.width
+        self.height = event.height
+        self.populateRoot()
+
+    def get_minsize(self):
+        """
+        Query minimal window size of root.
+
+        :return: (width, height)
+        :rtype: (int, int)
+        """
+        return (400, 300)
+
+    def get_maximized_window_geometry(self):
+        """
+        Workaround to get the size of the current screen in a multi-screen setup.
+
+        :return: tuple (width, height, left, top) parsed from the standard Tk geometry string
+        :rtype: tuple (int, int, int, int)
+        """
+        root = tkinter.Tk()
+        root.update_idletasks()
+    #    if sys.platform == "linux" or sys.platform == "linux2":
+    #        # linux
+    #    elif sys.platform == "darwin":
+    #        # OS X
+    #    elif sys.platform == "win32":
+    #        # Windows.
+    #    root.attributes('-fullscreen', True)
+        root.attributes('-zoomed', True)
+        root.state('iconic')
+        geometry = root.winfo_geometry()
+        root.destroy()
+        match = re.match('(\d+)x(\d+)\+(\d+)\+(\d+)', geometry)
+        width, height, left, top = match.groups()
+        return (int(width), int(height), int(left), int(top))
+
+    @abstractmethod
+    def populateRoot(self):
+        """
+        (Re-)create widgets on self.root, taking care to destroy existing widgets
+        from a previous call if necessary.
+        """
+        pass
+
+    def setupProgressIndicator(self, progressMessage = 'Progress'):
+        """
+        Setup progress indication for the user before starting a long running
+        process.
+
+        Note: call self.updateProgressIndicator regularly to keep the user
+        informed and stop processing if self.abortingProcess == True.
+
+        When you are done processing, the indicator should be removed by a call
+        to self.destroyProgressIndicator.
+
+        :param progressMessage: one-line message to the user about what happens
+        :type progressMessage: str
+        """
+        self.abortingProcess = False
+
+        self.__progressWindow = tkinter.Toplevel()
+        self.__progressWindow.title(progressMessage)
+        self.__progressWindow.protocol("WM_DELETE_WINDOW", self.__abortProcess)
+        self.__progressBar = tkinter.ttk.Progressbar(self.__progressWindow, length=self.progressBarLength, mode='determinate')
+        self.__progressBar.pack(pady=10, padx=20)
+        abortButton = tkinter.Button(self.__progressWindow, text='Abort',
+            command=self.__abortProcess)
+        abortButton.bind('<Return>', self.__abortProcess)
+        abortButton.pack(pady=10)
+
+    def updateProgressIndicator(self, percentage, progressMessage = None):
+        """
+        Update progress indication.
+
+        :param percentage: progress made in a scale of 0..100
+        :type percentage: float
+
+        :param progressMessage: optional one-line message to the user about
+        what happens. If None is given, the message is not updated.
+        :type progressMessage: str
+        """
+        self.__progressBar['value'] = percentage
+        if progressMessage is not None:
+            self.__progressWindow.title(progressMessage)
+        self.__progressWindow.update()
+
+    def destroyProgressIndicator(self):
+        """
+        Stop indicating progress to the user.
+        """
+        if self.__progressWindow:
+            self.__progressWindow.destroy()
+            self.__progressWindow = None
+
+    def __abortProcess(self):
+        """
+        Stop processing on user request.
+
+        self.abortingProgress is set to True which should interrupt the running
+        process if handled adequately, and the progress indication is reset.
+        """
+        self.abortingProcess = True
+        self.destroyProgressIndicator()
+
+    def reportCallbackException(self, exception, value, tb):
+        traceback.print_exception(exception, value, tb)
+        messagebox.showerror('Abort tagtrail', value)

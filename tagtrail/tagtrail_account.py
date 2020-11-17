@@ -20,7 +20,6 @@ from abc import ABC, abstractmethod
 import tkinter
 from tkinter import messagebox
 import itertools
-import traceback
 import datetime
 import os
 import shutil
@@ -223,21 +222,15 @@ class TagCollector(ABC):
                         f'{self.taggedGrossSalesPrice(product.id)} to ' +
                         f'{product.grossSalesPrice()}')
 
-class Gui:
+class GUI(gui_components.BaseGUI):
     scanPostfix = '_normalized_scan.jpg'
 
     def __init__(self, accountingDataPath, renamedAccountingDataPath, nextAccountingDataPath,
             accountingDate, configFilePath, updateCo2Statistics):
-        self.log = helpers.Log()
         self.accountingDate = accountingDate
         self.accountingDataPath = accountingDataPath
         self.renamedAccountingDataPath = renamedAccountingDataPath
         self.nextAccountingDataPath = nextAccountingDataPath
-
-        self.root = tkinter.Tk()
-        self.root.report_callback_exception = self.reportCallbackException
-        self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
-
         self.db = EnrichedDatabase(accountingDataPath, accountingDate,
                 configFilePath, updateCo2Statistics)
 
@@ -249,6 +242,13 @@ class Gui:
                 inventoryQuantityDate != accountingDate ({inventoryQuantityDate} != {accountingDate})
                 To do a valid accounting, either redo the inventory or the accounting""")
 
+        width = self.db.config.getint('general', 'screen_width')
+        width = None if width == -1 else width
+        height = self.db.config.getint('general', 'screen_height')
+        height = None if height == -1 else height
+        super().__init__(width, height, helpers.Log())
+
+    def populateRoot(self):
         accountedProducts = [fileName.split('_')[0] for fileName in self.db.productSheetNames]
         accountedProductsOverview = gui_components.Checkbar(self.root,
                 'Accounted sheets:',
@@ -283,11 +283,6 @@ class Gui:
         saveButton.pack(side=tkinter.RIGHT)
         saveButton.bind('<Return>', lambda _: self.saveAndQuit())
         saveButton.focus_set()
-        self.root.mainloop()
-
-    def reportCallbackException(self, exception, value, tb):
-        traceback.print_exception(exception, value, tb)
-        messagebox.showerror('Abort Accounting', value)
 
     def saveAndQuit(self):
         try:
@@ -552,7 +547,7 @@ def main(accountingDir, renamedAccountingDir, accountingDate,
     newDir = renamedAccountingDir.format(accountingDate = accountingDate)
     if newDir == nextAccountingDir:
         raise ValueError(f'nextAccountingDir must not be named {newDir}')
-    Gui(accountingDir, newDir, nextAccountingDir, accountingDate, configFilePath, updateCo2Statistics)
+    GUI(accountingDir, newDir, nextAccountingDir, accountingDate, configFilePath, updateCo2Statistics)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

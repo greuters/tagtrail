@@ -37,6 +37,7 @@ from abc import ABC, abstractmethod
 from . import helpers
 from .sheets import ProductSheet
 from .database import Database
+from .gui_components import BaseGUI
 
 class ScanSplitter():
     numberOfSheets = 4
@@ -590,6 +591,10 @@ class TagRecognizer():
         actual corners of a box are identified, their bounding rectangle is cropped
         by borderSize to only consider the area inside the box for ocr
     :type borderSize: int
+    :param minplausibleboxsize: Minimal size of a box to be considered sucessfully
+    detected. If the area identified as being inside the box is smaller than
+        this, identification is considered to have failed.
+    :type minPlausibleBoxSize: int
     :param minComponentArea: Minimal size of a component to be considered for
         OCR (aka minimal expected letter size). If a single component inside the
         box is smaller than this, it is clipped away before OCR.
@@ -612,6 +617,7 @@ class TagRecognizer():
             log = helpers.Log(),
             searchMarginSize = 25,
             borderSize = 5,
+            minPlausibleBoxSize = 1000,
             minComponentArea = 100,
             minAspectRatio = .2,
             confidenceThreshold = 0.5
@@ -622,9 +628,10 @@ class TagRecognizer():
         self.log = log
         self.searchMarginSize = searchMarginSize
         self.borderSize = borderSize
-        self.confidenceThreshold = confidenceThreshold
+        self.minPlausibleBoxSize = minPlausibleBoxSize
         self.minComponentArea = minComponentArea
         self.minAspectRatio = minAspectRatio
+        self.confidenceThreshold = confidenceThreshold
         self.tesseractApi = tesseractApi
         self.__db = db
         self.__sheet = ProductSheet()
@@ -794,6 +801,10 @@ class TagRecognizer():
         :rtype: (str, float), where 0 <= float <= 1 and str in candidateTexts
         """
         (x0, y0), (x1, y1) = self.__findBoxContour(box)
+        if (x1 - x0) * (y1 - y0) < self.minPlausibleBoxSize:
+            box.bgColor = (0, 0, 80)
+            return ("", 0.0)
+
         boxInputImg = self.__inputImg[y0:y1, x0:x1]
         blurredImg = self.__blurredImg[y0:y1, x0:x1]
         thresholdImg = cv.adaptiveThreshold(blurredImg, 255,
@@ -1437,7 +1448,8 @@ class Model():
         if os.path.exists(f'{self.outputDir}{recognizer.fileName()}'):
             self.log.info('reset sheetRegion to fallback, as ' +
                     f'{recognizer.fileName()} already exists')
-            recognizer.resetSheetToFallback()
+            recognizer.resetSheetToFallback(fallbackSheetName,
+                    self.fallbackSheetNumber)
 
         recognizer.storeSheet(self.outputDir)
         sheetRegion.name = recognizer.fileName()
@@ -1450,45 +1462,45 @@ class Model():
                 imutils.resize(sheetRegion.processedImg, width=self.compressedImgWidth),
                 [int(cv.IMWRITE_JPEG_QUALITY), self.compressedImgQuality])
 
-class GUI():
-    """
-    Graphical user interface to interact with the model
-    """
+class GUI(BaseGUI):
     previewColumnCount = 4
-    progressBarLength = 400
     buttonFrameWidth = 200
     previewScrollbarWidth = 20
 
     def __init__(self,
             model,
             db,
-            log = helpers.Log(helpers.Log.LEVEL_DEBUG)):
+            log = helpers.Log(helpers.Log.LEVEL_INFO)):
+
         self.model = model
         self.db = db
-        self.log = log
-        self.abortingProcess = False
         self.__selectedCorners = []
         self.sheetCoordinates = list(range(4))
+        self.scanCanvas = None
+        self.buttonFrame = None
         self.setActiveSheet(None)
         self.loadConfig()
+        self.readyForTagRecognition = False
 
-        self.root = tkinter.Tk()
-        self.rotationAngle = self.db.config.getint('tagtrail_ocr', 'rotationAngle')
-        self.width = self.db.config.getint('general', 'screen_width')
-        self.height = self.db.config.getint('general', 'screen_height')
-        if self.width == -1:
-            self.width=self.root.winfo_screenwidth()
-        if self.height == -1:
-            self.height=self.root.winfo_screenheight()
-        self.root.geometry(str(self.width)+'x'+str(self.height))
-        self.initGUI()
-        self.root.mainloop()
+        width = db.config.getint('general', 'screen_width')
+        width = None if width == -1 else width
+        height = db.config.getint('general', 'screen_height')
+        height = None if height == -1 else height
+        super().__init__(width, height, log)
+
+    def get_minsize(self):
+        return (self.buttonFrameWidth + self.previewScrollbarWidth, 300)
 
     def rotateImage90(self):
         self.rotationAngle = (self.rotationAngle + 90) % 360
-        self.resetGUI()
+        self.populateRoot()
 
-    def initGUI(self):
+    def populateRoot(self):
+        if self.scanCanvas is not None:
+            self.scanCanvas.destroy()
+        if self.buttonFrame is not None:
+            self.buttonFrame.destroy()
+
         if self.model.scanFilenames == []:
             messagebox.showwarning('No scanned files',
                 'No scanned files found, aborting program')
@@ -1500,7 +1512,7 @@ class GUI():
         rotatedImg = imutils.rotate_bound(scannedImg, self.rotationAngle)
 
         o_h, o_w, _ = rotatedImg.shape
-        aspectRatio = min(self.height / o_h, (self.width - self.buttonFrameWidth - self.previewScrollbarWidth) / 2 / o_w)
+        aspectRatio = min(self.height / o_h, (self.width - self.buttonFrameWidth - self.previewScrollbarWidth) / 3 / o_w)
         canvas_h, canvas_w = int(o_h * aspectRatio), int(o_w * aspectRatio)
         resizedImg = cv.resize(rotatedImg, (canvas_w, canvas_h), Image.BILINEAR)
 
@@ -1516,7 +1528,7 @@ class GUI():
         # preview of split sheets with the current configuration
         self.previewCanvas = tkinter.Canvas(self.root,
                width=self.width - self.buttonFrameWidth - self.previewScrollbarWidth - canvas_w,
-               height=canvas_h)
+               height=self.height)
         self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
         self.previewCanvas.place(x=canvas_w, y=0)
         self.previewCanvas.bind('<Button-1>', self.onMouseDownOnPreviewCanvas)
@@ -1545,6 +1557,8 @@ class GUI():
             resizedWidth, resizedHeight = int(width * resizeRatio), int(height * resizeRatio)
             self.previewColumnWidth = max(self.previewColumnWidth, resizedWidth)
             self.previewRowHeight = max(self.previewRowHeight, resizedHeight)
+
+        self.resetPreviewCanvas()
 
         # Additional buttons
         self.buttonFrame = tkinter.Frame(self.root,
@@ -1576,7 +1590,10 @@ class GUI():
         self.buttons['recognizeTags'] = tkinter.Button(self.buttonFrame, text='Recognize tags',
             command=self.recognizeTags)
         self.buttons['recognizeTags'].bind('<Return>', self.recognizeTags)
-        self.buttons['recognizeTags'].config(state='disabled')
+        if self.readyForTagRecognition:
+            self.buttons['recognizeTags'].config(state='normal')
+        else:
+            self.buttons['recognizeTags'].config(state='disabled')
 
         y = 60
         for b in self.buttons.values():
@@ -1585,17 +1602,9 @@ class GUI():
             b.update()
             y += b.winfo_height()
 
-    def destroyCanvas(self):
-        self.scanCanvas.destroy()
-        self.buttonFrame.destroy()
-
-    def resetGUI(self):
-        self.destroyCanvas()
-        self.initGUI()
-
     def loadConfigAndResetGUI(self):
         self.loadConfig()
-        self.resetGUI()
+        self.populateRoot()
 
     def loadConfig(self):
         self.rotationAngle = self.db.config.getint('tagtrail_ocr', 'rotationAngle')
@@ -1705,41 +1714,22 @@ class GUI():
             increment = -1
         self.previewCanvas.yview_scroll(increment, "units")
 
-    def abortProcess(self):
-        self.abortingProcess = True
-        if self.__progressWindow:
-            self.__progressWindow.destroy()
-            self.__progressWindow = None
-        self.log.info('Aborting preview generation')
-
     def splitSheets(self):
-        self.buttons['recognizeTags'].config(state='disabled')
-        self.abortingProcess = False
+        self.readyForTagRecognition = False
 
-        self.__progressWindow = tkinter.Toplevel()
-        self.__progressWindow.title('Splitting progress')
-        self.__progressWindow.protocol("WM_DELETE_WINDOW", self.abortProcess)
-        progressBar = tkinter.ttk.Progressbar(self.__progressWindow, length=self.progressBarLength, mode='determinate')
-        progressBar.pack(pady=10, padx=20)
-        abortButton = tkinter.Button(self.__progressWindow, text='Abort',
-            command=self.abortProcess)
-        abortButton.bind('<Return>', self.abortProcess)
-        abortButton.pack(pady=10)
-
+        self.setupProgressIndicator('Splitting progress')
         self.model.prepareScanSplitting()
         for scanFileIndex, scanFilename in enumerate(self.model.scanFilenames):
             if self.abortingProcess:
                 break
-            progressBar['value'] = scanFileIndex / len(self.model.scanFilenames) * 100
-            self.__progressWindow.update()
+            self.updateProgressIndicator(scanFileIndex /
+                    len(self.model.scanFilenames) * 100)
 
             self.model.splitScan(scanFilename, self.sheetCoordinates,
                     self.rotationAngle)
             self.resetPreviewCanvas(scrollToBottom=True)
 
-        if self.__progressWindow:
-            self.__progressWindow.destroy()
-            self.__progressWindow = None
+        self.destroyProgressIndicator()
 
         if not self.previewImages:
             messagebox.showwarning('Nothing to preview',
@@ -1747,7 +1737,8 @@ class GUI():
             return
 
         if not self.abortingProcess:
-            self.buttons['recognizeTags'].config(state='normal')
+            self.readyForTagRecognition = True
+            self.populateRoot()
 
     def resetPreviewCanvas(self, scrollToBottom=False):
         self.previewCanvas.delete('all')
@@ -1778,34 +1769,25 @@ class GUI():
         self.root.update()
 
     def recognizeTags(self):
-        if self.model.sheetRegions == [] or self.abortingProcess:
+        if (self.model.sheetRegions == [] or
+                self.readyForTagRecognition == False):
             messagebox.showerror('Sheets missing', 'Unable to recognize tags - input images need to be split first')
             return
 
-        self.abortingProcess = False
-        self.__progressWindow = tkinter.Toplevel()
-        self.__progressWindow.title('Splitting progress')
-        self.__progressWindow.protocol("WM_DELETE_WINDOW", self.abortProcess)
-        progressBar = tkinter.ttk.Progressbar(self.__progressWindow, length=self.progressBarLength, mode='determinate')
-        progressBar.pack(pady=10, padx=20)
-        abortButton = tkinter.Button(self.__progressWindow, text='Abort',
-            command=self.abortProcess)
-        abortButton.bind('<Return>', self.abortProcess)
-        abortButton.pack(pady=10)
-
+        self.setupProgressIndicator()
         with self.model:
             for idx, sheet in enumerate(self.model.sheetRegions):
                 if self.abortingProcess:
                     break
-                progressBar['value'] = idx / len(self.model.sheetRegions) * 100
-                self.__progressWindow.update()
-
+                self.updateProgressIndicator(idx / len(self.model.sheetRegions)
+                        * 100, sheet.name)
                 self.model.recognizeTags(sheet)
 
-        if self.__progressWindow:
-            self.__progressWindow.destroy()
-            self.__progressWindow = None
-        self.abortingProcess = False
+        self.destroyProgressIndicator()
+
+        if self.abortingProcess:
+            return
+
         if messagebox.askyesno('OCR completed',
                 'tagtrail_ocr is done - exit now?'):
             self.root.destroy()

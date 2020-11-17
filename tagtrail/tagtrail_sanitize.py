@@ -58,6 +58,7 @@ class InputSheet(ProductSheet):
         self._box_to_widget = {}
         self.validationBoxTexts = {}
         for box in self.boxes():
+            box.copiedFromPreviousAccounting = False
             if box.name == "nameBox":
                 choices = names
             elif box.name == "unitBox":
@@ -169,10 +170,22 @@ class InputSheet(ProductSheet):
 
                 assert(inputBox in self._box_to_widget)
                 autocompleteEntry = self._box_to_widget[inputBox]
-                autocompleteEntry.possibleValues = [inputBox.text.upper()]
+                text = inputBox.text.upper()
+                if text not in autocompleteEntry.possibleValues:
+                    autocompleteEntry.possibleValues.append(text)
                 autocompleteEntry.text = inputBox.text
                 autocompleteEntry.confidence = inputBox.confidence
                 autocompleteEntry.enabled = False
+                autocompleteEntry.destroyListBox()
+
+    def unlockBoxesFromPreviousAccounting(self):
+        for box in self.boxes():
+            if box.copiedFromPreviousAccounting == True:
+                box.confidence = 0
+                box.copiedFromPreviousAccounting = False
+                autocompleteEntry = self._box_to_widget[box]
+                autocompleteEntry.confidence = box.confidence
+                autocompleteEntry.enabled = True
 
     def nextUnclearBox(self, selectedBox):
         if self.boxByName('nameBox').confidence != 1:
@@ -202,35 +215,21 @@ class InputSheet(ProductSheet):
 
         return (numCorrect, numValidated)
 
-class Gui:
+class GUI(gui_components.BaseGUI):
     originalScanPostfix = '_original_scan.jpg'
     normalizedScanPostfix = '_normalized_scan.jpg'
+    buttonCanvasWidth=200
 
     def __init__(self, accountingDataPath):
-        self.log = Log()
         self.accountingDataPath = accountingDataPath
         self.productPath = f'{self.accountingDataPath}2_taggedProductSheets/'
         self.accountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'
         self.db = Database(f'{self.accountingDataPath}0_input/')
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
-
-        self.root = tkinter.Tk()
-        self.root.report_callback_exception = self.reportCallbackException
-        self.buttonCanvasWidth=200
-        self.width = self.db.config.getint('general', 'screen_width')
-        self.height = self.db.config.getint('general', 'screen_height')
-        if self.width == -1:
-            self.width=self.root.winfo_screenwidth()
-        if self.height == -1:
-            self.height=self.root.winfo_screenwidth()
-        self.root.geometry(str(self.width)+'x'+str(self.height))
-        self.root.bind("<Tab>", self.switchInputFocus)
-        self.root.bind("<Return>", self.switchInputFocus)
-        self.root.bind("<Up>", self.switchInputFocus)
-        self.root.bind("<Down>", self.switchInputFocus)
-        self.root.bind("<Left>", self.switchInputFocus)
-        self.root.bind("<Right>", self.switchInputFocus)
+        self.scanCanvas = None
+        self.inputCanvas = None
+        self.buttonCanvas = None
 
         self.productToSanitizeGenerator = self.nextProductToSanitize()
         try:
@@ -238,15 +237,76 @@ class Gui:
         except StopIteration:
             messagebox.showinfo('Nothing to do',
                 f'No file needing sanitation in input path {self.productPath}')
-            self.root.destroy()
-        else:
-            self.loadProductSheet()
+            return
 
-        self.root.mainloop()
+        width = self.db.config.getint('general', 'screen_width')
+        width = None if width == -1 else width
+        height = self.db.config.getint('general', 'screen_height')
+        height = None if height == -1 else height
+        super().__init__(width, height, Log())
 
-    def reportCallbackException(self, exception, value, tb):
-        traceback.print_exception(exception, value, tb)
-        messagebox.showerror('Abort Accounting', value)
+    def populateRoot(self):
+        if self.scanCanvas is not None:
+            self.scanCanvas.destroy()
+        if self.inputCanvas is not None:
+            self.inputCanvas.destroy()
+        if self.buttonCanvas is not None:
+            self.buttonCanvas.destroy()
+
+        self.root.title(self.csvPath)
+        self.root.bind("<Tab>", self.switchInputFocus)
+        self.root.bind("<Return>", self.switchInputFocus)
+        self.root.bind("<Up>", self.switchInputFocus)
+        self.root.bind("<Down>", self.switchInputFocus)
+        self.root.bind("<Left>", self.switchInputFocus)
+        self.root.bind("<Right>", self.switchInputFocus)
+
+        canvasWidth = (self.width - self.buttonCanvasWidth)/2
+        self.scanCanvas = tkinter.Canvas(self.root,
+               width=canvasWidth,
+               height=self.height)
+        self.scanCanvas.place(x=0, y=0)
+        self.scanCanvas.update()
+        self.scannedImgPath = self.csvPath+self.normalizedScanPostfix
+        self.loadScannedImg()
+
+        # Input mask to correct product sheet
+        self.inputCanvas = tkinter.Canvas(self.root,
+               width=canvasWidth,
+               height=self.height)
+        self.inputCanvas.place(x=canvasWidth, y=0)
+        self.inputCanvas.update()
+        self.inputSheet = InputSheet(self.inputCanvas, self.db, self.csvPath,
+                self.accountedProductsPath)
+
+        # Additional buttons
+        self.buttonCanvas = tkinter.Frame(self.root,
+               width=self.buttonCanvasWidth,
+               height=self.height)
+        self.buttonCanvas.place(x=2*canvasWidth, y=0)
+        self.buttons = {}
+        self.buttons['saveAndContinue'] = tkinter.Button(self.buttonCanvas, text='Save and continue',
+            command=self.saveAndContinue)
+        self.buttons['saveAndContinue'].bind('<Return>', self.saveAndContinue)
+        self.buttons['saveAndReloadDB'] = tkinter.Button(self.buttonCanvas,
+            text='Save and reload current',
+            command=self.saveAndReloadDB)
+        self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
+        self.buttons['switchScan'] = tkinter.Button(self.buttonCanvas,
+            text='Show original',
+            command=self.switchScan)
+        self.buttons['switchScan'].bind('<Return>', self.switchScan)
+        self.buttons['unlockPreviousAccounting'] = tkinter.Button(self.buttonCanvas,
+            text='Unlock Boxes',
+            command=self.unlockBoxesFromPreviousAccounting)
+        self.buttons['unlockPreviousAccounting'].bind('<Return>', self.unlockBoxesFromPreviousAccounting)
+
+        y = 60
+        for b in self.buttons.values():
+            b.place(relx=.5, y=y, anchor="center",
+                    width=.8*self.buttonCanvasWidth)
+            b.update()
+            y += b.winfo_height()
 
     def nextProductToSanitize(self):
         # assuming each product is stored in productPath as a triple of
@@ -309,14 +369,13 @@ class Gui:
                     """.format(self.numCorrectValidatedBoxes, self.numValidatedValidatedBoxes))
             self.root.destroy()
         else:
-            self.destroyCanvas()
-            self.loadProductSheet()
+            self.populateRoot()
             return "break"
 
     def saveAndReloadDB(self, event=None):
         self.save()
         self.db = Database(f'{self.accountingDataPath}0_input/')
-        self.loadProductSheet()
+        self.populateRoot()
         return "break"
 
     def save(self):
@@ -364,59 +423,6 @@ class Gui:
         os.rename(oldOriginalScanPath, newOriginalScanPath)
         self.log.debug(f'renaming {oldNormalizedScanPath} to {newNormalizedScanPath}')
         os.rename(oldNormalizedScanPath, newNormalizedScanPath)
-        self.destroyCanvas()
-
-    def destroyCanvas(self):
-        self.scanCanvas.destroy()
-        self.inputCanvas.destroy()
-        self.buttonCanvas.destroy()
-
-    def loadProductSheet(self):
-        self.root.title(self.csvPath)
-
-        canvasWidth = (self.width - self.buttonCanvasWidth)/2
-        self.scanCanvas = tkinter.Canvas(self.root,
-               width=canvasWidth,
-               height=self.height)
-        self.scanCanvas.place(x=0, y=0)
-        self.scanCanvas.update()
-        self.scannedImgPath = self.csvPath+self.normalizedScanPostfix
-        self.loadScannedImg()
-
-        # Input mask to correct product sheet
-        self.inputCanvas = tkinter.Canvas(self.root,
-               width=canvasWidth,
-               height=self.height)
-        self.inputCanvas.place(x=canvasWidth, y=0)
-        self.inputCanvas.update()
-        self.inputSheet = InputSheet(self.inputCanvas, self.db, self.csvPath,
-                self.accountedProductsPath)
-
-        # Additional buttons
-        self.buttonCanvas = tkinter.Frame(self.root,
-               width=self.buttonCanvasWidth,
-               height=self.height)
-        self.buttonCanvas.place(x=2*canvasWidth, y=0)
-        self.buttons = {}
-        self.buttons['saveAndContinue'] = tkinter.Button(self.buttonCanvas, text='Save and continue',
-            command=self.saveAndContinue)
-        self.buttons['saveAndContinue'].bind('<Return>', self.saveAndContinue)
-        self.buttons['saveAndReloadDB'] = tkinter.Button(self.buttonCanvas,
-            text='Save and reload current',
-            command=self.saveAndReloadDB)
-        self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
-        self.buttons['switchScan'] = tkinter.Button(self.buttonCanvas,
-            text='Show original',
-            command=self.switchScan)
-        self.buttons['switchScan'].bind('<Return>', self.switchScan)
-
-
-        y = 60
-        for b in self.buttons.values():
-            b.place(relx=.5, y=y, anchor="center",
-                    width=.8*self.buttonCanvasWidth)
-            b.update()
-            y += b.winfo_height()
 
     def switchScan(self, event=None):
         if self.scannedImgPath == self.csvPath+self.normalizedScanPostfix:
@@ -428,6 +434,9 @@ class Gui:
         else:
             assert(false)
         self.loadScannedImg()
+
+    def unlockBoxesFromPreviousAccounting(self, event=None):
+        self.inputSheet.unlockBoxesFromPreviousAccounting()
 
     def loadScannedImg(self):
         self.scanCanvas.delete('all')
@@ -483,4 +492,4 @@ if __name__== "__main__":
     parser.add_argument('accountingDir',
             help='Top-level tagtrail directory to process, usually data/next/')
     args = parser.parse_args()
-    Gui(args.accountingDir)
+    GUI(args.accountingDir)
