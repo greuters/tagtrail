@@ -33,6 +33,7 @@ import imutils
 import functools
 from PIL import ImageTk,Image
 from abc import ABC, abstractmethod
+import sys
 
 from . import helpers
 from .sheets import ProductSheet
@@ -1147,14 +1148,14 @@ class SplitSheetDialog(Dialog):
         self.height=master.winfo_screenheight() * self.initialScreenPercentage
         o_h, o_w, _ = self.inputImg.shape
         aspectRatio = min(self.height / o_h, self.width / o_w)
-        canvas_h, canvas_w = int(o_h * aspectRatio), int(o_w * aspectRatio)
-        resizedImg = cv.resize(self.inputImg, (canvas_w, canvas_h), Image.BILINEAR)
+        resizedImgHeight, resizedImgWidth = int(o_h * aspectRatio), int(o_w * aspectRatio)
+        resizedImg = cv.resize(self.inputImg, (resizedImgWidth, resizedImgHeight), Image.BILINEAR)
         self.resizedImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
-        self.log.debug(f'canvas_w, canvas_h = {canvas_w}, {canvas_h}')
+        self.log.debug(f'resizedImgWidth, resizedImgHeight = {resizedImgWidth}, {resizedImgHeight}')
 
         self.canvas = tkinter.Canvas(master,
-               width=canvas_w,
-               height=canvas_h)
+               width=resizedImgWidth,
+               height=resizedImgHeight)
         self.canvas.bind("<Button-1>", self.onMouseDown)
         self.canvas.bind("<Motion>", self.onMouseMotion)
         self.canvas.pack()
@@ -1481,7 +1482,9 @@ class GUI(BaseGUI):
         self.__selectedCorners = []
         self.sheetCoordinates = list(range(4))
         self.scanCanvas = None
+        self.previewCanvas = None
         self.buttonFrame = None
+        self.scrollPreviewY = None
         self.setActiveSheet(None)
         self.loadConfig()
         self.readyForTagRecognition = False
@@ -1492,19 +1495,11 @@ class GUI(BaseGUI):
         height = None if height == -1 else height
         super().__init__(width, height, log)
 
-    def get_minsize(self):
-        return (self.buttonFrameWidth + self.previewScrollbarWidth, 300)
-
-    def rotateImage90(self):
+    def rotateImage90(self, event = None):
         self.rotationAngle = (self.rotationAngle + 90) % 360
         self.populateRoot()
 
     def populateRoot(self):
-        if self.scanCanvas is not None:
-            self.scanCanvas.destroy()
-        if self.buttonFrame is not None:
-            self.buttonFrame.destroy()
-
         if self.model.scanFilenames == []:
             messagebox.showwarning('No scanned files',
                 'No scanned files found, aborting program')
@@ -1517,39 +1512,45 @@ class GUI(BaseGUI):
 
         o_h, o_w, _ = rotatedImg.shape
         aspectRatio = min(self.height / o_h, (self.width - self.buttonFrameWidth - self.previewScrollbarWidth) / 3 / o_w)
-        canvas_h, canvas_w = int(o_h * aspectRatio), int(o_w * aspectRatio)
-        resizedImg = cv.resize(rotatedImg, (canvas_w, canvas_h), Image.BILINEAR)
+        resizedImgHeight, resizedImgWidth = int(o_h * aspectRatio), int(o_w * aspectRatio)
+        resizedImg = cv.resize(rotatedImg, (resizedImgWidth, resizedImgHeight), Image.BILINEAR)
 
         # Note: it is necessary to store the image locally for tkinter to show it
         self.resizedImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
-        self.scanCanvas = tkinter.Canvas(self.root,
-               width=canvas_w,
-               height=canvas_h)
-        self.scanCanvas.place(x=0, y=0)
+        if self.scanCanvas is None:
+            self.scanCanvas = tkinter.Canvas(self.root)
+        self.scanCanvas.place(x = 0,
+            y = 0,
+            width = resizedImgWidth,
+            height = resizedImgHeight)
         self.scanCanvas.bind("<Button-1>", self.onMouseDownOnScanCanvas)
         self.resetScanCanvas()
 
         # preview of split sheets with the current configuration
-        self.previewCanvas = tkinter.Canvas(self.root,
-               width=self.width - self.buttonFrameWidth - self.previewScrollbarWidth - canvas_w,
-               height=self.height)
+        if self.previewCanvas is None:
+            self.previewCanvas = tkinter.Canvas(self.root)
+        self.previewCanvas.place(x = resizedImgWidth,
+            y = 0,
+            width = self.width - self.buttonFrameWidth - self.previewScrollbarWidth - resizedImgWidth,
+            height = self.height)
         self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
-        self.previewCanvas.place(x=canvas_w, y=0)
         self.previewCanvas.bind('<Button-1>', self.onMouseDownOnPreviewCanvas)
-        # with Windows OS
-        self.previewCanvas.bind("<MouseWheel>", self.onMouseWheelPreviewCanvas)
-        # with Linux OS
-        self.previewCanvas.bind("<Button-4>", self.onMouseWheelPreviewCanvas)
-        self.previewCanvas.bind("<Button-5>", self.onMouseWheelPreviewCanvas)
-        self.scrollPreviewY = tkinter.Scrollbar(self.root, orient='vertical', command=self.previewCanvas.yview)
+        if sys.platform == "linux" or sys.platform == "linux2" or sys.platform == "darwin":
+            self.previewCanvas.bind("<Button-4>", self.onMouseWheelPreviewCanvas)
+            self.previewCanvas.bind("<Button-5>", self.onMouseWheelPreviewCanvas)
+        elif sys.platform == "win32":
+            self.previewCanvas.bind("<MouseWheel>", self.onMouseWheelPreviewCanvas)
+
+        if self.scrollPreviewY is None:
+            self.scrollPreviewY = tkinter.Scrollbar(self.root, orient='vertical', command=self.previewCanvas.yview)
         self.scrollPreviewY.place(
-                x=self.width - self.buttonFrameWidth - self.previewScrollbarWidth,
-                y=0,
-                width=self.previewScrollbarWidth,
-                height=self.height)
+                x = self.width - self.buttonFrameWidth - self.previewScrollbarWidth,
+                y = 0,
+                width = self.previewScrollbarWidth,
+                height = self.height)
         self.previewCanvas.configure(yscrollcommand=self.scrollPreviewY.set)
 
-        self.root.update()
+        self.previewCanvas.update()
         scanHeight, scanWidth, _ = imutils.rotate_bound(
                 cv.imread(self.model.scanDir + self.model.scanFilenames[0]),
                 self.rotationAngle).shape
@@ -1565,48 +1566,23 @@ class GUI(BaseGUI):
         self.resetPreviewCanvas()
 
         # Additional buttons
-        self.buttonFrame = tkinter.Frame(self.root,
-               width=self.buttonFrameWidth,
-               height=canvas_h)
-        self.buttonFrame.place(x=self.width - self.buttonFrameWidth, y=0)
-        self.buttons = {}
-
-        self.buttons['loadConfig'] = tkinter.Button(self.buttonFrame, text='Load configuration',
-            command=self.loadConfigAndResetGUI)
-        self.buttons['loadConfig'].bind('<Return>', self.loadConfigAndResetGUI)
-        self.buttons['saveConfig'] = tkinter.Button(self.buttonFrame, text='Save configuration',
-            command=self.saveConfig)
-        self.buttons['saveConfig'].bind('<Return>', self.saveConfig)
-
-        self.buttons['rotateImage90'] = tkinter.Button(self.buttonFrame, text='Rotate image',
-            command=self.rotateImage90)
-        self.buttons['rotateImage90'].bind('<Return>', self.rotateImage90)
-
+        buttons = []
+        buttons.append(('loadConfig', 'Load configuration',
+            self.loadConfigAndResetGUI))
+        buttons.append(('saveConfig', 'Save configuration', self.saveConfig))
+        buttons.append(('rotateImage90', 'Rotate image', self.rotateImage90))
         for idx in range(4):
-            self.buttons[f'activateSheet{idx}'] = tkinter.Button(self.buttonFrame, text=f'Edit sheet {idx}',
-                command=functools.partial(self.setActiveSheet, idx))
-            self.buttons[f'activateSheet{idx}'].bind('<Return>', functools.partial(self.setActiveSheet, idx))
-
-        self.buttons['splitSheets'] = tkinter.Button(self.buttonFrame, text='Split sheets',
-            command=self.splitSheets)
-        self.buttons['splitSheets'].bind('<Return>', self.splitSheets)
-
-        self.buttons['recognizeTags'] = tkinter.Button(self.buttonFrame, text='Recognize tags',
-            command=self.recognizeTags)
-        self.buttons['recognizeTags'].bind('<Return>', self.recognizeTags)
+            buttons.append((f'activateSheet{idx}', f'Edit sheet {idx}',
+                functools.partial(self.setActiveSheet, idx)))
+        buttons.append(('splitSheets', 'Split sheets', self.splitSheets))
+        buttons.append(('recognizeTags', 'Recognize tags', self.recognizeTags))
+        self.addButtonFrame(buttons)
         if self.readyForTagRecognition:
             self.buttons['recognizeTags'].config(state='normal')
         else:
             self.buttons['recognizeTags'].config(state='disabled')
 
-        y = 60
-        for b in self.buttons.values():
-            b.place(relx=.5, y=y, anchor="center",
-                    width=.8*self.buttonFrameWidth)
-            b.update()
-            y += b.winfo_height()
-
-    def loadConfigAndResetGUI(self):
+    def loadConfigAndResetGUI(self, event = None):
         self.loadConfig()
         self.populateRoot()
 
@@ -1621,7 +1597,7 @@ class GUI(BaseGUI):
         self.sheetCoordinates[3] = list(map(float,
             self.db.config.getcsvlist('tagtrail_ocr', 'sheet3_coordinates')))
 
-    def saveConfig(self):
+    def saveConfig(self, event = None):
         self.db.config.set('tagtrail_ocr', 'rotationAngle', str(self.rotationAngle))
         self.db.config.set('tagtrail_ocr', 'sheet0_coordinates', str(', '.join(map(str, self.sheetCoordinates[0]))))
         self.db.config.set('tagtrail_ocr', 'sheet1_coordinates', str(', '.join(map(str, self.sheetCoordinates[1]))))
@@ -1629,7 +1605,7 @@ class GUI(BaseGUI):
         self.db.config.set('tagtrail_ocr', 'sheet3_coordinates', str(', '.join(map(str, self.sheetCoordinates[3]))))
         self.db.writeConfig()
 
-    def setActiveSheet(self, index):
+    def setActiveSheet(self, index, event = None):
         self.activeSheetIndex = index
 
     def onMouseDownOnScanCanvas(self, event):
@@ -1718,16 +1694,17 @@ class GUI(BaseGUI):
             increment = -1
         self.previewCanvas.yview_scroll(increment, "units")
 
-    def splitSheets(self):
+    def splitSheets(self, event = None):
         self.readyForTagRecognition = False
 
-        self.setupProgressIndicator('Splitting progress')
+        self.setupProgressIndicator()
         self.model.prepareScanSplitting()
         for scanFileIndex, scanFilename in enumerate(self.model.scanFilenames):
             if self.abortingProcess:
                 break
             self.updateProgressIndicator(scanFileIndex /
-                    len(self.model.scanFilenames) * 100)
+                    len(self.model.scanFilenames) * 100,
+                    f'Splitting {scanFilename}')
 
             self.model.splitScan(scanFilename, self.sheetCoordinates,
                     self.rotationAngle)
@@ -1772,7 +1749,7 @@ class GUI(BaseGUI):
             self.previewCanvas.yview_moveto('1.0')
         self.root.update()
 
-    def recognizeTags(self):
+    def recognizeTags(self, event = None):
         if (self.model.sheetRegions == [] or
                 self.readyForTagRecognition == False):
             messagebox.showerror('Sheets missing', 'Unable to recognize tags - input images need to be split first')

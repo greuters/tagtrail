@@ -33,6 +33,7 @@ from . import gui_components
 
 class InputSheet(ProductSheet):
     validationProbability = 0.02
+    maxEpectedListboxHeight = 200
 
     def __init__(self, root, database, path, accountedProductsPath):
         super().__init__(log=Log())
@@ -94,8 +95,13 @@ class InputSheet(ProductSheet):
             x1, y1 = x1*scaleFactor, y1*scaleFactor
             (x2, y2) = box.pt2
             x2, y2 = x2*scaleFactor, y2*scaleFactor
+            listBoxY = y2
+            if listBoxY + self.maxEpectedListboxHeight > root.winfo_height():
+                listBoxY = y1 - self.maxEpectedListboxHeight
+
             entry = gui_components.AutocompleteEntry(box.text, box.confidence,
-                    choices, self.releaseFocus, True, root)
+                    choices, self.releaseFocus, True, root, x1,
+                    listBoxY, root)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             entry.box = box
             self._box_to_widget[box] = entry
@@ -218,7 +224,6 @@ class InputSheet(ProductSheet):
 class GUI(gui_components.BaseGUI):
     originalScanPostfix = '_original_scan.jpg'
     normalizedScanPostfix = '_normalized_scan.jpg'
-    buttonCanvasWidth=200
 
     def __init__(self, accountingDataPath):
         self.accountingDataPath = accountingDataPath
@@ -228,8 +233,7 @@ class GUI(gui_components.BaseGUI):
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
         self.scanCanvas = None
-        self.inputCanvas = None
-        self.buttonCanvas = None
+        self.inputFrame = None
 
         self.productToSanitizeGenerator = self.nextProductToSanitize()
         try:
@@ -246,13 +250,6 @@ class GUI(gui_components.BaseGUI):
         super().__init__(width, height, Log())
 
     def populateRoot(self):
-        if self.scanCanvas is not None:
-            self.scanCanvas.destroy()
-        if self.inputCanvas is not None:
-            self.inputCanvas.destroy()
-        if self.buttonCanvas is not None:
-            self.buttonCanvas.destroy()
-
         self.root.title(self.csvPath)
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)
@@ -261,52 +258,36 @@ class GUI(gui_components.BaseGUI):
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
 
-        canvasWidth = (self.width - self.buttonCanvasWidth)/2
-        self.scanCanvas = tkinter.Canvas(self.root,
-               width=canvasWidth,
-               height=self.height)
-        self.scanCanvas.place(x=0, y=0)
+        canvasWidth = (self.width - self.buttonFrameWidth)/2
+        if self.scanCanvas is None:
+            self.scanCanvas = tkinter.Canvas(self.root)
+        self.scanCanvas.delete("all")
+        self.scanCanvas.place(x=0, y=0, width=canvasWidth, height=self.height)
         self.scanCanvas.update()
         self.scannedImgPath = self.csvPath+self.normalizedScanPostfix
         self.loadScannedImg()
 
         # Input mask to correct product sheet
-        self.inputCanvas = tkinter.Canvas(self.root,
-               width=canvasWidth,
-               height=self.height)
-        self.inputCanvas.place(x=canvasWidth, y=0)
-        self.inputCanvas.update()
-        self.inputSheet = InputSheet(self.inputCanvas, self.db, self.csvPath,
+        if self.inputFrame is None:
+            self.inputFrame = tkinter.Frame(self.root)
+        for w in self.inputFrame.winfo_children():
+            w.destroy()
+        self.inputFrame.place(x=canvasWidth, y=0, width=canvasWidth,
+                height=self.height)
+        self.inputFrame.update()
+        self.inputSheet = InputSheet(self.inputFrame, self.db, self.csvPath,
                 self.accountedProductsPath)
 
         # Additional buttons
-        self.buttonCanvas = tkinter.Frame(self.root,
-               width=self.buttonCanvasWidth,
-               height=self.height)
-        self.buttonCanvas.place(x=2*canvasWidth, y=0)
-        self.buttons = {}
-        self.buttons['saveAndContinue'] = tkinter.Button(self.buttonCanvas, text='Save and continue',
-            command=self.saveAndContinue)
-        self.buttons['saveAndContinue'].bind('<Return>', self.saveAndContinue)
-        self.buttons['saveAndReloadDB'] = tkinter.Button(self.buttonCanvas,
-            text='Save and reload current',
-            command=self.saveAndReloadDB)
-        self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
-        self.buttons['switchScan'] = tkinter.Button(self.buttonCanvas,
-            text='Show original',
-            command=self.switchScan)
-        self.buttons['switchScan'].bind('<Return>', self.switchScan)
-        self.buttons['unlockPreviousAccounting'] = tkinter.Button(self.buttonCanvas,
-            text='Unlock Boxes',
-            command=self.unlockBoxesFromPreviousAccounting)
-        self.buttons['unlockPreviousAccounting'].bind('<Return>', self.unlockBoxesFromPreviousAccounting)
-
-        y = 60
-        for b in self.buttons.values():
-            b.place(relx=.5, y=y, anchor="center",
-                    width=.8*self.buttonCanvasWidth)
-            b.update()
-            y += b.winfo_height()
+        buttons = []
+        buttons.append(('saveAndContinue', 'Save and continue',
+            self.saveAndContinue))
+        buttons.append(('saveAndReloadDB', 'Save and reload current',
+            self.saveAndReloadDB))
+        buttons.append(('switchScan', 'Show original', self.switchScan))
+        buttons.append(('unlockPreviousAccounting', 'Unlock Boxes',
+            self.unlockBoxesFromPreviousAccounting))
+        self.addButtonFrame(buttons)
 
     def nextProductToSanitize(self):
         # assuming each product is stored in productPath as a triple of

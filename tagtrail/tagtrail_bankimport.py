@@ -88,51 +88,50 @@ class EnrichedDatabase(database.Database):
         return self.members.accountingDate
 
 
-class Gui:
+class GUI(gui_components.BaseGUI):
+    buttonFrameWidth=200
+
     def __init__(self,
             accountingDataPath,
             accountingDate):
 
-        self.log = helpers.Log()
         self.accountingDataPath = accountingDataPath
         self.accountingDate = accountingDate
 
         self.inputCanvas = None
-        self.buttonCanvas = None
 
-        self.root = tkinter.Tk()
-        self.root.report_callback_exception = self.reportCallbackException
-        self.buttonCanvasWidth=200
+        if not self.loadData():
+            return
+
+        width = self.db.config.getint('general', 'screen_width')
+        width = None if width == -1 else width
+        height = self.db.config.getint('general', 'screen_height')
+        height = None if height == -1 else height
+        super().__init__(width, height, helpers.Log())
+
+    def populateRoot(self):
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)
         self.root.bind("<Up>", self.switchInputFocus)
         self.root.bind("<Down>", self.switchInputFocus)
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
-        self.root.bind("<Configure>", self.onResize)
 
-        if self.loadData():
-            self.root.geometry(str(self.root.winfo_screenwidth())+'x'+str(self.root.winfo_screenheight()))
-            self.root.mainloop()
+        self.loadInputCanvas()
 
-    def onResize(self, event):
-        if event.widget == self.root:
-            self.width=event.width
-            self.height=event.height
-            self.loadInputCanvas()
-            self.loadButtonCanvas()
+        buttons = []
+        buttons.append(('saveAndExit', 'Save and exit', self.saveAndExit))
+        buttons.append(('saveAndReload', 'Save and reload current', self.saveAndReloadDB))
+        self.addButtonFrame(buttons)
 
     def loadInputCanvas(self):
         # input canvas - one entry per transaction
-        canvasWidth = self.width - self.buttonCanvasWidth
-        if self.inputCanvas is not None:
-            self.inputCanvas.destroy()
-        self.inputCanvas = tkinter.Canvas(self.root,
-               width=canvasWidth,
-               height=self.height)
-        self.inputCanvas.place(x=0, y=0)
+        canvasWidth = self.width - self.buttonFrameWidth
+        if self.inputCanvas is None:
+            self.inputCanvas = tkinter.Canvas(self.root)
+        self.inputCanvas.place(x=0, y=0, width=canvasWidth, height=self.height)
 
-        entryWidth = self.buttonCanvasWidth
+        entryWidth = self.buttonFrameWidth
         possibleMemberIds = list(sorted(self.db.members.keys()))
         y = 0
         self.entries = []
@@ -170,7 +169,8 @@ class Gui:
                 text = transaction.memberId
                 confidence = 1
             entry = gui_components.AutocompleteEntry(text, confidence, possibleMemberIds,
-                    self.switchFocus, True, frame)
+                    self.switchFocus, True, self.inputCanvas, frame.winfo_x(),
+                    frame.winfo_y()+h, frame)
             entry.transaction = transaction
             entry.pack(side=tkinter.LEFT)
             self.entries.append(entry)
@@ -215,38 +215,6 @@ class Gui:
             else:
                 return self.entries[min(filter(lambda x: currentIndex < x,
                     indicesOfUnclearEntries))]
-
-
-    def loadButtonCanvas(self):
-        if self.buttonCanvas is not None:
-            self.buttonCanvas.destroy()
-        self.buttonCanvas = tkinter.Frame(self.root,
-               width=self.buttonCanvasWidth,
-               height=self.height)
-        self.buttonCanvas.place(x=self.width - self.buttonCanvasWidth, y=0)
-        self.buttons = {}
-        self.buttons['saveAndExit'] = tkinter.Button(self.buttonCanvas,
-                text='Save and exit', command=self.saveAndExit)
-        self.buttons['saveAndExit'].bind('<Return>', self.saveAndExit)
-        self.buttons['saveAndReloadDB'] = tkinter.Button(self.buttonCanvas,
-                text='Save and reload current', command=self.saveAndReloadDB)
-        self.buttons['saveAndReloadDB'].bind('<Return>', self.saveAndReloadDB)
-        y = 60
-        for b in self.buttons.values():
-            b.place(relx=.5, y=y, anchor="center",
-                    width=.8*self.buttonCanvasWidth)
-
-            # need to update the screen to get the correct button height
-            # caveat: during the update, a <Configure> event might be triggered
-            # and invalidate the whole process => abort if we are outdated
-            b.update()
-            if not b.winfo_exists():
-                return
-            y += b.winfo_height()
-
-    def reportCallbackException(self, exception, value, tb):
-        traceback.print_exception(exception, value, tb)
-        tkinter.messagebox.showerror('Abort Accounting', value)
 
     def saveAndExit(self, event=None):
         self.save()
@@ -348,4 +316,4 @@ if __name__== "__main__":
             help="Date of the new accounting, fmt='YYYY-mm-dd'",
             )
     args = parser.parse_args()
-    Gui(args.accountingDir, args.accountingDate)
+    GUI(args.accountingDir, args.accountingDate)

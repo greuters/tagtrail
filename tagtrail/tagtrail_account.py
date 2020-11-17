@@ -233,6 +233,7 @@ class GUI(gui_components.BaseGUI):
         self.nextAccountingDataPath = nextAccountingDataPath
         self.db = EnrichedDatabase(accountingDataPath, accountingDate,
                 configFilePath, updateCo2Statistics)
+        self.productFrame = None
 
         if self.db.products.inventoryQuantityDate and self.db.products.inventoryQuantityDate != accountingDate:
             messagebox.showerror('Abort Accounting',
@@ -249,8 +250,17 @@ class GUI(gui_components.BaseGUI):
         super().__init__(width, height, helpers.Log())
 
     def populateRoot(self):
+        if self.productFrame is None:
+            self.productFrame = tkinter.Frame(self.root)
+        for w in self.productFrame.winfo_children():
+            w.destroy()
+        self.productFrame.place(x=0,
+                y=0,
+                width=self.width - self.buttonFrameWidth,
+                height=self.height)
+
         accountedProducts = [fileName.split('_')[0] for fileName in self.db.productSheetNames]
-        accountedProductsOverview = gui_components.Checkbar(self.root,
+        accountedProductsOverview = gui_components.Checkbar(self.productFrame,
                 'Accounted sheets:',
                 self.db.productSheetNames, False)
         accountedProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
@@ -260,7 +270,7 @@ class GUI(gui_components.BaseGUI):
             p.id for p in self.db.products.values()
             if p.id not in accountedProducts and p.expectedQuantity <= 0
             ])
-        emptiedProductsOverview = gui_components.Checkbar(self.root, 'Emptied sheets:', emptiedProducts, False)
+        emptiedProductsOverview = gui_components.Checkbar(self.productFrame, 'Emptied sheets:', emptiedProducts, False)
         emptiedProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         emptiedProductsOverview.config(relief=tkinter.GROOVE, bd=2)
 
@@ -268,23 +278,17 @@ class GUI(gui_components.BaseGUI):
             p.id for p in self.db.products.values()
             if p.id not in accountedProducts and p.expectedQuantity > 0
             ])
-        missingProductsOverview = gui_components.Checkbar(self.root, 'Missing products:', missingProducts, False)
+        missingProductsOverview = gui_components.Checkbar(self.productFrame, 'Missing products:', missingProducts, False)
         missingProductsOverview.pack(side=tkinter.TOP, fill=tkinter.BOTH, expand=tkinter.YES, padx=5, pady=5)
         missingProductsOverview.config(relief=tkinter.GROOVE, bd=2)
 
-        buttonFrame = tkinter.Frame(self.root)
-        buttonFrame.pack(side=tkinter.BOTTOM, pady=5)
-        cancelButton = tkinter.Button(buttonFrame, text='Cancel',
-                command=self.root.quit)
-        cancelButton.pack(side=tkinter.LEFT)
-        cancelButton.bind('<Return>', lambda _: self.root.quit())
-        saveButton = tkinter.Button(buttonFrame, text='Save and Quit',
-                command=self.saveAndQuit)
-        saveButton.pack(side=tkinter.RIGHT)
-        saveButton.bind('<Return>', lambda _: self.saveAndQuit())
-        saveButton.focus_set()
+        buttons = []
+        buttons.append(('cancelAndQuit', 'Cancel', self.cancelAndQuit))
+        buttons.append(('saveAndQuit', 'Save and Quit', self.saveAndQuit))
+        self.addButtonFrame(buttons)
+        self.buttons['saveAndQuit'].focus_set()
 
-    def saveAndQuit(self):
+    def saveAndQuit(self, event = None):
         try:
 
             # TODO set product inventory quantities = 0 if product was scanned but deselected
@@ -298,6 +302,9 @@ class GUI(gui_components.BaseGUI):
             self.prepareNextAccounting()
         finally:
             self.root.quit()
+
+    def cancelAndQuit(self, event = None):
+        self.root.quit()
 
     def writeBills(self):
         destPath = f'{self.accountingDataPath}3_bills/to_be_sent/'
