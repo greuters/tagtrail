@@ -242,6 +242,7 @@ class GUI(gui_components.BaseGUI):
                 the product sheets, download the payments)
                 inventoryQuantityDate != accountingDate ({inventoryQuantityDate} != {accountingDate})
                 To do a valid accounting, either redo the inventory or the accounting""")
+            return
 
         width = self.db.config.getint('general', 'screen_width')
         width = None if width == -1 else width

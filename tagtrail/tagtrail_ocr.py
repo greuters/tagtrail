@@ -1125,6 +1125,14 @@ class RotateLabel():
 
         return outputImg
 
+class Corner:
+    """
+    A corner selected on screen
+    """
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
 class SplitSheetDialog(Dialog):
     initialScreenPercentage = 0.75
 
@@ -1136,30 +1144,68 @@ class SplitSheetDialog(Dialog):
             inputImg,
             model):
         self.inputImg = inputImg
+        self._resizedInputImg = None
         self.model = model
         self.log = self.model.log
         self.outputImg = None
+        self._resizedOutputImg = None
         self.isEmpty = False
-        self.__selectedCorners = []
+        self._selectedCorners = []
+        self.selectionMode = 'rectangle'
         super().__init__(root)
 
+    @property
+    def selectionMode(self):
+        """
+        Mode to select image, one of ('rectangle', 'corners')
+
+        'rectangle' mode lets the user select the upper left and lower right
+        corners of an axis-aligned rectangle, which is then processed by
+        :class:`LineBasedFrameFinder` before normalization.
+
+        'corners' mode lets the user directly select all four corners of the
+        output image, which is directlz normalized
+
+        Setting the mode clears all selected corners.
+        """
+        return self._selectionMode
+
+    @selectionMode.setter
+    def selectionMode(self, mode):
+        if not mode in ('rectangle', 'corners'):
+            raise ValueError("mode must be one of ('rectangle', 'corners')")
+        self._selectionMode = mode
+        self._selectedCorners = []
+
+    def switchSelectionMode(self):
+        if self.selectionMode == 'rectangle':
+            self.selectionMode = 'corners'
+        else:
+            self.selectionMode = 'rectangle'
+
     def body(self, master):
-        self.width=master.winfo_screenwidth() * self.initialScreenPercentage
-        self.height=master.winfo_screenheight() * self.initialScreenPercentage
+        self.width = master.winfo_screenwidth() * self.initialScreenPercentage
+        self.height = master.winfo_screenheight() * self.initialScreenPercentage
         o_h, o_w, _ = self.inputImg.shape
-        aspectRatio = min(self.height / o_h, self.width / o_w)
+        aspectRatio = min(self.height / o_h, self.width / 2 / o_w)
         resizedImgHeight, resizedImgWidth = int(o_h * aspectRatio), int(o_w * aspectRatio)
         resizedImg = cv.resize(self.inputImg, (resizedImgWidth, resizedImgHeight), Image.BILINEAR)
-        self.resizedImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
+        self._resizedInputImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
         self.log.debug(f'resizedImgWidth, resizedImgHeight = {resizedImgWidth}, {resizedImgHeight}')
 
-        self.canvas = tkinter.Canvas(master,
+        self.inputCanvas = tkinter.Canvas(master,
                width=resizedImgWidth,
                height=resizedImgHeight)
-        self.canvas.bind("<Button-1>", self.onMouseDown)
-        self.canvas.bind("<Motion>", self.onMouseMotion)
-        self.canvas.pack()
+        self.inputCanvas.bind("<Button-1>", self.onMouseDown)
+        self.inputCanvas.bind("<Motion>", self.onMouseMotion)
+        self.inputCanvas.pack(side = tkinter.LEFT)
+
+        self.outputCanvas = tkinter.Canvas(master,
+               width=resizedImgWidth,
+               height=resizedImgHeight)
+        self.outputCanvas.pack(side = tkinter.RIGHT)
         self.resetCanvas(None, None)
+
         return None
 
     def buttonbox(self):
@@ -1168,9 +1214,12 @@ class SplitSheetDialog(Dialog):
         w = tkinter.Button(box, text="OK", width=10, command=self.ok,
                 default=tkinter.ACTIVE)
         w.pack(side=tkinter.LEFT, padx=5, pady=5)
-        w = tkinter.Button(box, text="Cancel", width=10, command=self.cancel)
-        w.pack(side=tkinter.LEFT, padx=5, pady=5)
         w = tkinter.Button(box, text="Empty sheet", width=10, command=self.markEmpty)
+        w.pack(side=tkinter.LEFT, padx=5, pady=5)
+        w = tkinter.Button(box, text="Switch selection mode", width=20,
+                command=self.switchSelectionMode)
+        w.pack(side=tkinter.LEFT, padx=5, pady=5)
+        w = tkinter.Button(box, text="Cancel", width=10, command=self.cancel)
         w.pack(side=tkinter.LEFT, padx=5, pady=5)
 
         self.bind("<Return>", self.ok)
@@ -1183,16 +1232,79 @@ class SplitSheetDialog(Dialog):
         self.ok()
 
     def apply(self):
-        if len(self.__selectedCorners) == 2:
-            self.update()
-            canvasW = self.canvas.winfo_width()
-            canvasH = self.canvas.winfo_height()
-            imgH, imgW, _ = self.inputImg.shape
+        self.computeOutputImg()
 
-            x0 = int(self.__selectedCorners[0][0] / canvasW * imgW)
-            y0 = int(self.__selectedCorners[0][1] / canvasH * imgH)
-            x1 = int(self.__selectedCorners[1][0] / canvasW * imgW)
-            y1 = int(self.__selectedCorners[1][1] / canvasH * imgH)
+    def onMouseDown(self, event):
+        maxNumCorners = 2 if self.selectionMode == 'rectangle' else 4
+        if len(self._selectedCorners) < maxNumCorners:
+            self._selectedCorners.append(Corner(event.x, event.y))
+        else:
+            self._selectedCorners = [Corner(event.x, event.y)]
+
+        if len(self._selectedCorners) == maxNumCorners:
+            self.computeOutputImg()
+        else:
+            self.outputImg = None
+        self.resetCanvas(event.x, event.y)
+
+    def onMouseMotion(self, event):
+        self.resetCanvas(event.x, event.y)
+
+    def resetCanvas(self, x, y):
+        self.inputCanvas.delete("all")
+        self.inputCanvas.create_image(0, 0, anchor=tkinter.NW, image=self._resizedInputImg)
+
+        corners = []
+        if self.selectionMode == 'rectangle':
+            # define first two corners of diagonal
+            if len(self._selectedCorners) == 1:
+                corners.append(self._selectedCorners[0])
+                corners.append(Corner(x, y))
+            elif len(self._selectedCorners) == 2:
+                corners.append(self._selectedCorners[0])
+                corners.append(self._selectedCorners[1])
+            # add corners on the other diagonal
+            if corners != []:
+                corners.insert(1, Corner(corners[0].x, corners[1].y))
+                corners.append(Corner(corners[2].x, corners[0].y))
+        elif self.selectionMode == 'corners':
+            for c in self._selectedCorners:
+                corners.append(c)
+            if len(corners) < 4:
+                corners.append(Corner(x, y))
+        else:
+            assert(False)
+
+
+        linePts = list(itertools.chain(*[(c.x, c.y) for c in corners]))
+        if len(corners) == 4:
+            linePts.append(corners[0].x)
+            linePts.append(corners[0].y)
+        for c in corners:
+            self.inputCanvas.create_oval(c.x-5, c.y-5, c.x+5, c.y+5)
+        if 1 < len(corners):
+            self.inputCanvas.create_line(linePts, fill = 'green', width = 4)
+
+        self.outputCanvas.delete("all")
+        if self._resizedOutputImg is not None:
+            self.outputCanvas.create_image(0, 0, anchor=tkinter.NW,
+                    image=self._resizedOutputImg)
+
+    def computeOutputImg(self):
+        self.update()
+        canvasW = self.inputCanvas.winfo_width()
+        canvasH = self.inputCanvas.winfo_height()
+        imgH, imgW, _ = self.inputImg.shape
+        normalizeX = lambda x: int(x / canvasW * imgW)
+        normalizeY = lambda y: int(y / canvasH * imgH)
+
+        frameContour = None
+        img = None
+        if self.selectionMode == 'rectangle' and len(self._selectedCorners) == 2:
+            x0 = normalizeX(self._selectedCorners[0].x)
+            y0 = normalizeY(self._selectedCorners[0].y)
+            x1 = normalizeX(self._selectedCorners[1].x)
+            y1 = normalizeY(self._selectedCorners[1].y)
             img = self.inputImg[y0:y1, x0:x1, :]
 
             frameContour = LineBasedFrameFinder(
@@ -1201,54 +1313,25 @@ class SplitSheetDialog(Dialog):
                     self.model.writeDebugImages,
                     self.log
                     ).process(img)
+        elif self.selectionMode == 'corners' and len(self._selectedCorners) == 4:
+            frameContour = [
+                    [normalizeX(c.x), normalizeY(c.y)]
+                    for c in self._selectedCorners]
+            img = self.inputImg
 
-            if frameContour is None:
-                self.log.debug(f'no frame contour found, take user specified')
-                self.outputImg = img.copy()
-            else:
-                self.outputImg = SheetNormalizer(
-                        'normalizer',
-                        self.model.tmpDir,
-                        self.model.writeDebugImages,
-                        self.log
-                        ).process(img, np.array(frameContour))
-
-    def onMouseDown(self, event):
-        if len(self.__selectedCorners) < 2:
-            self.__selectedCorners.append([event.x, event.y])
+        if frameContour is None:
+            self.log.debug(f'no frame contour found, using cropped input img')
+            self.outputImg = img.copy()
         else:
-            self.__selectedCorners = [[event.x, event.y]]
+            self.outputImg = SheetNormalizer(
+                    'normalizer',
+                    self.model.tmpDir,
+                    self.model.writeDebugImages,
+                    self.log
+                    ).process(img, np.array(frameContour))
 
-        self.resetCanvas(event.x, event.y)
-
-    def onMouseMotion(self, event):
-        self.resetCanvas(event.x, event.y)
-
-    def resetCanvas(self, x, y):
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor=tkinter.NW, image=self.resizedImg)
-
-        self.update()
-        canvasWidth = self.canvas.winfo_width()
-        canvasHeight = self.canvas.winfo_height()
-
-        if len(self.__selectedCorners) == 1:
-            self.canvas.create_rectangle(
-                    self.__selectedCorners[0][0],
-                    self.__selectedCorners[0][1],
-                    x,
-                    y,
-                    outline = 'green',
-                    width = 4)
-
-        if len(self.__selectedCorners) == 2:
-            self.canvas.create_rectangle(
-                    self.__selectedCorners[0][0],
-                    self.__selectedCorners[0][1],
-                    self.__selectedCorners[1][0],
-                    self.__selectedCorners[1][1],
-                    outline = 'green',
-                    width = 4)
+        resizedOutputImg = cv.resize(self.outputImg, (canvasW, canvasH), Image.BILINEAR)
+        self._resizedOutputImg = ImageTk.PhotoImage(Image.fromarray(resizedOutputImg))
 
 class SheetRegionData():
     """
@@ -1479,7 +1562,7 @@ class GUI(BaseGUI):
 
         self.model = model
         self.db = db
-        self.__selectedCorners = []
+        self._selectedCorners = []
         self.sheetCoordinates = list(range(4))
         self.scanCanvas = None
         self.previewCanvas = None
@@ -1524,7 +1607,8 @@ class GUI(BaseGUI):
             width = resizedImgWidth,
             height = resizedImgHeight)
         self.scanCanvas.bind("<Button-1>", self.onMouseDownOnScanCanvas)
-        self.resetScanCanvas()
+        self.scanCanvas.bind("<Motion>", self.onMouseMotionOnScanCanvas)
+        self.resetScanCanvas(None, None)
 
         # preview of split sheets with the current configuration
         if self.previewCanvas is None:
@@ -1612,36 +1696,40 @@ class GUI(BaseGUI):
         if self.activeSheetIndex is None:
             return
 
-        if len(self.__selectedCorners) < 2:
-            self.__selectedCorners.append([event.x, event.y])
+        if len(self._selectedCorners) < 2:
+            self._selectedCorners.append(Corner(event.x, event.y))
 
-        if len(self.__selectedCorners) == 2:
-            # TODO same logic as in dialog
+        if len(self._selectedCorners) == 2:
             self.root.update()
             canvasWidth = self.scanCanvas.winfo_width()
             canvasHeight = self.scanCanvas.winfo_height()
             self.sheetCoordinates[self.activeSheetIndex] = [
-                    self.__selectedCorners[0][0] / canvasWidth,
-                    self.__selectedCorners[0][1] / canvasHeight,
-                    self.__selectedCorners[1][0] / canvasWidth,
-                    self.__selectedCorners[1][1] / canvasHeight
+                    self._selectedCorners[0].x / canvasWidth,
+                    self._selectedCorners[0].y / canvasHeight,
+                    self._selectedCorners[1].x / canvasWidth,
+                    self._selectedCorners[1].y / canvasHeight
                     ]
-            self.__selectedCorners = []
+            self._selectedCorners = []
             self.setActiveSheet(None)
 
-        self.resetScanCanvas()
+        self.resetScanCanvas(event.x, event.y)
 
-    def resetScanCanvas(self):
+    def onMouseMotionOnScanCanvas(self, event):
+        if self.activeSheetIndex is None:
+            return
+        self.resetScanCanvas(event.x, event.y)
+
+    def resetScanCanvas(self, x = None, y = None):
         self.scanCanvas.delete("all")
         self.scanCanvas.create_image(0,0, anchor=tkinter.NW, image=self.resizedImg)
 
-        for corners in self.__selectedCorners:
+        for corner in self._selectedCorners:
             r = 2
             self.scanCanvas.create_oval(
-                    corners[0]-r,
-                    corners[1]-r,
-                    corners[0]+r,
-                    corners[1]+r,
+                    corner.x-r,
+                    corner.y-r,
+                    corner.x+r,
+                    corner.y+r,
                     outline = 'red')
 
         self.root.update()
@@ -1650,15 +1738,30 @@ class GUI(BaseGUI):
         sheetColors = ['green', 'blue', 'red', 'orange']
         for sheetIndex, sheetCoords in enumerate(self.sheetCoordinates):
             if sheetIndex == self.activeSheetIndex:
-                continue
-
-            self.scanCanvas.create_rectangle(
-                    sheetCoords[0] * canvasWidth,
-                    sheetCoords[1] * canvasHeight,
-                    sheetCoords[2] * canvasWidth,
-                    sheetCoords[3] * canvasHeight,
-                    outline = sheetColors[sheetIndex],
-                    width = 2)
+                if len(self._selectedCorners) == 1:
+                    self.scanCanvas.create_rectangle(
+                            self._selectedCorners[0].x,
+                            self._selectedCorners[0].y,
+                            x,
+                            y,
+                            outline = sheetColors[sheetIndex],
+                            width = 2)
+                elif len(self._selectedCorners) == 2:
+                    self.scanCanvas.create_rectangle(
+                            self._selectedCorners[0].x,
+                            self._selectedCorners[0].y,
+                            self._selectedCorners[1].x,
+                            self._selectedCorners[1].y,
+                            outline = sheetColors[sheetIndex],
+                            width = 2)
+            else:
+                self.scanCanvas.create_rectangle(
+                        sheetCoords[0] * canvasWidth,
+                        sheetCoords[1] * canvasHeight,
+                        sheetCoords[2] * canvasWidth,
+                        sheetCoords[3] * canvasHeight,
+                        outline = sheetColors[sheetIndex],
+                        width = 2)
 
     def onMouseDownOnPreviewCanvas(self, event):
         assert(self.previewCanvas == event.widget)
