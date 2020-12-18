@@ -1,0 +1,12 @@
+memberId;KLEIN
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];45.75
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];7.95
+Current Balance [CHF];37.80
+Total gCo2e;491
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+balsamico-bianco;Balsamico bianco;1;7.95;491;7.95;491

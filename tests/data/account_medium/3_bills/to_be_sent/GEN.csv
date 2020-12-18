@@ -1,0 +1,15 @@
+memberId;GEN
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];455.32
+Total Payments [CHF];250.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];29.80
+Current Balance [CHF];675.52
+Total gCo2e;3928
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+eliche-vollkorn;Eliche Vollkorn;3;2.50;491;7.50;1473
+kaffee-rebel-dia-gemahlen;Kaffee Rebel Dia (Gemahlen);1;10.55;None;10.55;None
+spaghetti-vollkorn;Spaghetti Vollkorn;2;2.50;491;5.00;982
+spaghetti;Spaghetti;3;2.25;491;6.75;1473

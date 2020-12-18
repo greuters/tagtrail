@@ -1,0 +1,15 @@
+memberId;EJAS
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];358.30
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];22.95
+Current Balance [CHF];335.35
+Total gCo2e;320
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+muskatnuss-ganz;Muskatnuss (ganz);1;10.70;160;10.70;160
+paprika-edelsuss-gemahlen;Paprika edelsüss (gemahlen);1;3.60;160;3.60;160
+tomaten-in-dose;Tomaten in Dose;1;3.85;None;3.85;None
+zucker-vollrohr;Zucker Vollrohr;1;4.80;None;4.80;None

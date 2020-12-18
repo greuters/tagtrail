@@ -1,0 +1,14 @@
+memberId;EDDY
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];-124.60
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];51.55
+Current Balance [CHF];-176.15
+Total gCo2e;5834
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+mandeln;Mandeln;7;4.95;211;34.65;1477
+salz-jodiert;Salz jodiert;1;1.15;920;1.15;920
+spaghetti;Spaghetti;7;2.25;491;15.75;3437

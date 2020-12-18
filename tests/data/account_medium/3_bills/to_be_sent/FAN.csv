@@ -1,0 +1,17 @@
+memberId;FAN
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];117.05
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];61.05
+Current Balance [CHF];56.00
+Total gCo2e;12838
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+cornflakes;Cornflakes;1;5.10;368;5.10;368
+haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
+rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);2;9.50;591;19.00;1182
+salz-jodiert;Salz jodiert;1;1.15;920;1.15;920
+swiss-drink-reis;Swiss Drink Reis;7;3.15;1284;22.05;8988
+tamari;Tamari;1;9.85;460;9.85;460

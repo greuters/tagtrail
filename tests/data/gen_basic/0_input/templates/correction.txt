@@ -1,0 +1,2 @@
+Zudem haben wir deinem Konto folgenden Korrekturbetrag verbucht: ${CORRECTION_TRANSACTION}
+Grund: ${CORRECTION_JUSTIFICATION}

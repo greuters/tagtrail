@@ -1,0 +1,20 @@
+memberId;HEL
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];6.90
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];75.85
+Current Balance [CHF];-68.95
+Total gCo2e;6131
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+allzweckreiniger;Allzweckreiniger;1;5.45;979;5.45;979
+cornflakes;Cornflakes;1;5.10;368;5.10;368
+eliche-vollkorn;Eliche Vollkorn;2;2.50;491;5.00;982
+kichererbsen-schwarz-hell;Kichererbsen (schwarz / hell);1;11.60;None;11.60;None
+mandeln;Mandeln;3;4.95;211;14.85;633
+rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);2;9.50;591;19.00;1182
+sonnenblumen-kerne;Sonnenblumen Kerne;2;3.80;257;7.60;514
+spaghetti-vollkorn;Spaghetti Vollkorn;2;2.50;491;5.00;982
+spaghetti;Spaghetti;1;2.25;491;2.25;491

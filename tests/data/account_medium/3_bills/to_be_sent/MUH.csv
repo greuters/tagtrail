@@ -1,0 +1,13 @@
+memberId;MUH
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];204.35
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];33.85
+Current Balance [CHF];170.50
+Total gCo2e;2937
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+geschirrspulmittel;Geschirrspülmittel;3;4.95;979;14.85;2937
+kaffee-rebel-dia-bohnen;Kaffee Rebel Dia (Bohnen);1;19.00;None;19.00;None

@@ -1,0 +1,12 @@
+memberId;JAMI
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];168.55
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];4.95
+Current Balance [CHF];163.60
+Total gCo2e;979
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+geschirrspulmittel;Geschirrspülmittel;1;4.95;979;4.95;979

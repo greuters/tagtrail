@@ -32,24 +32,40 @@ class Keyring:
     numKeyringOpeningAttempts = 3
 
     def __init__(self,
-            key_file_path):
+            key_file_path,
+            keyring_password = None):
+        """
+        Open keyring from file
+
+        :param key_file_path: path to the credentials file
+        :type key_file_path: str
+        :param keyring_password: password to open the keyring. if it is None,
+            the user will be asked to enter it interactively
+        :type  keyring_password: str
+        """
         self._key_file_path = key_file_path
+        self._keyring_password = keyring_password
         self._keyring = CryptFileKeyring()
 
-    def get_and_ensure_password(self, service, username):
+    def get_password(self, service, username):
         """
         Retrieve stored password from keyring, opening the keyring first if
         necessary.
-        If the password is not available, the user is asked to enter one, which
-        is then stored and returned.
 
-        exceptions:
-            ValueError if the keyring could not be opened (wrong password)
+        :param service: name of the service to retrieve the password for
+        :type service: str
+        :param username: username to retrieve the password for
+        :type username: str
+        :raises ValueError: if the keyring could not be opened (wrong password)
+        :raises KeyError: if no password for the given service and username is
+            stored in the keyring
         """
         password = None
         for attempt in range(self.numKeyringOpeningAttempts):
             try:
                 self._keyring.file_path = self._key_file_path
+                if self._keyring_password is not None:
+                    self._keyring.keyring_key = self._keyring_password
                 # this call asks the user for the keyring password in the
                 # background if the keyring is not opened yet
                 # if it is wrong, a ValueError is raised - ugly, but this is
@@ -63,11 +79,32 @@ class Keyring:
             raise ValueError('Failed to open keyring - run out of retries')
 
         if password is None:
+            raise KeyError(f'No password stored for service = {service} '
+                    f'and username = {username}')
+        else:
+            return password
+
+    def get_and_ensure_password(self, service, username):
+        """
+        Retrieve stored password from keyring, opening the keyring first if
+        necessary.
+        If the password is not available, the user is asked to enter one, which
+        is then stored and returned.
+
+        :param service: name of the service to retrieve the password for
+        :type service: str
+        :param username: username to retrieve the password for
+        :type username: str
+        :raises ValueError: if the keyring could not be opened (wrong password)
+        """
+        try:
+            return self.get_password(service, username)
+        except KeyError:
             password = getpass.getpass(f'Password for {username}:')
             # if we made it here, the keyring is opened - no ValueError
             # expected any more
-            self._keyring.set_password( service, username, password)
-        return password
+            self._keyring.set_password(service, username, password)
+            return password
 
 class DateUtility:
     dateFormat = '%Y-%m-%d'
@@ -173,15 +210,13 @@ def recreateDir(path, log = Log()):
 # optionally filter for extension 'ext'
 # if 'removeExt' is true and ext is given, return the name without extension
 def sortedFilesInDir(path, ext = None, removeExt = False):
-    filteredNames = None
-    for (_, _, fileNames) in os.walk(path):
-        filteredNames = sorted(
-                filter(lambda f:
-                    ext == None or os.path.splitext(f)[1] == ext,
-                    fileNames))
-        if ext and removeExt:
-            filteredNames = map(lambda f: os.path.splitext(f)[0], filteredNames)
-        break
+    filteredNames = sorted(
+            filter(lambda f:
+                ext == None or os.path.splitext(f)[1] == ext,
+                os.listdir(path)))
+    if ext and removeExt:
+        filteredNames = map(lambda f: os.path.splitext(f)[0], filteredNames)
+
     if not filteredNames:
         return []
     else:

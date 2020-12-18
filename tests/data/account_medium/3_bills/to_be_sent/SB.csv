@@ -1,0 +1,13 @@
+memberId;SB
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];11.33
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];19.40
+Current Balance [CHF];-8.07
+Total gCo2e;1840
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+haferflocken-fein;Haferflocken fein;4;1.95;460;7.80;1840
+kichererbsen-schwarz-hell;Kichererbsen (schwarz / hell);1;11.60;None;11.60;None

@@ -1,0 +1,12 @@
+memberId;ELIL
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];262.15
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];8.70
+Current Balance [CHF];253.45
+Total gCo2e;0
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+pelato-tomaten-gross;Pelato Tomaten Gross;2;4.35;None;8.70;None

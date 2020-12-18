@@ -1,0 +1,15 @@
+memberId;RAMA
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];274.45
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];18.15
+Current Balance [CHF];256.30
+Total gCo2e;2190
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+mandeln;Mandeln;2;4.95;211;9.90;422
+pelato-tomaten;Pelato Tomaten;2;1.75;393;3.50;786
+spaghetti-vollkorn;Spaghetti Vollkorn;1;2.50;491;2.50;491
+spaghetti;Spaghetti;1;2.25;491;2.25;491

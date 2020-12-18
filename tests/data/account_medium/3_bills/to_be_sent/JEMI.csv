@@ -1,0 +1,16 @@
+memberId;JEMI
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];285.25
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];22.85
+Current Balance [CHF];262.40
+Total gCo2e;3278
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+cornflakes;Cornflakes;1;5.10;368;5.10;368
+eliche-vollkorn;Eliche Vollkorn;2;2.50;491;5.00;982
+pelato-tomaten;Pelato Tomaten;2;1.75;393;3.50;786
+pfeffer-schwarz-ganz;Pfeffer schwarz ganz;1;4.75;160;4.75;160
+spaghetti;Spaghetti;2;2.25;491;4.50;982

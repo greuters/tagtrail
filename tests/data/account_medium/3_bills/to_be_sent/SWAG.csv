@@ -1,0 +1,22 @@
+memberId;SWAG
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];374.05
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];87.95
+Current Balance [CHF];286.10
+Total gCo2e;9375
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+allzweckreiniger;Allzweckreiniger;1;5.45;979;5.45;979
+kichererbsen-schwarz-hell;Kichererbsen (schwarz / hell);1;11.60;None;11.60;None
+maisgriess-bramata;Maisgriess Bramata;1;3.90;642;3.90;642
+mandeln;Mandeln;5;4.95;211;24.75;1055
+pelato-tomaten-gross;Pelato Tomaten Gross;2;4.35;None;8.70;None
+pelato-tomaten;Pelato Tomaten;1;1.75;393;1.75;393
+rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);2;9.50;591;19.00;1182
+salz-jodiert;Salz jodiert;4;1.15;920;4.60;3680
+senfkorner-ganz;Senfkörner (ganz);1;1.20;160;1.20;160
+swiss-drink-reis;Swiss Drink Reis;1;3.15;1284;3.15;1284
+tomaten-in-dose;Tomaten in Dose;1;3.85;None;3.85;None

@@ -1,0 +1,15 @@
+memberId;MM08
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];-850.55
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];17.10
+Current Balance [CHF];-867.65
+Total gCo2e;2749
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
+pelato-tomaten;Pelato Tomaten;4;1.75;393;7.00;1572
+sesam;Sesam;1;1.65;257;1.65;257
+toilettenpapier;Toilettenpapier;1;4.55;None;4.55;None

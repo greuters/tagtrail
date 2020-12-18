@@ -1,0 +1,14 @@
+memberId;MUCO
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];258.05
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];29.80
+Current Balance [CHF];228.25
+Total gCo2e;2359
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+geschirrspulmittel;Geschirrspülmittel;1;4.95;979;4.95;979
+haferflocken-fein;Haferflocken fein;3;1.95;460;5.85;1380
+kaffee-rebel-dia-bohnen;Kaffee Rebel Dia (Bohnen);1;19.00;None;19.00;None

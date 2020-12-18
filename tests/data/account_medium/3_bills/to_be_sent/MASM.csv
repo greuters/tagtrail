@@ -1,0 +1,13 @@
+memberId;MASM
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];377.35
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];12.50
+Current Balance [CHF];364.85
+Total gCo2e;460
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+haferflocken-fein;Haferflocken fein;1;1.95;460;1.95;460
+kaffee-rebel-dia-gemahlen;Kaffee Rebel Dia (Gemahlen);1;10.55;None;10.55;None

@@ -1,0 +1,13 @@
+memberId;JOY
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];62.40
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];22.80
+Current Balance [CHF];39.60
+Total gCo2e;160
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+paprika-edelsuss-gemahlen;Paprika edelsüss (gemahlen);1;3.60;160;3.60;160
+zucker-vollrohr;Zucker Vollrohr;4;4.80;None;19.20;None

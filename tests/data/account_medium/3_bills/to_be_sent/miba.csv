@@ -1,0 +1,15 @@
+memberId;miba
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];114.50
+Total Payments [CHF];200.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];14.85
+Current Balance [CHF];299.65
+Total gCo2e;2262
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+cornflakes;Cornflakes;1;5.10;368;5.10;368
+haferflocken-fein;Haferflocken fein;3;1.95;460;5.85;1380
+sesam;Sesam;1;1.65;257;1.65;257
+soya-gehacktes;Soya-Gehacktes;1;2.25;257;2.25;257

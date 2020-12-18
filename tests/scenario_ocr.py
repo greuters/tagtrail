@@ -5,43 +5,57 @@ from .context import database
 from .context import sheets
 from .context import tagtrail_ocr
 
+import argparse
 import unittest
 import configparser
 import shutil
 import os
-import cProfile
 import re
 
 class OcrTest(unittest.TestCase):
     """ Tests of tagtrail_ocr """
     minSheetPrecision = 0.95
-    minSheetRecall = 0.78
+    minSheetRecall = 0.83
     minAveragePrecision = 0.99
-    minAverageRecall = 0.93
+    minAverageRecall = 0.94
 
+    writeDebugImages = False
+
+    tmpDir = 'tests/tmp/'
+    debugOutputDir  = 'tests/tmp/ocrDebugOutput/'
+    # directory to copy all wrongly labeled images to
+    debugOutputNotRecalledDir  = 'tests/tmp/ocrDebugOutput/notRecalled/'
+    debugOutputWrongDir  = 'tests/tmp/ocrDebugOutput/wrong/'
+
+    @classmethod
+    def setUpClass(cls):
+        helpers.recreateDir(cls.tmpDir)
+        helpers.recreateDir(cls.debugOutputDir)
+        helpers.recreateDir(cls.debugOutputNotRecalledDir)
+        helpers.recreateDir(cls.debugOutputWrongDir)
 
     def setUp(self):
         if __name__ != '__main__':
             self.skipTest(reason = 'only run when invoked directly')
-        self.baseSetUp('medium_template')
+        self.baseSetUp('template_medium')
+#        self.baseSetUp('template_basic')
 
     def baseSetUp(self, templateName):
         self.templateName = templateName
         self.templateDir = 'tests/data/'
-        self.templateAccountingDir = f'{self.templateDir}{self.templateName}/'
-        self.templateOutputDir = f'{self.templateAccountingDir}2_taggedProductSheets/'
+        self.templateRootDir = f'{self.templateDir}{self.templateName}/'
+        self.templateOutputDir = f'{self.templateRootDir}2_taggedProductSheets/'
 
-        self.tmpDir = 'tests/tmp/'
-        self.testAccountingDir = f'{self.tmpDir}{self.templateName}/'
-        self.testOutputDir = f'{self.testAccountingDir}2_taggedProductSheets/'
-        self.testScanDir = f'{self.testAccountingDir}0_input/scans/'
+        self.testRootDir = f'{self.tmpDir}{self.templateName}/'
+        self.testOutputDir = f'{self.testRootDir}2_taggedProductSheets/'
+        self.testScanDir = f'{self.testRootDir}0_input/scans/'
 
         self.log = helpers.Log(helpers.Log.LEVEL_INFO)
-        helpers.recreateDir(self.tmpDir)
-        shutil.copytree(self.templateAccountingDir, self.testAccountingDir)
+        self.log.info(f'\nStarting test {self.id()}\n')
+        shutil.copytree(self.templateRootDir, self.testRootDir)
         helpers.recreateDir(self.testOutputDir)
-        self.db = database.Database(f'{self.testAccountingDir}0_input/')
-        self.scanConfigFilePath = f'{self.testAccountingDir}scan_config.cfg'
+        self.db = database.Database(f'{self.testRootDir}0_input/')
+        self.scanConfigFilePath = f'{self.testRootDir}scan_config.cfg'
         self.scanConfig = configparser.ConfigParser(
                 interpolation=configparser.BasicInterpolation(),
                 converters={
@@ -55,6 +69,7 @@ class OcrTest(unittest.TestCase):
         precisions = []
         recalls = []
         for section in self.scanConfig.sections():
+            self.log.info(f'\nSubtest on scan {section}\n')
             with self.subTest(scanFilename = section):
                 self.processScan(section, precisions, recalls)
         averagePrecision = sum(precisions) / len(precisions)
@@ -67,9 +82,8 @@ class OcrTest(unittest.TestCase):
                 'averageRecall not high enough')
 
     def processScan(self, scanFilename, precisions, recalls):
-        model = tagtrail_ocr.Model(self.tmpDir, self.testScanDir,
-                self.testOutputDir, [scanFilename], self.db, False,
-                self.log)
+        model = tagtrail_ocr.Model(self.testRootDir, self.tmpDir,
+                [scanFilename], False, self.writeDebugImages, self.log)
         model.prepareScanSplitting()
 
         self.assertTrue(os.path.exists(f'{self.testScanDir}{scanFilename}'))
@@ -104,7 +118,7 @@ class OcrTest(unittest.TestCase):
                             'wrongly classified as being empty')
                         self.checkIdPrecision(expectedSheetName, sheet.name)
                         precision, recall = self.computePerformanceMetrics(
-                                expectedSheetName, sheet.name)
+                                expectedSheetName, sheet.name, f'{scanFilename}_sheet{idx}')
                         precisions.append(precision)
                         recalls.append(recall)
                         self.assertGreaterEqual(precision, self.minSheetPrecision,
@@ -112,7 +126,8 @@ class OcrTest(unittest.TestCase):
                         self.assertGreaterEqual(recall, self.minSheetRecall,
                                 'sheet recall not high enough')
 
-    def computePerformanceMetrics(self, templateSheetName, testedSheetName):
+    def computePerformanceMetrics(self, templateSheetName, testedSheetName,
+            testedSheetDebugDir):
         templateSheet = sheets.ProductSheet(log = self.log)
         templateSheet.load(f'{self.templateOutputDir}{templateSheetName}')
         testedSheet = sheets.ProductSheet(log = self.log)
@@ -127,6 +142,12 @@ class OcrTest(unittest.TestCase):
                     truePositives += 1
                 else:
                     falsePositives += 1
+                    if self.writeDebugImages:
+                        self.copyDebugImage(testedSheetDebugDir, testedBox.name,
+                                self.debugOutputWrongDir)
+            elif self.writeDebugImages:
+                self.copyDebugImage(testedSheetDebugDir, testedBox.name,
+                        self.debugOutputNotRecalledDir)
             self.log.debug('')
             self.log.debug(f'falsePositives = {falsePositives}')
             self.log.debug(f'testedBox: ({testedBox.text}, {testedBox.confidence})')
@@ -135,9 +156,23 @@ class OcrTest(unittest.TestCase):
 
         precision = truePositives / (truePositives + falsePositives)
         recall = truePositives / len(templateSheet.boxes())
-        self.log.info(f'{testedSheetName}: ' +
+        self.log.info(f'{testedSheetName}: '
                 f'precision = {precision}, recall = {recall}')
         return (precision, recall)
+
+    def copyDebugImage(self, testedSheetDebugDir, testedBoxName, outputDir):
+        ocrImagePath = (f'{self.tmpDir}{testedSheetDebugDir}/'
+                f'4_recognizeText_{testedBoxName}_10_ocrImage.jpg')
+        cornerImagePath = (f'{self.tmpDir}{testedSheetDebugDir}/'
+                f'4_recognizeText_{testedBoxName}_00_cornerImg.jpg')
+        if os.path.exists(ocrImagePath):
+            shutil.copy(ocrImagePath,
+                    f'{outputDir}{testedSheetDebugDir}'
+                    f'_{testedBoxName}_10_ocrImage.jpg')
+        elif os.path.exists(cornerImagePath):
+            shutil.copy(cornerImagePath,
+                    f'{outputDir}{testedSheetDebugDir}'
+                    f'_{testedBoxName}_00_cornerImage.jpg')
 
     def checkIdPrecision(self, templateSheetName, testedSheetName):
         """
@@ -160,5 +195,12 @@ class OcrTest(unittest.TestCase):
                     'sheet number is wrong and confidence == 1')
 
 if __name__ == '__main__':
-    #unittest.main()
-    cProfile.run('unittest.main()', 'restats')
+    parser = argparse.ArgumentParser(description='Test tagtrail_gen')
+    parser.add_argument('--writeDebugImages', dest='writeDebugImages', action='store_true')
+    args = parser.parse_args()
+
+    loader = unittest.TestLoader()
+    OcrTest.writeDebugImages = args.writeDebugImages
+    suite = loader.loadTestsFromTestCase(OcrTest)
+    runner = unittest.TextTestRunner()
+    runner.run(suite)

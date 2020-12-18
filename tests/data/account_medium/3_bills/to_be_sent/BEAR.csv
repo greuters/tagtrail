@@ -1,0 +1,13 @@
+memberId;BEAR
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];0.00
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];14.20
+Current Balance [CHF];-14.20
+Total gCo2e;460
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+pelato-tomaten-gross;Pelato Tomaten Gross;1;4.35;None;4.35;None
+tamari;Tamari;1;9.85;460;9.85;460

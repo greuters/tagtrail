@@ -70,9 +70,7 @@ class ProductSheet(ABC):
         return (round(u / self.sheetW * self.xRes),
                 round(v / self.sheetH * self.yRes))
 
-    def __init__(self, database=None, testMode=False, log = helpers.Log()):
-        self._database=database
-        self.testMode=testMode
+    def __init__(self, log = helpers.Log()):
         self.__boxes={}
         self._log=log
         self._box_to_pos={}
@@ -124,18 +122,7 @@ class ProductSheet(ABC):
             color = self.dataBgColors[row % 2]
             num = row*self.dataColCount + col
             u0 = self.leftMargin + col*self.dataRowW
-            if self.testMode:
-                if random.randint(0, self.maxQuantity()) < 3*num:
-                    text = ""
-                elif self._database:
-                    text = list(self._database.members.values())[random.randint(0,
-                        len(self._database.members)-1)].id
-                else:
-                    text = "Test"
-                textRotation = random.randrange(-8,8)
-            else:
-                text = ""
-                textRotation = 0
+            text = ""
 
             self.addBox(Box(
                     "dataBox{}({},{})".format(num,row,col),
@@ -143,7 +130,6 @@ class ProductSheet(ABC):
                     self.pointFromMM(u0+self.dataRowW, v0+self.dataColH),
                     color,
                     text,
-                    textRotation=textRotation
                     ), row+1, col)
 
     @property
@@ -230,6 +216,20 @@ class ProductSheet(ABC):
         else:
             return None
 
+    def isFull(self):
+        if self.boxByName('nameBox').text == '':
+            return False
+        if self.boxByName('unitBox').text == '':
+            return False
+        if self.boxByName('priceBox').text == '':
+            return False
+        if self.boxByName('sheetNumberBox').text == '':
+            return False
+        return self.emptyDataBoxes() == []
+
+    def emptyDataBoxes(self):
+        return [box for box in self.dataBoxes() if box.text == '']
+
     def tagsAndConfidences(self):
         return [(box.text, box.confidence) for box in self.dataBoxes()]
 
@@ -271,16 +271,56 @@ class ProductSheet(ABC):
                 self.__boxes[boxName].text = text
                 self.__boxes[boxName].confidence = confidence
 
-    def fileName(self):
+    @property
+    def filename(self):
         return f'{self.productId()}_{self.sheetNumber}.csv'
 
+    @classmethod
+    def productId_from_filename(cls, filename):
+        """
+        Try to parse productId from filename.
+
+        Expected filenames have the format 'productId_sheetNumber.csv'
+
+        :param filename: filename of a :class: `ProductSheet`
+        :type filename: str
+        :return: assumed productId or None
+        :rtype: str
+        """
+        if ('_' not in filename
+                or len(filename.split('_')) != 2
+                or not filename.endswith('.csv')):
+            raise ValueError(f'{filename} has wrong format '
+                   '(productId_sheetNumber.csv) expected')
+        return filename.split('_')[0]
+
+    @classmethod
+    def sheetNumber_from_filename(cls, filename):
+        """
+        Try to parse the formatted sheetNumber from filename.
+
+        Expected filenames have the format '{productId}_{sheetNumber}.csv',
+        if no sheetNumber can be identified, None is returned
+
+        :param filename: filename of a :class: `ProductSheet`
+        :type filename: str
+        :return: assumed formatted sheetNumber or None
+        :rtype: str
+        """
+        if ('_' not in filename
+                or len(filename.split('_')) != 2
+                or not filename.endswith('.csv')):
+            raise ValueError(f'{filename} has wrong format '
+                   '(productId_sheetNumber.csv) expected')
+        return filename.split('_')[1][:-4]
+
     def store(self, path):
-        filePath = f'{path}{self.fileName()}'
+        filePath = f'{path}{self.filename}'
         self._log.info(f'storing sheet {filePath}')
         with open(filePath, "w+", encoding='utf-8') as fout:
             fout.write(f'boxName;text;confidence\n')
             for box in self.boxes():
-                fout.write(f'{box.name};{box.text};{box.confidence}\n')
+                fout.write(f'{box.name};{box.text};{box.confidence:.1f}\n')
 
 class Box(ABC):
     fontColor = 'black'
@@ -291,8 +331,7 @@ class Box(ABC):
             text = "",
             confidence = 1,
             lineW = 3,
-            lineColor = [0, 0, 0],
-            textRotation = 0):
+            lineColor = [0, 0, 0]):
         self.name = name
         self.pt1 = pt1
         self.pt2 = pt2
@@ -301,7 +340,6 @@ class Box(ABC):
         self.confidence = confidence
         self.lineW = lineW
         self.lineColor = lineColor
-        self.textRotation = textRotation
         self._log = helpers.Log()
 
     @property
@@ -335,11 +373,4 @@ class Box(ABC):
             draw = ImageDraw.Draw(canvas)
             draw.text((0,0), self.text, self.fontColor, self.font)
             textImg = cv.cvtColor(np.array(canvas), cv.COLOR_RGB2BGR)
-
-            # for testing OCR capabilities
-            if self.textRotation != 0:
-                rotMatrix = cv.getRotationMatrix2D((textH/2, textW/2),
-                        self.textRotation, 1)
-                textImg = cv.warpAffine(textImg, rotMatrix, (textW, textH), borderMode=cv.BORDER_CONSTANT,
-                        borderValue=(255, 255, 255))
             img[textY:textY+textH,textX:textX+textW] = textImg

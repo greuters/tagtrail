@@ -53,6 +53,8 @@ On Ubuntu
 
 * sudo apt install git python3 python3-tk python3-venv tesseract-ocr libtesseract-dev libleptonica-dev pkg-config
 
+* git clone https://github.com/greuters/tagtrail.git
+
 * cd tagtrail
 
 * python3 -m venv tagtrail-env
@@ -61,7 +63,7 @@ On Ubuntu
 
 * pip install --upgrade pip && pip install -r requirements.txt
 
-* python -m tests.scenario_medium
+* To verify everything works as expected: make test
 
 On Windows
 
@@ -82,4 +84,13 @@ On Windows
  
 * pip install -r requirements.txt
 
-* python -m tests.scenario_medium
+* To verify everything works as expected: make test
+
+Running the provided example (TODO: add a real user guide)
+
+python -m tagtrail.tagtrail_ocr data/next/
+python -m tagtrail.tagtrail_sanitize data/next/
+python -m tagtrail.tagtrail_bankimport data/next/ --accountingDate=2020-04-26
+python -m tagtrail.tagtrail_account data/next/ --accountingDate=2020-04-26
+python -m tagtrail.tagtrail_send --testRecipient=your@email.address data/account_2020-04-26/ 1234 Tester
+python -m tagtrail.tagtrail_gen data/next/ --genDate=2020-04-26

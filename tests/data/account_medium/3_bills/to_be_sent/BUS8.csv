@@ -1,0 +1,12 @@
+memberId;BUS8
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];301.85
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];9.50
+Current Balance [CHF];292.35
+Total gCo2e;591
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);1;9.50;591;9.50;591

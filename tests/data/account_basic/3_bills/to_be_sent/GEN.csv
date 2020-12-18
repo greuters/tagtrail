@@ -1,0 +1,12 @@
+memberId;GEN
+Previous Accounting Date;2020-10-25
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];455.32
+Total Payments [CHF];250.00
+Correction Transaction [CHF];-20.00
+Reason for correction;Vergessenes Olivenöl
+Total Price [CHF];5.00
+Current Balance [CHF];680.32
+Total gCo2e;982
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+spaghetti-vollkorn;Spaghetti Vollkorn;2;2.50;491;5.00;982

@@ -1,0 +1,15 @@
+memberId;MMJQ
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];952.40
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];32.60
+Current Balance [CHF];919.80
+Total gCo2e;2137
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+kichererbsen-schwarz-hell;Kichererbsen (schwarz / hell);1;11.60;None;11.60;None
+maisgriess-bramata;Maisgriess Bramata;3;3.90;642;11.70;1926
+mandeln;Mandeln;1;4.95;211;4.95;211
+pelato-tomaten-gross;Pelato Tomaten Gross;1;4.35;None;4.35;None

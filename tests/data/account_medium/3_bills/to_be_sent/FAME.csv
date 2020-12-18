@@ -1,0 +1,15 @@
+memberId;FAME
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];477.35
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];31.90
+Current Balance [CHF];445.45
+Total gCo2e;2815
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+delikatess-rapsol;Delikatess Rapsöl;2;5.35;460;10.70;920
+mandeln;Mandeln;2;4.95;211;9.90;422
+spaghetti;Spaghetti;3;2.25;491;6.75;1473
+toilettenpapier;Toilettenpapier;1;4.55;None;4.55;None

@@ -51,7 +51,7 @@ class EnrichedDatabase(database.Database):
                 '5_output/unprocessed_Transactions_' + \
                 helpers.DateUtility.strftime(self.previousAccountingDate) + '_' + \
                 helpers.DateUtility.strftime(toDate) + '.csv'
-        self.paymentTransactionsPath = f'{self.accountingDataPath}4_gnucash/paymentTransactions.csv'
+        self.paymentTransactionsPath = f'{self.accountingDataPath}4_gnucash/transactions.csv'
         if not os.path.isfile(self.inputTransactionsPath):
             raise ValueError(
                     f'Missing required file {self.inputTransactionsPath}\n')

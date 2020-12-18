@@ -29,14 +29,20 @@ from . import helpers
 #TODO: adapt to use normal ttk.ComboBox functionality
 class AutocompleteEntry(tkinter.Entry):
     """
-    All input is uppercased before processing.
+    Capitalization of input is ignored for comparisons and corrected to
+    capitalization of possibleValues when an entry matches.
+    possibleValues must not contain duplicate values when uppercased
     """
     def __init__(self, text, confidence, possibleValues, releaseFocus, enabled,
             listBoxParent, listBoxX, listBoxY, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.possibleValues = [v.upper() for v in possibleValues]
+        if (len(set([v.upper() for v in possibleValues])) !=
+                len(possibleValues)):
+            raise ValueError('possibleValues contain duplicate entries when '
+                    f'uppercased: {possibleValues}')
+        self.possibleValues = list(possibleValues)
         self.__releaseFocus = releaseFocus
-        self.__log = helpers.Log()
+        self.__log = helpers.Log(helpers.Log.LEVEL_DEBUG)
         self.__previousValue = ""
         self.__listBox = None
         self.__var = self["textvariable"]
@@ -84,7 +90,7 @@ class AutocompleteEntry(tkinter.Entry):
         return self.__releaseFocus(event)
 
     def varTextChanged(self, name, index, mode):
-        self.__var.set(self.__var.get().upper())
+        self.__var.set(self.__var.get())
         self.__log.debug('changed var = {}', self.text)
         self.confidence = 0
 
@@ -163,14 +169,15 @@ class AutocompleteEntry(tkinter.Entry):
         word = words[0]
         prefixes = [word[0:i] for i in range(len(word)+1)]
         for p in sorted(prefixes, reverse=True):
-            isPrefix = [(w.find(p) == 0) for w in words]
+            isPrefix = [(w.upper().find(p.upper()) == 0) for w in words]
             if len(p) == 0 or False not in isPrefix:
                 return p
 
     def comparison(self, word):
         if not self.possibleValues:
             return [word]
-        return [w for w in self.possibleValues if w.find(word) == 0]
+        return [w for w in self.possibleValues
+                if w.upper().find(word.upper()) == 0]
 
     @property
     def enabled(self):
@@ -198,9 +205,10 @@ class AutocompleteEntry(tkinter.Entry):
         If text is not in self.possibleValues or '', nothing happens. To avoid this
         restriction, set self.enabled = False and call self.setArbitraryText
         """
-        if text != '' and not text.upper() in self.possibleValues:
+        if (text != '' and
+                not text.upper() in [w.upper() for w in self.possibleValues]):
             return
-        self.__var.set(text.upper())
+        self.__var.set(text)
 
     def setArbitraryText(self, text):
         """
@@ -208,7 +216,7 @@ class AutocompleteEntry(tkinter.Entry):
         Note that, if self.enabled == True, the value will be subjected to
         autocorrection.
         """
-        self.__var.set(text.upper())
+        self.__var.set(text)
 
     @property
     def confidence(self):
@@ -452,3 +460,141 @@ class BaseGUI(ABC):
                 return
             y += b.winfo_height()
             self.buttons[buttonId] = b
+
+class ToolTip:
+    waittime = 500 # miliseconds
+    wraplength = 300 # pixels
+
+    """
+    Gives a Tkinter widget a tooltip as the mouse is above the widget.
+
+    Cudos to
+    https://stackoverflow.com/questions/3221956/how-do-i-display-tooltips-in-tkinter
+    www.daniweb.com/programming/software-development/code/484591/a-tooltip-class-for-tkinter
+    """
+    def __init__(self, widget, text='widget info'):
+        self.widget = widget
+        self.text = text
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.widget.bind("<ButtonPress>", self.leave)
+        self.id = None
+        self.tw = None
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(self.waittime, self.showtip)
+
+    def unschedule(self):
+        id = self.id
+        self.id = None
+        if id:
+            self.widget.after_cancel(id)
+
+    def showtip(self, event=None):
+        x = y = 0
+        x, y, cx, cy = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 20
+        # creates a toplevel window
+        self.tw = tkinter.Toplevel(self.widget)
+        # Leaves only the label and removes the app window
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry("+%d+%d" % (x, y))
+        label = tkinter.Label(self.tw, text=self.text, justify='left',
+                       background="#ffffff", relief='solid', borderwidth=1,
+                       wraplength = self.wraplength)
+        label.pack(ipadx=1)
+
+    def hidetip(self):
+        tw = self.tw
+        self.tw= None
+        if tw:
+            tw.destroy()
+
+class ScrollableFrame(tkinter.Frame):
+    """
+    1. Master widget gets scrollbars and a canvas. Scrollbars are connected
+    to canvas scrollregion.
+
+    2. self.scrolledwindow is created and inserted into canvas
+
+    Usage Guideline:
+    Assign any widgets as children of <ScrollableFrame instance>.scrolledwindow
+    to get them inserted into canvas
+    """
+    def __init__(self, parent, *args, **kwargs):
+        """
+
+        :param parent: master of scrolled window
+        :type parent: tkinter widget
+        """
+        super().__init__(parent, *args, **kwargs)
+
+        # creating scrollbars
+        self.xscrlbr = ttk.Scrollbar(parent, orient = 'horizontal')
+        self.xscrlbr.grid(column = 0, row = 1, sticky = 'ew', columnspan = 2)
+        self.yscrlbr = ttk.Scrollbar(parent)
+        self.yscrlbr.grid(column = 1, row = 0, sticky = 'ns')
+
+        # creating canvas
+        self.canv = tkinter.Canvas(parent)
+        self.canv.config()
+        self.canv.grid(column = 0, row = 0, sticky = 'nsew')
+        self.canv.config(relief = 'flat', bd = 2,
+                xscrollcommand = self.xscrlbr.set,
+                yscrollcommand = self.yscrlbr.set)
+
+        # accociating scrollbar commands to canvas scrolling
+        self.xscrlbr.config(command = self.canv.xview)
+        self.yscrlbr.config(command = self.canv.yview)
+
+        # initialize scrolledwindow and associate it with canvas
+        self.scrolledwindow = tkinter.Frame(self.canv)
+        self.canv.create_window(0, 0, window = self.scrolledwindow, anchor = 'nw')
+        self.yscrlbr.lift(self.scrolledwindow)
+        self.xscrlbr.lift(self.scrolledwindow)
+        self.scrolledwindow.bind('<Configure>', self._configure_window)
+        self.canv.bind('<Enter>', self._bound_to_mousewheel)
+        self.canv.bind('<Leave>', self._unbound_to_mousewheel)
+
+        return
+
+    def config(self, *args, **kwargs):
+        super().config(*args, **kwargs)
+        if 'width' in kwargs:
+            self.canv.config(width = kwargs['width']-2*self.yscrlbr.winfo_reqwidth())
+        if 'height' in kwargs:
+            self.canv.config(height = kwargs['height']-2*self.xscrlbr.winfo_reqheight())
+
+    def _bound_to_mousewheel(self, event):
+        if sys.platform == "linux" or sys.platform == "linux2" or sys.platform == "darwin":
+            self.canv.bind_all("<Button-4>", self._on_mousewheel)
+            self.canv.bind_all("<Button-5>", self._on_mousewheel)
+        elif sys.platform == "win32":
+            self.canv.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbound_to_mousewheel(self, event):
+        self.canv.unbind_all("<MouseWheel>")
+        self.canv.unbind_all("<Button-4>")
+        self.canv.unbind_all("<Button-5>")
+
+    def _on_mousewheel(self, event):
+        increment = 0
+        # respond to Linux or Windows wheel event
+        if event.num == 5 or event.delta < 0:
+            increment = 1
+        if event.num == 4 or event.delta > 0:
+            increment = -1
+        self.canv.yview_scroll(increment, "units")
+
+    def _configure_window(self, event):
+        size = (self.scrolledwindow.winfo_reqwidth(), self.scrolledwindow.winfo_reqheight())
+        self.canv.config(scrollregion='0 0 %s %s' % size)

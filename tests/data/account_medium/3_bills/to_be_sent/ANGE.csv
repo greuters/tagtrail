@@ -1,0 +1,14 @@
+memberId;ANGE
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];304.27
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];72.30
+Current Balance [CHF];231.97
+Total gCo2e;1413
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+kaffee-rebel-dia-bohnen;Kaffee Rebel Dia (Bohnen);3;19.00;None;57.00;None
+maisgriess-bramata;Maisgriess Bramata;1;3.90;642;3.90;642
+sonnenblumen-kerne;Sonnenblumen Kerne;3;3.80;257;11.40;771

@@ -1,0 +1,21 @@
+memberId;LILA
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];801.70
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];92.60
+Current Balance [CHF];709.10
+Total gCo2e;6636
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+eliche-vollkorn;Eliche Vollkorn;1;2.50;491;2.50;491
+geschirrspulmittel;Geschirrspülmittel;1;4.95;979;4.95;979
+haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
+kaffee-rebel-dia-gemahlen;Kaffee Rebel Dia (Gemahlen);1;10.55;None;10.55;None
+kichererbsen-schwarz-hell;Kichererbsen (schwarz / hell);1;11.60;None;11.60;None
+mandeln;Mandeln;3;4.95;211;14.85;633
+rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);3;9.50;591;28.50;1773
+salz-jodiert;Salz jodiert;2;1.15;920;2.30;1840
+tomaten-in-dose;Tomaten in Dose;1;3.85;None;3.85;None
+zucker-vollrohr;Zucker Vollrohr;2;4.80;None;9.60;None

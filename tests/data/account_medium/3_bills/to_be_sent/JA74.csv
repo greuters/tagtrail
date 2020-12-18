@@ -1,0 +1,14 @@
+memberId;JA74
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];435.55
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];28.90
+Current Balance [CHF];406.65
+Total gCo2e;1612
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+geschirrspulmittel;Geschirrspülmittel;1;4.95;979;4.95;979
+mandeln;Mandeln;3;4.95;211;14.85;633
+toilettenpapier;Toilettenpapier;2;4.55;None;9.10;None

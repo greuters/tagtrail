@@ -1,24 +1,36 @@
-import requests
-import json
 from .database import Database
 from . import helpers
+
+import argparse
+import requests
+import json
 
 class EaternityApi:
     querystring = {'transient': 'true'}
     headers = {
         }
 
-    def __init__(self, config, log = helpers.Log()):
+    def __init__(self, config, apiKey = None, log = helpers.Log()):
+        """
+        :param config: loaded config/tagtrail.cfg
+        :type config: :class: `configparser.ConfigParser`
+        :param apiKey: optional apiKey for eaternity. if None is given, apiKey
+            will be loaded from credentials.cfg
+        :type apiKey: str
+        """
         self.log = log
         self.config = config
         self.kitchenId = self.config.get('eaternity', 'kitchenId')
         self.kitchenLocation = self.config.get('eaternity', 'kitchenLocation')
         self.baseUrl = self.config.get('eaternity', 'baseUrl')
-        keyring = helpers.Keyring(self.config.get('general',
-            'password_file_path'))
+        if apiKey is None:
+            keyring = helpers.Keyring(self.config.get('general',
+                'password_file_path'))
+            apiKey = keyring.get_and_ensure_password('eaternity', 'apiKey')
+
         self.headers = {
                 'Content-Type': "Application/Json",
-                'Authorization': keyring.get_and_ensure_password('eaternity', 'apiKey'),
+                'Authorization': apiKey,
                 'Host': "co2.eaternity.ch",
                 'Accept-Encoding': "gzip, deflate",
                 'Cookie': "__cfduid=d53ccfea6402c4eb1fbc89a4c387dcb311571412595",
@@ -87,7 +99,14 @@ class EaternityApi:
             raise ValueError(response)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Test tagtrail_account')
+    parser.add_argument('--apiKey',
+            default=None,
+            help='API key needed to update co2 values; if this argument is '
+            'missing API key is read from credential store')
+    args = parser.parse_args()
+
     db = Database(f'data/next/0_input/')
-    api = EaternityApi(db.config)
+    api = EaternityApi(db.config, args.apiKey)
     for product in db.products.values():
         print(f'productName={product.id}, amount={product.amount}, unit={product.unit}, gCo2e={api.co2Value(product)}')

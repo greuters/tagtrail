@@ -209,7 +209,7 @@ class DatabaseDict(UserDict):
                     f'{self.containedDatabaseObjectCls()}. {value} is not.')
         if value.id != key:
             raise ValueError(f'Not allowed to store DatabaseObject with ' + \
-                    'a different key than its id, but {key} != {value.id}.')
+                    f'a different key than its id, but {key} != {value.id}.')
         super().__setitem__(key, value)
 
 class DatabaseList(UserList):
@@ -220,7 +220,7 @@ class DatabaseList(UserList):
     colInternalDelimiter = ','
     quotechar = '"'
     newline = ''
-    encoding = 'latin-1'
+    encoding = 'utf-8'
 
     def __init__(self, config, *args):
         super().__init__(*args)
@@ -316,7 +316,7 @@ class MemberDict(DatabaseDict):
             m.id,
             m.name,
             ', '.join(m.emails),
-            str(m.balance)
+            helpers.formatPrice(m.balance)
             ]+['' for i in range(self.numAdditionalCols)]
             for m in self.values()]
 
@@ -469,6 +469,19 @@ class ProductDict(DatabaseDict):
         return Product
 
     def databaseObjectFromCsvRow(self, rowValues):
+        if self.inventoryQuantityDate is None:
+            if rowValues[8]:
+                raise ValueError('Invalid products file: '
+                        f'inventoryQuantityDate {inventoryQuantityDate} is '
+                        f'empty, but inventoryQuantity of {rowValues[0]} is '
+                        'given')
+        else:
+            if not rowValues[8]:
+                raise ValueError('Invalid products file: '
+                        f'inventoryQuantityDate {self.inventoryQuantityDate} '
+                        f'is given, but inventoryQuantity of {rowValues[0]} '
+                        'is missing')
+
         return Product(description = rowValues[0],
                 amount = int(rowValues[1]),
                 unit = rowValues[2],
@@ -505,40 +518,75 @@ class ProductDict(DatabaseDict):
                 '' if p.inventoryQuantity is None else str(p.inventoryQuantity),
                 '' if p.sheetsToPrint is None else ','.join(p.sheetsToPrint),
                 '', # Comment is not used within tagtrail
-                p.eaternityName,
-                p.origin,
-                ','.join(p.production),
-                p.transport,
-                ','.join(p.conservation),
+                '' if p.eaternityName is None else p.eaternityName,
+                '' if p.origin is None else p.origin,
+                '' if p.production is None else ','.join(p.production),
+                '' if p.transport is None else p.transport,
+                '' if p.conservation is None else ','.join(p.conservation),
                 '' if p.gCo2e is None else str(p.gCo2e)]
                 for p in self.values()]
 
-    def copyForNextAccounting(self, accountingDate):
+    def copyForNext(self, currentDate, clearAddedQuantity, clearSoldQuantity):
         """
-        Copy all products and initialize their quantities for the next accounting.
+        Copy all products and initialize their quantities
 
-        The copy will be ready to export as an initial template for the next
-        accounting. All quantities but the previousQuantity will be reset, and the
-        previousQuantity is either initialized from self.inventoryQuantity (specified)
-        or from self.expectedQuantity.
+        The copy will be ready to export as an initial template  for the next
+        call to tagtrail_account / tagtrail_gen.
+
+        The new previousQuantity is either initialized from self.inventoryQuantity
+        (if given) or from self.previousQuantity.
+
+        :param currentDate: date of the current accounting
+        :type currentDate: str
+        :param clearAddedQuantity: if True, reset addedQuantity to None and add
+            it to the new previousQuantity
+        :type clearAddedQuantity: bool
+        :param clearSoldQuantity: if True, reset soldQuantity to None and
+            subtract it from the new previousQuantity
+        :type clearSoldQuantity: bool
         """
-        assert(self.inventoryQuantityDate is None or self.inventoryQuantityDate == accountingDate)
+        assert(self.inventoryQuantityDate is None or self.inventoryQuantityDate == currentDate)
 
         newProducts = copy.deepcopy(self)
-        newProducts.previousQuantityDate = accountingDate
+        newProducts.previousQuantityDate = currentDate
         newProducts.expectedQuantityDate = None
         newProducts.inventoryQuantityDate = None
 
         for productId, product in self.items():
             if product.inventoryQuantity is None:
-                newProducts[productId].previousQuantity = product.expectedQuantity
+                newProducts[productId].previousQuantity = product.previousQuantity
+                if clearAddedQuantity:
+                    newProducts[productId].previousQuantity += product.addedQuantity
+                    newProducts[productId].addedQuantity = None
+                if clearSoldQuantity:
+                    newProducts[productId].previousQuantity -= product.soldQuantity
+                    newProducts[productId].soldQuantity = None
             else:
+                # inventoryQuantity is the quantity of a product physically in
+                # the store after accounting is done.
+                # thus
+                # * the products added since last tagtrail_gen are counted in
+                #   inventoryQuantity
+                #   => if we want to transfer addedQuantity to the next products.csv,
+                #   it needs to be deducted again from inventoryQuantity
+                #
+                # * the products sold since last run of tagtrail_account
+                #   (soldQuantity) are already gone and not counted in
+                #   inventoryQuantity
+                #   => if we want to transfer soldQuantity to the next products.csv,
+                #   it needs to be added again to inventoryQuantity
                 newProducts[productId].previousQuantity = product.inventoryQuantity
+                if clearAddedQuantity:
+                    newProducts[productId].addedQuantity = None
+                else:
+                    newProducts[productId].previousQuantity -= product.addedQuantity
+                if clearSoldQuantity:
+                    newProducts[productId].soldQuantity = None
+                else:
+                    newProducts[productId].previousQuantity += product.soldQuantity
             assert(newProducts[productId].previousQuantity is not None)
-            newProducts[productId].sheetsToPrint = None
             newProducts[productId].inventoryQuantity = None
-            newProducts[productId].addedQuantity = None
-            newProducts[productId].soldQuantity = None
+            newProducts[productId].sheetsToPrint = None # TODO remove
 
         return newProducts
 
@@ -650,6 +698,7 @@ class Bill(DatabaseDict):
     def totalPurchasePrice(self):
         return sum([p.totalPurchasePrice() for p in self.values()])
 
+    @property
     def currentBalance(self):
         currentBalance = self.previousBalance + self.totalPayments + \
                 self.correctionTransaction - self.totalGrossSalesPrice()
@@ -699,7 +748,7 @@ class Bill(DatabaseDict):
                 helpers.formatPrice(self.correctionTransaction),
                 self.correctionJustification,
                 helpers.formatPrice(self.totalGrossSalesPrice()),
-                helpers.formatPrice(self.currentBalance()),
+                helpers.formatPrice(self.currentBalance),
                 self.totalGCo2e()]
 
     def csvRows(self):
@@ -808,6 +857,21 @@ class GnucashTransactionList(DatabaseList):
                 for t in self]
 
 class CorrectionTransaction(DatabaseObject):
+    """
+    A correction transaction is used to let the member know that some
+    correction was done in GnuCash, affecting his balance.
+
+    The corrected amount is not exported to GnuCash again, but meant to make a
+    manual correction already done in GnuCash transparent to the user.
+
+    As an example, if member LILA complained about a package of curry gone bad,
+    the accountant can refund the price within GnuCash and let LILA know their
+    corrected balance and the reason for it during next accounting by adding
+
+    LILA;2.3;Refunded curry
+
+    to 0_input/correctionTransactions.csv
+    """
     def __init__(self,
             memberId,
             amount,
@@ -847,7 +911,7 @@ class CorrectionTransactionDict(DatabaseDict):
 
     def csvRows(self):
         return [[t.id, helpers.formatPrice(t.amount), t.justification]
-                for t in self]
+                for t in self.values()]
 
 class PostfinanceTransaction:
     messagePrefix = 'MITTEILUNGEN:'

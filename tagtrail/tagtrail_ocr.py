@@ -19,7 +19,7 @@ import argparse
 import cv2 as cv
 import numpy as np
 import itertools
-from tesserocr import PyTessBaseAPI, PSM
+import tesserocr
 import PIL
 import os
 import math
@@ -653,21 +653,21 @@ class TagRecognizer():
         sheetNumberString = self.__db.config.get('tagtrail_gen',
                 'sheet_number_string')
         self.__sheetNumberCandidates = [
-                sheetNumberString.format(sheetNumber=str(n)).upper()
+                sheetNumberString.format(sheetNumber=str(n))
                 for n in range(1, maxNumSheets+1)]
         self.log.debug(f'sheetNumberCandidates={list(self.__sheetNumberCandidates)}')
 
-        self.__productNameCandidates = [p.description.upper()
+        self.__productNameCandidates = [p.description
                 for p in self.__db.products.values()]
         self.log.debug(f'productNameCandidates={list(self.__productNameCandidates)}')
 
-        self.__unitCandidates = [p.amountAndUnit.upper()
+        self.__unitCandidates = [p.amountAndUnit
                 for p in self.__db.products.values()]
         self.log.debug(f'unitCandidates={list(self.__unitCandidates)}')
 
         self.currency = self.__db.config.get('general', 'currency')
         self.__priceCandidates = [
-                helpers.formatPrice(p.grossSalesPrice(), self.currency).upper()
+                helpers.formatPrice(p.grossSalesPrice(), self.currency)
                 for p in self.__db.products.values()]
         self.log.debug(f'priceCandidates={list(self.__priceCandidates)}')
 
@@ -687,12 +687,12 @@ class TagRecognizer():
         """
         return self.__sheet.sheetNumber
 
-    def fileName(self):
+    def filename(self):
         """
         Recognized file name. If recognition failed or is not yet done, a
         fallback is returned.
         """
-        return self.__sheet.fileName()
+        return self.__sheet.filename
 
     @property
     def __prefix(self):
@@ -759,9 +759,9 @@ class TagRecognizer():
         sheetNumberBox = self.__sheet.boxByName('sheetNumberBox')
         if nameBox.confidence == 1:
             product = self.__db.products[self.__sheet.productId()]
-            expectedAmountAndUnit = product.amountAndUnit.upper()
+            expectedAmountAndUnit = product.amountAndUnit
             expectedPrice = helpers.formatPrice(product.grossSalesPrice(),
-                    self.currency).upper()
+                    self.currency)
             if unitBox.confidence < 1:
                 self.log.info(f'Inferred unit={expectedAmountAndUnit}')
                 unitBox.text = expectedAmountAndUnit
@@ -957,14 +957,21 @@ class TagRecognizer():
 
         p = RotateLabel(f'_{box.name}_09_rotation', self.__prefix,
                 writeDebugImages = self.writeDebugImages, log=self.log)
-        ocrImg = p.process(maskImg, boxInputImg)
+        rotatedImg = p.process(maskImg, boxInputImg)
+
+        # blend ocrImg with thresholded version
+        grayImg = cv.cvtColor(rotatedImg, cv.COLOR_BGR2GRAY)
+        _, thresholdImg = cv.threshold(grayImg,0,255,cv.THRESH_OTSU)
+        thresholdImg = cv.cvtColor(thresholdImg, cv.COLOR_GRAY2BGR)
+        ocrImg = cv.addWeighted(rotatedImg, .95, thresholdImg, .05, 0)
+
         if self.writeDebugImages:
             cv.imwrite(f'{self.__prefix}_{box.name}_10_ocrImage.jpg', ocrImg)
 
         self.tesseractApi.SetImage(Image.fromarray(ocrImg))
         ocrText = self.tesseractApi.GetUTF8Text().strip()
 
-        confidence, text = self.__findClosestString(ocrText.upper(), candidateTexts)
+        confidence, text = self.__findClosestString(ocrText, candidateTexts)
         self.log.info("(ocrText, confidence, text) = ({}, {}, {})", ocrText, confidence, text)
         return (text, confidence)
 
@@ -1030,7 +1037,8 @@ class TagRecognizer():
         candidateStrings=list(set(candidateStrings))
         self.log.debug(f"findClosestString: searchString={searchString}")
         self.log.debug(f"findClosestString: candidateStrings={candidateStrings}")
-        dists = list(map(lambda x: Levenshtein.distance(x, searchString), candidateStrings))
+        dists = list(map(lambda x: Levenshtein.distance(x,
+            searchString.upper()), [c.upper() for c in candidateStrings]))
         self.log.debug("dists={}", dists)
         minDist, secondDist = np.partition(dists, 1)[:2]
         if minDist > 5 or minDist == secondDist:
@@ -1047,15 +1055,15 @@ class TagRecognizer():
 
     def storeSheet(self, outputDir):
         """
-        Store the recognized sheet as f'{outputDir}{self.fileName()}
+        Store the recognized sheet as f'{outputDir}{self.filename()}
 
         :param outputDir: directory to store the csv file to
         :type outputDir: str
         :raises ValueError: if the file already exists and would be overwritten
         """
-        if os.path.exists(f'{outputDir}{self.fileName()}'):
+        if os.path.exists(f'{outputDir}{self.filename()}'):
             raise ValueError(
-                f'{outputDir}{self.fileName()} already exists')
+                f'{outputDir}{self.filename()} already exists')
         self.__sheet.store(outputDir)
 
 class RotateLabel():
@@ -1109,6 +1117,8 @@ class RotateLabel():
         joinedContour = np.vstack(contours)
         minAreaRect = cv.minAreaRect(joinedContour)
         center, (minAreaRectWidth, minAreaRectHeight), rotationAngle = minAreaRect
+        minAreaRectWidth *= 1.1
+        minAreaRectHeight *= 1.1
 
         # extract the rotated minAreaRect from the original
         # cudos to http://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
@@ -1143,11 +1153,12 @@ class Corner:
         self.y = y
 
 class SplitSheetDialog(Dialog):
-    initialScreenPercentage = 0.75
-
     """
     A dialog to correct wrongly split sheets before OCR.
     """
+
+    initialScreenPercentage = 0.75
+
     def __init__(self,
             root,
             inputImg,
@@ -1173,7 +1184,7 @@ class SplitSheetDialog(Dialog):
         :class:`LineBasedFrameFinder` before normalization.
 
         'corners' mode lets the user directly select all four corners of the
-        output image, which is directlz normalized
+        output image, which is then normalized
 
         Setting the mode clears all selected corners.
         """
@@ -1380,16 +1391,15 @@ class Model():
     Model class exposing all functionality needed to process scanned
     ProductSheets and store their content as .csv files.
 
+    :param rootDir: root directory for the accounting
+    :type rootDir: str
     :param tmpDir: temporary directory to write debug images to
     :type tmpDir: str
-    :param scanDir: directory where the scan files are stored
-    :type scanDir: str
-    :param outputDir: directory to write ProductSheet .csv files to
-    :type outputDir: str
     :param scanFilenames: list of filenames (input scans) to be processed
     :type scanFilenames: list of str
-    :param db: database with products, members and configurations
-    :type db: class: `database.Database`
+    :param clearOutputDir: if `True`, outputDir is recreated before processing
+        new scans.
+    :type clearOutputDir: bool
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
@@ -1397,20 +1407,20 @@ class Model():
     :type log: class: `helpers.Log`
     """
     def __init__(self,
+            rootDir,
             tmpDir,
-            scanDir,
-            outputDir,
             scanFilenames,
-            db,
+            clearOutputDir = True,
             writeDebugImages = False,
             log = helpers.Log(helpers.Log.LEVEL_INFO)):
         self.tmpDir = tmpDir
-        self.scanDir = scanDir
-        self.outputDir = outputDir
+        self.scanDir = f'{rootDir}0_input/scans/'
+        self.outputDir = f'{rootDir}2_taggedProductSheets/'
         self.scanFilenames = scanFilenames
-        self.db = db
         self.log = log
+        self.clearOutputDir = clearOutputDir
         self.writeDebugImages = writeDebugImages
+        self.db = Database(f'{rootDir}0_input/')
         self.sheetRegions = []
         self.partiallyFilledFiles = set()
         self.compressedImgWidth = self.db.config.getint('tagtrail_ocr',
@@ -1420,7 +1430,9 @@ class Model():
         self.tesseractApi = None
 
     def __enter__(self):
-        self.tesseractApi = PyTessBaseAPI(psm=PSM.SINGLE_WORD)
+        self.tesseractApi = tesserocr.PyTessBaseAPI(
+               oem = tesserocr.OEM.LSTM_ONLY,
+               psm = tesserocr.PSM.SINGLE_LINE)
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.tesseractApi.End()
@@ -1429,11 +1441,14 @@ class Model():
     def prepareScanSplitting(self):
         """
         Prepare to walk over self.scanFilenames and invoke self.splitScan with
-        each of them. Any previously processed scans are discarded, and
-        self.outputDir is emptied.
+        each of them.
+
+        If self.clearOutputDir is `True`, any previously processed scans are
+        discarded, and self.outputDir is emptied.
         """
         self.sheetRegions = []
-        helpers.recreateDir(self.outputDir)
+        if self.clearOutputDir:
+            helpers.recreateDir(self.outputDir)
         self.fallbackSheetNumber = 0
 
     def splitScan(self, scanFilename, sheetCoordinates, rotationAngle):
@@ -1542,20 +1557,26 @@ class Model():
         recognizer.process(sheetRegion.processedImg, fallbackSheetName,
                 self.fallbackSheetNumber)
 
-        if os.path.exists(f'{self.outputDir}{recognizer.fileName()}'):
+        if os.path.exists(f'{self.outputDir}{recognizer.filename()}'):
             self.log.info('reset sheetRegion to fallback, as ' +
-                    f'{recognizer.fileName()} already exists')
+                    f'{recognizer.filename()} already exists')
             recognizer.resetSheetToFallback(fallbackSheetName,
                     self.fallbackSheetNumber)
+        if (not self.clearOutputDir and
+                os.path.exists(f'{self.outputDir}{recognizer.filename()}')):
+            self.log.info(f'''overwriting {recognizer.filename()}, as it
+            already exists and output directory has not been cleared due to
+            --individualScan option''')
+            os.remove(f'{self.outputDir}{recognizer.filename()}')
 
         recognizer.storeSheet(self.outputDir)
-        sheetRegion.name = recognizer.fileName()
+        sheetRegion.name = recognizer.filename()
         self.fallbackSheetNumber += 1
 
-        cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_original_scan.jpg',
+        cv.imwrite(f'{self.outputDir}{recognizer.filename()}_original_scan.jpg',
                 imutils.resize(sheetRegion.unprocessedImg, width=self.compressedImgWidth),
                 [int(cv.IMWRITE_JPEG_QUALITY), self.compressedImgQuality])
-        cv.imwrite(f'{self.outputDir}{recognizer.fileName()}_normalized_scan.jpg',
+        cv.imwrite(f'{self.outputDir}{recognizer.filename()}_normalized_scan.jpg',
                 imutils.resize(sheetRegion.processedImg, width=self.compressedImgWidth),
                 [int(cv.IMWRITE_JPEG_QUALITY), self.compressedImgQuality])
 
@@ -1566,11 +1587,9 @@ class GUI(BaseGUI):
 
     def __init__(self,
             model,
-            db,
             log = helpers.Log(helpers.Log.LEVEL_INFO)):
 
         self.model = model
-        self.db = db
         self._selectedCorners = []
         self.sheetCoordinates = list(range(4))
         self.scanCanvas = None
@@ -1581,9 +1600,9 @@ class GUI(BaseGUI):
         self.loadConfig()
         self.readyForTagRecognition = False
 
-        width = db.config.getint('general', 'screen_width')
+        width = self.model.db.config.getint('general', 'screen_width')
         width = None if width == -1 else width
-        height = db.config.getint('general', 'screen_height')
+        height = self.model.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
         super().__init__(width, height, log)
 
@@ -1629,10 +1648,10 @@ class GUI(BaseGUI):
         self.previewCanvas.configure(scrollregion=self.previewCanvas.bbox("all"))
         self.previewCanvas.bind('<Button-1>', self.onMouseDownOnPreviewCanvas)
         if sys.platform == "linux" or sys.platform == "linux2" or sys.platform == "darwin":
-            self.previewCanvas.bind("<Button-4>", self.onMouseWheelPreviewCanvas)
-            self.previewCanvas.bind("<Button-5>", self.onMouseWheelPreviewCanvas)
+            self.previewCanvas.bind("<Button-4>", self.onMouseWheelOnPreviewCanvas)
+            self.previewCanvas.bind("<Button-5>", self.onMouseWheelOnPreviewCanvas)
         elif sys.platform == "win32":
-            self.previewCanvas.bind("<MouseWheel>", self.onMouseWheelPreviewCanvas)
+            self.previewCanvas.bind("<MouseWheel>", self.onMouseWheelOnPreviewCanvas)
 
         if self.scrollPreviewY is None:
             self.scrollPreviewY = tkinter.Scrollbar(self.root, orient='vertical', command=self.previewCanvas.yview)
@@ -1680,23 +1699,23 @@ class GUI(BaseGUI):
         self.populateRoot()
 
     def loadConfig(self):
-        self.rotationAngle = self.db.config.getint('tagtrail_ocr', 'rotationAngle')
+        self.rotationAngle = self.model.db.config.getint('tagtrail_ocr', 'rotationAngle')
         self.sheetCoordinates[0] = list(map(float,
-            self.db.config.getcsvlist('tagtrail_ocr', 'sheet0_coordinates')))
+            self.model.db.config.getcsvlist('tagtrail_ocr', 'sheet0_coordinates')))
         self.sheetCoordinates[1] = list(map(float,
-            self.db.config.getcsvlist('tagtrail_ocr', 'sheet1_coordinates')))
+            self.model.db.config.getcsvlist('tagtrail_ocr', 'sheet1_coordinates')))
         self.sheetCoordinates[2] = list(map(float,
-            self.db.config.getcsvlist('tagtrail_ocr', 'sheet2_coordinates')))
+            self.model.db.config.getcsvlist('tagtrail_ocr', 'sheet2_coordinates')))
         self.sheetCoordinates[3] = list(map(float,
-            self.db.config.getcsvlist('tagtrail_ocr', 'sheet3_coordinates')))
+            self.model.db.config.getcsvlist('tagtrail_ocr', 'sheet3_coordinates')))
 
     def saveConfig(self, event = None):
-        self.db.config.set('tagtrail_ocr', 'rotationAngle', str(self.rotationAngle))
-        self.db.config.set('tagtrail_ocr', 'sheet0_coordinates', str(', '.join(map(str, self.sheetCoordinates[0]))))
-        self.db.config.set('tagtrail_ocr', 'sheet1_coordinates', str(', '.join(map(str, self.sheetCoordinates[1]))))
-        self.db.config.set('tagtrail_ocr', 'sheet2_coordinates', str(', '.join(map(str, self.sheetCoordinates[2]))))
-        self.db.config.set('tagtrail_ocr', 'sheet3_coordinates', str(', '.join(map(str, self.sheetCoordinates[3]))))
-        self.db.writeConfig()
+        self.model.db.config.set('tagtrail_ocr', 'rotationAngle', str(self.rotationAngle))
+        self.model.db.config.set('tagtrail_ocr', 'sheet0_coordinates', str(', '.join(map(str, self.sheetCoordinates[0]))))
+        self.model.db.config.set('tagtrail_ocr', 'sheet1_coordinates', str(', '.join(map(str, self.sheetCoordinates[1]))))
+        self.model.db.config.set('tagtrail_ocr', 'sheet2_coordinates', str(', '.join(map(str, self.sheetCoordinates[2]))))
+        self.model.db.config.set('tagtrail_ocr', 'sheet3_coordinates', str(', '.join(map(str, self.sheetCoordinates[3]))))
+        self.model.db.writeConfig()
 
     def setActiveSheet(self, index, event = None):
         self.activeSheetIndex = index
@@ -1797,7 +1816,7 @@ class GUI(BaseGUI):
             sheetRegion.isEmpty = False
             self.resetPreviewCanvas(scrollToBottom=False)
 
-    def onMouseWheelPreviewCanvas(self, event):
+    def onMouseWheelOnPreviewCanvas(self, event):
         increment = 0
         # respond to Linux or Windows wheel event
         if event.num == 5 or event.delta < 0:
@@ -1885,30 +1904,43 @@ class GUI(BaseGUI):
                 'tagtrail_ocr is done - exit now?'):
             self.root.destroy()
 
-def main(accountingDir, tmpDir, writeDebugImages):
-    outputDir = f'{accountingDir}2_taggedProductSheets/'
+def main(rootDir, individualScanFilename, tmpDir, writeDebugImages):
     helpers.recreateDir(tmpDir)
-    db = Database(f'{accountingDir}0_input/')
-    for (parentDir, dirNames, fileNames) in os.walk(f'{accountingDir}0_input/scans/'):
-        model = Model(tmpDir, parentDir, outputDir, fileNames, db, writeDebugImages)
-        gui = GUI(model, db)
-        if model.sheetRegions == [] or gui.abortingProcess:
-            break
 
-        gui.log.info('')
-        gui.log.info(f'successfully processed {len(fileNames)} files')
-        gui.log.info(f'the following files generated less than {ScanSplitter.numberOfSheets} sheets')
-        for f in model.partiallyFilledFiles:
-            gui.log.info(f)
-        break
+    scanDir = f'{rootDir}0_input/scans/'
+    scanFilenames, clearOutputDir = None, None
+    if individualScanFilename is None:
+        for (parentDir, dirNames, filenames) in os.walk(scanDir):
+            scanFilenames = filenames
+            break
+        clearOutputDir = True
+    else:
+        scanFilenames = [individualScanFilename]
+        clearOutputDir = False
+
+    model = Model(rootDir, tmpDir, scanFilenames, clearOutputDir,
+            writeDebugImages)
+    gui = GUI(model)
+    if model.sheetRegions == [] or gui.abortingProcess:
+        return
+
+    gui.log.info('')
+    gui.log.info(f'successfully processed {len(scanFilenames)} files')
+    gui.log.info(f'the following files generated less than {ScanSplitter.numberOfSheets} sheets')
+    for f in model.partiallyFilledFiles:
+        gui.log.info(f)
 
 if __name__== "__main__":
     parser = argparse.ArgumentParser(
         description='Recognize tags on all input scans, storing them as CSV files')
-    parser.add_argument('accountingDir',
+    parser.add_argument('rootDir',
             help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--individualScan', dest='individualScanFilename',
+            help='''Filename of a single new scan to be processed. Using this
+            option, already processed product sheets will not be overwritten or
+            discarded, unless they stem from the same scan.''')
     parser.add_argument('--tmpDir', dest='tmpDir', default='data/tmp/',
             help='Directory to put temporary files in')
     parser.add_argument('--writeDebugImages', dest='writeDebugImages', action='store_true')
     args = parser.parse_args()
-    main(args.accountingDir, args.tmpDir, args.writeDebugImages)
+    main(args.rootDir, args.individualScanFilename, args.tmpDir, args.writeDebugImages)

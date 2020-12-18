@@ -35,9 +35,9 @@ class InputSheet(ProductSheet):
     validationProbability = 0.02
     maxEpectedListboxHeight = 200
 
-    def __init__(self, root, database, path, accountedProductsPath):
+    def __init__(self, root, database, path, sheetsPath):
         super().__init__(log=Log())
-        self.accountedProductsPath = accountedProductsPath
+        self.sheetsPath = sheetsPath
         self.load(path)
         self.originalPath = path
 
@@ -49,9 +49,9 @@ class InputSheet(ProductSheet):
                             for n in range(1, maxNumSheets+1)]
         currency = database.config.get('general', 'currency')
         names, units, prices = map(set, zip(*[
-            (p.description.upper(),
-             p.amountAndUnit.upper(),
-             formatPrice(p.grossSalesPrice(), currency).upper())
+            (p.description,
+             p.amountAndUnit,
+             formatPrice(p.grossSalesPrice(), currency))
             for p in database.products.values()]))
 
         scaleFactor = min(root.winfo_height() / self.yRes,
@@ -150,13 +150,20 @@ class InputSheet(ProductSheet):
             return
         if  self.boxByName('sheetNumberBox').confidence != 1:
             return
-        accountedSheetPath = f'{self.accountedProductsPath}{self.productId()}_{self.sheetNumber}.csv'
-        self._log.debug(f'loading previous tags from {accountedSheetPath}')
-        if not os.path.exists(accountedSheetPath):
-            return
+
+        sheetName = f'{self.productId()}_{self.sheetNumber}.csv'
+        activeSheetPath = f'{self.sheetsPath}/active/{sheetName}'
+        inactiveSheetPath = f'{self.sheetsPath}/inactive/{sheetName}'
+        if os.path.exists(activeSheetPath):
+            self.loadTagsFromAccountedSheet(activeSheetPath)
+        elif os.path.exists(inactiveSheetPath):
+            self.loadTagsFromAccountedSheet(inactiveSheetPath)
+
+    def loadTagsFromAccountedSheet(self, path):
+        self._log.debug(f'loading previous tags from {path}')
 
         accountedSheet = ProductSheet()
-        accountedSheet.load(accountedSheetPath)
+        accountedSheet.load(path)
         if [box for box in accountedSheet.boxes()
                 if box.confidence != 1.0]:
             raise ValueError(
@@ -176,7 +183,7 @@ class InputSheet(ProductSheet):
 
                 assert(inputBox in self._box_to_widget)
                 autocompleteEntry = self._box_to_widget[inputBox]
-                text = inputBox.text.upper()
+                text = inputBox.text
                 if text not in autocompleteEntry.possibleValues:
                     autocompleteEntry.possibleValues.append(text)
                 autocompleteEntry.text = inputBox.text
@@ -225,15 +232,16 @@ class GUI(gui_components.BaseGUI):
     originalScanPostfix = '_original_scan.jpg'
     normalizedScanPostfix = '_normalized_scan.jpg'
 
-    def __init__(self, accountingDataPath):
+    def __init__(self, accountingDataPath, log = Log(Log.LEVEL_INFO)):
         self.accountingDataPath = accountingDataPath
         self.productPath = f'{self.accountingDataPath}2_taggedProductSheets/'
-        self.accountedProductsPath = f'{self.accountingDataPath}0_input/accounted_products/'
+        self.sheetsPath = f'{self.accountingDataPath}0_input/sheets/'
         self.db = Database(f'{self.accountingDataPath}0_input/')
         self.numCorrectValidatedBoxes = 0
         self.numValidatedValidatedBoxes = 0
         self.scanCanvas = None
         self.inputFrame = None
+        self.log = log
 
         self.productToSanitizeGenerator = self.nextProductToSanitize()
         try:
@@ -247,7 +255,7 @@ class GUI(gui_components.BaseGUI):
         width = None if width == -1 else width
         height = self.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
-        super().__init__(width, height, Log())
+        super().__init__(width, height, log)
 
     def populateRoot(self):
         self.root.title(self.csvPath)
@@ -276,7 +284,7 @@ class GUI(gui_components.BaseGUI):
                 height=self.height)
         self.inputFrame.update()
         self.inputSheet = InputSheet(self.inputFrame, self.db, self.csvPath,
-                self.accountedProductsPath)
+                self.sheetsPath)
 
         self.root.update()
         focused = self.root.focus_displayof()
@@ -301,13 +309,13 @@ class GUI(gui_components.BaseGUI):
         # {productName}_{sheet}_{originalScanPostfix},
         # {productName}_{sheet}_{normalizedScanPostfix}
         csvFiles = None
-        for (_, _, fileNames) in os.walk(self.productPath):
+        for (_, _, filenames) in os.walk(self.productPath):
             csvFiles = sorted(filter(lambda f: os.path.splitext(f)[1] ==
-                '.csv', fileNames))
+                '.csv', filenames))
             originalScanFiles = sorted(filter(lambda f: f.find(self.originalScanPostfix)
-                != -1, fileNames))
+                != -1, filenames))
             normalizedScanFiles = sorted(filter(lambda f: f.find(self.normalizedScanPostfix)
-                != -1, fileNames))
+                != -1, filenames))
             break
 
         if not csvFiles:
@@ -377,7 +385,7 @@ class GUI(gui_components.BaseGUI):
         oldCsvPath = self.csvPath
         oldOriginalScanPath = f'{oldCsvPath}{self.originalScanPostfix}'
         oldNormalizedScanPath = f'{oldCsvPath}{self.normalizedScanPostfix}'
-        newCsvPath = f'{self.productPath}{self.inputSheet.fileName()}'
+        newCsvPath = f'{self.productPath}{self.inputSheet.filename}'
         newOriginalScanPath = f'{newCsvPath}{self.originalScanPostfix}'
         newNormalizedScanPath = f'{newCsvPath}{self.normalizedScanPostfix}'
         if newCsvPath != oldCsvPath:

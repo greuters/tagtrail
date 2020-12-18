@@ -1,0 +1,23 @@
+memberId;DGL
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];83.25
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];102.65
+Current Balance [CHF];-19.40
+Total gCo2e;12459
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+eliche-vollkorn;Eliche Vollkorn;2;2.50;491;5.00;982
+geschirrspulmittel;Geschirrspülmittel;2;4.95;979;9.90;1958
+haferflocken-fein;Haferflocken fein;6;1.95;460;11.70;2760
+kurbiskerne;Kürbiskerne;4;4.40;257;17.60;1028
+leinsamen;Leinsamen;4;1.60;257;6.40;1028
+pelato-tomaten;Pelato Tomaten;1;1.75;393;1.75;393
+salz-jodiert;Salz jodiert;2;1.15;920;2.30;1840
+sonnenblumen-kerne;Sonnenblumen Kerne;4;3.80;257;15.20;1028
+spaghetti;Spaghetti;2;2.25;491;4.50;982
+tamari;Tamari;1;9.85;460;9.85;460
+toilettenpapier;Toilettenpapier;3;4.55;None;13.65;None
+zucker-vollrohr;Zucker Vollrohr;1;4.80;None;4.80;None

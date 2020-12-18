@@ -1,0 +1,19 @@
+memberId;KRIS
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];-58.05
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];97.90
+Current Balance [CHF];-155.95
+Total gCo2e;7522
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+allzweckreiniger;Allzweckreiniger;1;5.45;979;5.45;979
+cornflakes;Cornflakes;5;5.10;368;25.50;1840
+haferflocken-fein;Haferflocken fein;1;1.95;460;1.95;460
+kaffee-rebel-dia-gemahlen;Kaffee Rebel Dia (Gemahlen);1;10.55;None;10.55;None
+kalkentferner;Kalkentferner;1;6.25;489;6.25;489
+mandeln;Mandeln;1;4.95;211;4.95;211
+pelato-tomaten;Pelato Tomaten;3;1.75;393;5.25;1179
+rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);4;9.50;591;38.00;2364

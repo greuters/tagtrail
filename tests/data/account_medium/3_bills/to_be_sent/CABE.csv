@@ -1,0 +1,15 @@
+memberId;CABE
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];130.25
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];55.60
+Current Balance [CHF];74.65
+Total gCo2e;3924
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+geschirrspulmittel;Geschirrspülmittel;2;4.95;979;9.90;1958
+kalkentferner;Kalkentferner;1;6.25;489;6.25;489
+mandeln;Mandeln;7;4.95;211;34.65;1477
+zucker-vollrohr;Zucker Vollrohr;1;4.80;None;4.80;None

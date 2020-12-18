@@ -1,0 +1,17 @@
+memberId;THEA
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];-39.40
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];47.40
+Current Balance [CHF];-86.80
+Total gCo2e;3482
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+eliche-vollkorn;Eliche Vollkorn;2;2.50;491;5.00;982
+leinsamen;Leinsamen;3;1.60;257;4.80;771
+mandeln;Mandeln;5;4.95;211;24.75;1055
+pfeffer-schwarz-ganz;Pfeffer schwarz ganz;1;4.75;160;4.75;160
+sesam;Sesam;2;1.65;257;3.30;514
+zucker-vollrohr;Zucker Vollrohr;1;4.80;None;4.80;None

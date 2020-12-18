@@ -1,0 +1,11 @@
+memberId;MA11
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];187.00
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];0.00
+Current Balance [CHF];187.00
+Total gCo2e;0
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e

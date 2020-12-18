@@ -1,0 +1,12 @@
+memberId;SANA
+Previous Accounting Date;2020-10-25
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];374.55
+Total Payments [CHF];0.00
+Correction Transaction [CHF];0.00
+Reason for correction;
+Total Price [CHF];1.75
+Current Balance [CHF];372.80
+Total gCo2e;393
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+pelato-tomaten;Pelato Tomaten;1;1.75;393;1.75;393

@@ -1,0 +1,14 @@
+Previous Quantity Date;2020-10-25;;;;;;;;;;;;;;;
+Expected Quantity Date;;;;;;;;;;;;;;;;
+Inventory Quantity Date;;;;;;;;;;;;;;;;
+Name;Amount;Unit [kg, g, l, cl, ml];Purchase Price;Previous Quantity;Added Quantity;Sold Quantity;Expected Quantity;Inventory Quantity;Sheets to print;Comment;Eaternity Name;Origin [country];Production [standard, greenhouse, organic, fair-trade, farm, wild-caught, sustainable-fish];Transport [air, ground];Conservation [fresh, frozen, dried, conserved, canned, boiled-down];gCo2e
+Apfelringli;100;g;3.6;0;10;;;;all;blatt fehlt;apfel;schweiz;organic;ground;dried;92
+Eliche Vollkorn;500;g;2.40416666666667;40;25;;;;;;pasta;italien;organic;ground;;491
+Kümmel (ganz);125;g;3.85;-2;2;;;;;;kümmel;;organic,fair-trade;;dried;160
+Erdnüsse gesalzen + geröstet;200;g;1.49;-2;;;;;;;Erdnüsse;nicaragua;organic,fair-trade;ground;dried;227
+Geschirrspülmittel;1;l;4.7;28;;;;;;;putzmittel;niederlande;;ground;;979
+Öl Oliven aus Griechenland;1;l;20.79;-2;2;;;;;;olivenöl;griechenland;organic;ground;canned;1121
+Pelato Tomaten;400;g;1.67083333333333;153;;;;;;;tomaten;italien;organic;ground;canned;393
+Spaghetti;500;g;2.15416666666667;69;;;;;;;pasta;italien;organic;ground;;491
+Spaghetti Vollkorn;500;g;2.40416666666667;38;10;;;;;;pasta;italien;organic;ground;;491
+Strozapreti (Dinkel Vollkorn);500;g;5.1;10;10;;;;;;pasta;schweiz;organic;ground;;491

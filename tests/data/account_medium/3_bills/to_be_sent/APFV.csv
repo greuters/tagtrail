@@ -1,0 +1,14 @@
+memberId;APFV
+Previous Accounting Date;2020-01-02
+Current Accounting Date;2021-04-01
+Previous Balance [CHF];235.25
+Total Payments [CHF];80.00
+Correction Transaction [CHF];42.42
+Reason for correction;Correction needed
+Total Price [CHF];20.85
+Current Balance [CHF];336.82
+Total gCo2e;2846
+productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
+haferflocken-fein;Haferflocken fein;1;1.95;460;1.95;460
+mandeln;Mandeln;2;4.95;211;9.90;422
+spaghetti;Spaghetti;4;2.25;491;9.00;1964
