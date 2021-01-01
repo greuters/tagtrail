@@ -278,6 +278,12 @@ class GUI(gui_components.BaseGUI):
         self.inputSheet = InputSheet(self.inputFrame, self.db, self.csvPath,
                 self.accountedProductsPath)
 
+        self.root.update()
+        focused = self.root.focus_displayof()
+        info = focused.place_info()
+        self.setFocusAreaOnScan(int(info['x']), int(info['y']),
+                int(info['width']), int(info['height']))
+
         # Additional buttons
         buttons = []
         buttons.append(('saveAndContinue', 'Save and continue',
