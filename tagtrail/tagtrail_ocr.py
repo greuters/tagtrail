@@ -445,10 +445,6 @@ class SheetNormalizer():
         self.writeDebugImages = writeDebugImages
         self.log = log
 
-        (frameP0, frameP1) = ProductSheet.getSheetFramePts()
-        self.xMargin, self.yMargin = frameP0
-        self.wMargin, self.hMargin = np.subtract(frameP1, frameP0)
-
     @property
     def __prefix(self):
         """
@@ -470,12 +466,20 @@ class SheetNormalizer():
         """
         rectifiedImg = self.__fourPointTransform(inputImg, frameContour)
 
-        resizedImg = cv.resize(rectifiedImg, (self.wMargin, self.hMargin))
+        # convert frame metrics to pixels
+        (frameP0, frameP1) = ProductSheet.getSheetFramePts()
+        frameWidth, frameHeight = np.subtract(frameP1, frameP0)
+        (leftMargin, topMargin) = ProductSheet.pointFromMM(
+                ProductSheet.leftSheetFrame, ProductSheet.topSheetFrame)
+        (rightMargin, bottomMargin) = ProductSheet.pointFromMM(
+                ProductSheet.rightSheetFrame, ProductSheet.bottomSheetFrame)
+
+        resizedImg = cv.resize(rectifiedImg, (frameWidth, frameHeight))
         outputImg = cv.copyMakeBorder(resizedImg,
-                self.yMargin,
-                self.yMargin,
-                self.xMargin,
-                self.xMargin,
+                topMargin,
+                bottomMargin,
+                leftMargin,
+                rightMargin,
                 cv.BORDER_CONSTANT,
                 value=(255,255,255))
 
