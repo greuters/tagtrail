@@ -102,6 +102,7 @@ class OcrTest(unittest.TestCase):
                         self.assertFalse(sheet.isEmpty,
                             f'{scanFilename}, sheet{idx} ' +
                             'wrongly classified as being empty')
+                        self.checkIdPrecision(expectedSheetName, sheet.name)
                         precision, recall = self.computePerformanceMetrics(
                                 expectedSheetName, sheet.name)
                         precisions.append(precision)
@@ -138,6 +139,25 @@ class OcrTest(unittest.TestCase):
                 f'precision = {precision}, recall = {recall}')
         return (precision, recall)
 
+    def checkIdPrecision(self, templateSheetName, testedSheetName):
+        """
+        Wrongly classifiyng name or sheet number must never happen,
+        as it is probably not detected by the user when sanitizing.
+        """
+        templateSheet = sheets.ProductSheet(log = self.log)
+        templateSheet.load(f'{self.templateOutputDir}{templateSheetName}')
+        testedSheet = sheets.ProductSheet(log = self.log)
+        testedSheet.load(f'{self.testOutputDir}{testedSheetName}')
+
+        if testedSheet.boxByName('nameBox').confidence == 1:
+            self.assertEqual(testedSheet.boxByName('nameBox').text,
+                    templateSheet.boxByName('nameBox').text,
+                    'sheet name is wrong and confidence == 1')
+
+        if testedSheet.boxByName('sheetNumberBox').confidence == 1:
+            self.assertEqual(testedSheet.boxByName('sheetNumberBox').text,
+                    templateSheet.boxByName('sheetNumberBox').text,
+                    'sheet number is wrong and confidence == 1')
 
 if __name__ == '__main__':
     #unittest.main()

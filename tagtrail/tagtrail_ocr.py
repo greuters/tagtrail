@@ -597,7 +597,7 @@ class TagRecognizer():
         actual corners of a box are identified, their bounding rectangle is cropped
         by borderSize to only consider the area inside the box for ocr
     :type borderSize: int
-    :param minplausibleboxsize: Minimal size of a box to be considered
+    :param minPlausibleBoxSize: Minimal size of a box to be considered
         sucessfully detected. If the area identified as being inside the box is
         smaller than this, identification is considered to have failed.
     :type minPlausibleBoxSize: int
@@ -608,7 +608,10 @@ class TagRecognizer():
     :param minAspectRatio: Minimal aspect ratio of a component to be considered for
         OCR. Long, thin components are discarded if
         min(height, width) / max(height, width) < minAspectRatio
-    :type minAspectRatio: int
+    :type minAspectRatio: float
+    :param minFillRatio: Minimal fill ratio of the final bounding rect
+        considered for OCR
+    :type minFillRatio: float
     :param confidenceThreshold: Minimal confidence needed to color the
         recognized box text as 'safely recognized' in the debug output image.
         For confidence calculation, check `self.__findClosestString`
@@ -626,6 +629,7 @@ class TagRecognizer():
             minPlausibleBoxSize = 1000,
             minComponentArea = 100,
             minAspectRatio = .2,
+            minFillRatio = .3,
             confidenceThreshold = 0.5
             ):
         self.name = name
@@ -637,6 +641,7 @@ class TagRecognizer():
         self.minPlausibleBoxSize = minPlausibleBoxSize
         self.minComponentArea = minComponentArea
         self.minAspectRatio = minAspectRatio
+        self.minFillRatio = minFillRatio
         self.confidenceThreshold = confidenceThreshold
         self.tesseractApi = tesseractApi
         self.__db = db
@@ -885,8 +890,7 @@ class TagRecognizer():
             cv.imwrite(f'{self.__prefix}_{box.name}_05_labeledImg.jpg', labeledImg)
             cv.imwrite(f'{self.__prefix}_{box.name}_06_boundingRectImg.jpg', boundingRectImg)
             cv.imwrite(f'{self.__prefix}_{box.name}_07_cleanedImg.jpg', cleanedImg)
-            cv.imwrite(f'{self.__prefix}_{box.name}_08_closedImg2.jpg', closedImg2)
-            cv.imwrite(f'{self.__prefix}_{box.name}_09_dilatedImg.jpg', dilatedImg)
+            cv.imwrite(f'{self.__prefix}_{box.name}_08_dilatedImg.jpg', dilatedImg)
 
         # find contours in the thresholded cell
         cnts = cv.findContours(dilatedImg.copy(), cv.RETR_EXTERNAL,
@@ -897,8 +901,9 @@ class TagRecognizer():
             box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
-        # otherwise, take all contours that increase the percentage of
-        # white/black pixels
+        # otherwise, take contours (from biggest to smallest) until the
+        # percentage of white pixels in the common bounding rect area is
+        # getting too low
         maskImg = np.zeros(dilatedImg.shape, dtype="uint8")
         commonBoundingRect = None
         commonArea = 0
@@ -923,11 +928,11 @@ class TagRecognizer():
                         max(x2, commonX2) - newCommonX,
                         max(y2, commonY2) - newCommonY)
                 newCommonArea = newCommonBoundingRect[2]*newCommonBoundingRect[3]
-                if( area / (newCommonArea - commonArea + 1) > 0.5):
+                if( area / (newCommonArea - commonArea + 1) > self.minFillRatio):
                     commonBoundingRect = newCommonBoundingRect
                     cv.drawContours(maskImg, [cnt], -1, 255, -1)
         if self.writeDebugImages:
-            cv.imwrite(f'{self.__prefix}_{box.name}_08_maskImg.jpg', maskImg)
+            cv.imwrite(f'{self.__prefix}_{box.name}_09_maskImg.jpg', maskImg)
 
         centerX = commonBoundingRect[0] + commonBoundingRect[2] / 2
         centerY = commonBoundingRect[1] + commonBoundingRect[3] / 2
