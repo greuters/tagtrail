@@ -48,8 +48,10 @@ processed by GnuCash.
   price
 
 Installation from source
+************************
 
 On Ubuntu
+=========
 
 * sudo apt install git python3 python3-tk python3-venv tesseract-ocr libtesseract-dev libleptonica-dev pkg-config
 
@@ -66,6 +68,7 @@ On Ubuntu
 * To verify everything works as expected: make test
 
 On Windows
+==========
 
 * install miniconda with Python 3.8 from https://docs.conda.io/en/latest/miniconda.html
 
@@ -84,13 +87,19 @@ On Windows
  
 * pip install -r requirements.txt
 
-* To verify everything works as expected: make test
+* To verify everything works as expected: python -m tests.scenario_medium
 
 Running the provided example (TODO: add a real user guide)
+**********************************************************
 
-python -m tagtrail.tagtrail_ocr data/next/
-python -m tagtrail.tagtrail_sanitize data/next/
-python -m tagtrail.tagtrail_bankimport data/next/ --accountingDate=2020-04-26
-python -m tagtrail.tagtrail_account data/next/ --accountingDate=2020-04-26
-python -m tagtrail.tagtrail_send --testRecipient=your@email.address data/account_2020-04-26/ 1234 Tester
-python -m tagtrail.tagtrail_gen data/next/ --genDate=2020-04-26
+* python -m tagtrail.tagtrail_ocr data/next/
+
+* python -m tagtrail.tagtrail_sanitize data/next/
+
+* python -m tagtrail.tagtrail_bankimport data/next/ --accountingDate=2020-04-26
+
+* python -m tagtrail.tagtrail_account data/next/ --accountingDate=2020-04-26
+
+* python -m tagtrail.tagtrail_send data/account_2020-04-26/ 1234 Tester --testRecipient=your@email.address
+
+* python -m tagtrail.tagtrail_gen data/next/
