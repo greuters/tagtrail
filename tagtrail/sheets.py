@@ -71,14 +71,14 @@ class ProductSheet(ABC):
                 round(v / self.sheetH * self.yRes))
 
     def __init__(self, log = helpers.Log()):
-        self.__boxes={}
+        self._boxes={}
         self._log=log
         self._box_to_pos={}
         self._pos_to_box={}
 
         # Frame around sheet (for easier OCR)
         p0, p1 = self.getSheetFramePts()
-        self.__boxes["frameBox"] = Box("frameBox", p0, p1, (255,255,255), lineW=20)
+        self._boxes["frameBox"] = Box("frameBox", p0, p1, (255,255,255), lineW=20)
 
         # Header
         u0 = self.leftMargin
@@ -134,45 +134,45 @@ class ProductSheet(ABC):
 
     @property
     def name(self):
-        return self.__boxes['nameBox'].text
+        return self._boxes['nameBox'].text
 
     @name.setter
     def name(self, name):
-        self.__boxes['nameBox'].text = name
-        self.__boxes['nameBox'].confidence = 1
+        self._boxes['nameBox'].text = name
+        self._boxes['nameBox'].confidence = 1
 
     def productId(self):
-        return slugify.slugify(self.__boxes['nameBox'].text)
+        return slugify.slugify(self._boxes['nameBox'].text)
 
     @property
     def amountAndUnit(self):
-        return self.__boxes['unitBox'].text
+        return self._boxes['unitBox'].text
 
     @amountAndUnit.setter
     def amountAndUnit(self, amountAndUnit):
-        self.__boxes['unitBox'].text = amountAndUnit
-        self.__boxes['unitBox'].confidence = 1
+        self._boxes['unitBox'].text = amountAndUnit
+        self._boxes['unitBox'].confidence = 1
 
     @property
     def grossSalesPrice(self):
-        return helpers.priceFromFormatted(self.__boxes['priceBox'].text)
+        return helpers.priceFromFormatted(self._boxes['priceBox'].text)
 
     @grossSalesPrice.setter
     def grossSalesPrice(self, grossSalesPrice):
-        self.__boxes['priceBox'].text = grossSalesPrice
-        self.__boxes['priceBox'].confidence = 1
+        self._boxes['priceBox'].text = grossSalesPrice
+        self._boxes['priceBox'].confidence = 1
 
     @property
     def sheetNumber(self):
-        return self.__boxes['sheetNumberBox'].text
+        return self._boxes['sheetNumberBox'].text
 
     @sheetNumber.setter
     def sheetNumber(self, sheetNumber):
-        self.__boxes['sheetNumberBox'].text = sheetNumber
-        self.__boxes['sheetNumberBox'].confidence = 1
+        self._boxes['sheetNumberBox'].text = sheetNumber
+        self._boxes['sheetNumberBox'].confidence = 1
 
     def addBox(self, box, row, col):
-        self.__boxes[box.name]=box
+        self._boxes[box.name]=box
         pos = (row, col)
         self._box_to_pos[box]=pos
         self._pos_to_box[pos]=box
@@ -182,13 +182,13 @@ class ProductSheet(ABC):
                 pos[0]*ProductSheet.dataRowCount + pos[1])
 
     def boxByName(self, name):
-        return self.__boxes[name]
+        return self._boxes[name]
 
     def boxes(self):
-        return self.__boxes.values()
+        return self._boxes.values()
 
     def dataBoxes(self):
-        return [box for box in self.__boxes.values() if
+        return [box for box in self._boxes.values() if
                 box.name.find('dataBox') != -1]
 
     def sortedBoxes(self):
@@ -241,7 +241,7 @@ class ProductSheet(ABC):
 
     def createImg(self):
         img = np.full((self.yRes, self.xRes, 3), 255, np.uint8)
-        for box in self.__boxes.values():
+        for box in self._boxes.values():
             box.draw(img)
         return img
 
@@ -267,9 +267,9 @@ class ProductSheet(ABC):
                 elif boxName not in ("nameBox", "unitBox", "priceBox", "sheetNumberBox"):
                     self._log.warn("skipped unexpected box, row = {}", row)
                     continue
-                self.__boxes[boxName].name = boxName
-                self.__boxes[boxName].text = text
-                self.__boxes[boxName].confidence = confidence
+                self._boxes[boxName].name = boxName
+                self._boxes[boxName].text = text
+                self._boxes[boxName].confidence = confidence
 
     @property
     def filename(self):

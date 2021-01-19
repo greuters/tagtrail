@@ -650,6 +650,7 @@ class Bill(DatabaseDict):
         self.textRepresentationFooter = config.get(
                 self.configSection(), 'text_representation_footer')
 
+    # TODO: remove property and replace with an actual CorrectionTransaction
     @property
     def correctionTransaction(self):
         """

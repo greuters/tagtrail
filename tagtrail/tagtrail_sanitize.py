@@ -32,34 +32,98 @@ from .helpers import Log, formatPrice
 from . import gui_components
 
 class InputSheet(ProductSheet):
-    validationProbability = 0.02
+    """
+    InputSheet provides the user a GUI representation to fill in tags of a
+    ProductSheet.
+
+    Each box is associated with a
+    :class:`tagtrail.gui_components.AutocompleteEntry` to input data. As soon
+    as name and sheet number are filled in, existing tags are loaded from the
+    last accounting if the corresponding sheet exists in 0_input/sheets, and
+    the loaded boxes are locked s.t. the user can only enter and correct new
+    tags, while leaving the already accounted ones alone.
+
+    As a quality control of tagtrail_ocr, a number of boxes with high
+    confidence are validated on each sheet. If an input sheet exists, all tags
+    that already existed in the input are used to validate the corresponding
+    tags suggested by tagtrail_ocr (no burden on user). If not enough tags
+    could be validated this way, some of the confident boxes are randomly
+    selected and presented to the user as unclear to get an independent
+    validation source.
+
+    :cvar numBoxesToValidate: minimal number of tags per sheet to validate
+    """
+    numBoxesToValidate = 2
     maxEpectedListboxHeight = 200
 
-    def __init__(self, root, database, path, sheetsPath):
+    def __init__(self, parentFrame, db, sheetPath, inputSheetsDir):
+        """
+        :param parentFrame: tkinter widget to add the autocomplete entries to
+        :type parentFrame: :class:`tkinter.frame`
+        :param db: db to load possible values for each box from
+        :type db: :class:`tagtrail.database.Database`
+        :param sheetPath: path to load the sheet from
+        :type sheetPath: str
+        :param inputSheetsDir: path to previously accounted sheets
+        :type inputSheetsDir: str
+        """
         super().__init__(log=Log())
-        self.sheetsPath = sheetsPath
-        self.load(path)
-        self.originalPath = path
+        self.db = db
+        self.load(sheetPath)
+        self.originalPath = sheetPath
+        self.inputSheetsDir = inputSheetsDir
+        self.__createWidgets(parentFrame)
+        self.__manualValidationBoxNames = self.__selectManualValidationBoxes()
 
+        self.__loadTagsFromPreviousAccounting()
+        self.__ensureEnoughValidationBoxes()
+        nextUnclearBox = self.nextUnclearBox(None)
+        if nextUnclearBox:
+            nextUnclearBox.entry.focus_set()
+
+    def __createWidgets(self, parentFrame):
+        """
+        Create a :class:`tagtrail.gui_components.AutocompleteEntry` for each
+        box and add them to parentFrame
+
+        Possible values to enter into each entry are loaded from self.db.
+
+        :param parentFrame: tkinter widget to add the autocomplete entries to
+        :type parentFrame: :class:`tkinter.frame`
+        :param database: database to load possible values for each box from
+        :type database: :class:`tagtrail.database.Database`
+        """
         # prepare choices
-        maxNumSheets = database.config.getint('tagtrail_gen',
+        maxNumSheets = self.db.config.getint('tagtrail_gen',
                 'max_num_sheets_per_product')
-        sheetNumberString = database.config.get('tagtrail_gen', 'sheet_number_string')
+        sheetNumberString = self.db.config.get('tagtrail_gen',
+                'sheet_number_string')
         sheetNumbers = [sheetNumberString.format(sheetNumber=str(n))
                             for n in range(1, maxNumSheets+1)]
-        currency = database.config.get('general', 'currency')
+        currency = self.db.config.get('general', 'currency')
         names, units, prices = map(set, zip(*[
             (p.description,
              p.amountAndUnit,
              formatPrice(p.grossSalesPrice(), currency))
-            for p in database.products.values()]))
+            for p in self.db.products.values()]))
 
-        scaleFactor = min(root.winfo_height() / self.yRes,
-                root.winfo_width() / self.xRes)
-        self._box_to_widget = {}
-        self.validationBoxTexts = {}
+        scaleFactor = min(parentFrame.winfo_height() / self.yRes,
+                parentFrame.winfo_width() / self.xRes)
+
+        # Each box with OCR data gets an associated AutocompleteEntry widget.
+        # These entries are initialised with the same tags and confidences as
+        # their owner boxes, but can be corrected by user input or from a
+        # previous, already sanitized, version of the sheet.
+        #
+        # The new tags are only written to the owner boxes in self.store(),
+        # after checking all entries are validated (confidence == 1).
+        #
+        # Keeping the originally loaded tags and confidences stored in the
+        # owner boxes apart from the corected input in the entries enables us
+        # to validate the precision of the original tags by letting the user
+        # correct a few entries where the owner box actually has a
+        # confidence == 1 and should therefore contain the correct tag already.
         for box in self.boxes():
-            box.copiedFromPreviousAccounting = False
             if box.name == "nameBox":
                 choices = names
             elif box.name == "unitBox":
@@ -69,59 +133,217 @@ class InputSheet(ProductSheet):
             elif box.name == "sheetNumberBox":
                 choices = sheetNumbers
             elif box.name.find("dataBox") != -1:
-                choices = list(sorted(database.members.keys()))
+                choices = list(sorted(self.db.members.keys()))
             else:
+                box.entry = None
                 continue
-
-            # TODO make this concept more clear or switch to a better system
-            # (use boxes from already accounted sheets to check, make sure that
-            # e.g. 100 boxes are checked at least, regularly distributed among
-            # sheets)
-            # prepare for OCR validation
-            # 1. select some boxes with high confidence
-            # 2. let the user correct them
-            # 3. check if any of the boxes had a wrong value - must not happen
-            v = random.uniform(0, 1)
-            if box.confidence == 1 and \
-                ( \
-                    (box.text == '' and v < (self.validationProbability / 10.0)) \
-                or \
-                    (box.text != '' and v < self.validationProbability) \
-                ):
-                self.validationBoxTexts[box.name] = box.text
-                box.confidence = 0
 
             (x1, y1) = box.pt1
             x1, y1 = x1*scaleFactor, y1*scaleFactor
             (x2, y2) = box.pt2
             x2, y2 = x2*scaleFactor, y2*scaleFactor
             listBoxY = y2
-            if listBoxY + self.maxEpectedListboxHeight > root.winfo_height():
+            if listBoxY + self.maxEpectedListboxHeight > parentFrame.winfo_height():
                 listBoxY = y1 - self.maxEpectedListboxHeight
 
             entry = gui_components.AutocompleteEntry(box.text, box.confidence,
-                    choices, self.releaseFocus, True, root, x1,
-                    listBoxY, root)
+                    choices, self.releaseFocus, True, parentFrame, x1,
+                    listBoxY, parentFrame)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
+            entry.copiedFromPreviousAccounting = False
+            entry.manuallyValidated = False
             entry.box = box
-            self._box_to_widget[box] = entry
+            box.entry = entry
 
-        self.loadTagsFromPreviousAccounting()
-        nextUnclearBox = self.nextUnclearBox(None)
-        if nextUnclearBox:
-            self._box_to_widget[nextUnclearBox].focus_set()
+    def __selectManualValidationBoxes(self):
+        """
+        Select boxes to validate manually if not enough boxes can be validated
+        automatically from the previously accounted corresponding input sheet.
+
+        To control quality of automatically recognized tags, a certain number
+        of boxes should be verified in each sheet. From all boxes with
+        high confidence (tagtrail_ocr claimed to know the correct tag), a
+        random sample is taken which has to be manually tagged again by the
+        user, if not enough boxes can be validated automatically.
+
+        :return: list of box.name to validate manually if necessary
+        :rtype: list of str
+        """
+        candidateValidationBoxes = [box.name for box in self.dataBoxes()
+                if box.confidence == 1 and box.entry is not None]
+        selected = random.sample(candidateValidationBoxes,
+                min(self.numBoxesToValidate, len(candidateValidationBoxes)))
+        self._log.debug(f'selected manualValidationBoxes: {selected}')
+        return selected
+
+    def __ensureEnoughValidationBoxes(self):
+        """
+        Check how many boxes can be validated automatically and, if necessary,
+        clear enough of self.__manualValidationBoxes to guarantee adequate
+        quality control.
+        """
+        numAutomaticallyValidatedBoxes = 0
+        for box in self.boxes():
+            if box.entry is None:
+                continue
+
+            if (box.confidence == 1 and
+                    box.entry.copiedFromPreviousAccounting):
+                numAutomaticallyValidatedBoxes += 1
+                self._log.debug(f'{box.name} can be validated automatically')
+
+        self._log.debug('numAutomaticallyValidatedBoxes = '
+                f'{numAutomaticallyValidatedBoxes}')
+        numRemaining = max(0,
+                self.numBoxesToValidate-numAutomaticallyValidatedBoxes)
+        for name in self.__manualValidationBoxNames:
+            box = self._boxes[name]
+            if box.entry is None:
+                continue
+
+            if box.entry.copiedFromPreviousAccounting:
+                # cannot use this box again, as it was already counted in the
+                # automatically validated boxes
+                box.entry.manuallyValidated = False
+
+            elif numRemaining == 0:
+                # no more manual validation necessary
+                box.entry.enabled = True
+                box.entry.text = box.text
+                box.entry.confidence = box.confidence
+                box.entry.manuallyValidated = False
+
+            else:
+                # reset this box and let the user fill it in
+                self._log.debug(
+                        f'{name} has to be validated manually')
+                box.entry.manuallyValidated = True
+                box.entry.enabled = True
+                box.entry.setArbitraryText('')
+                box.entry.confidence = 0
+                box.entry.destroyListBox()
+
+                numRemaining -= 1
+
+        assert(numRemaining <= self.numBoxesToValidate -
+                len(self.__manualValidationBoxNames))
+
+    def __updatedProductId(self):
+        return slugify.slugify(self._boxes['nameBox'].entry.text)
+
+    def __updatedSheetNumber(self):
+        return self._boxes['sheetNumberBox'].entry.text
+
+    @property
+    def updatedFilename(self):
+        """
+        Filename of the sheet if it was stored with currently entered
+        information in the GUI
+        input
+        """
+        return f'{self.__updatedProductId()}_{self.__updatedSheetNumber()}.csv'
+
+    def __loadTagsFromPreviousAccounting(self):
+        """
+        Load tags from last accounting if name and sheetNumber of this sheet
+        are clear and the sheet already existed.
+        """
+        if self._boxes['nameBox'].entry.confidence != 1:
+            return
+        if  self._boxes['sheetNumberBox'].entry.confidence != 1:
+            return
+
+        sheetName = '{}_{}.csv'.format(self.__updatedProductId(),
+                self.__updatedSheetNumber())
+        activeSheetPath = f'{self.inputSheetsDir}/active/{sheetName}'
+        inactiveSheetPath = f'{self.inputSheetsDir}/inactive/{sheetName}'
+        if os.path.exists(activeSheetPath):
+            self.__loadTagsFromAccountedSheet(activeSheetPath)
+        elif os.path.exists(inactiveSheetPath):
+            self.__loadTagsFromAccountedSheet(inactiveSheetPath)
+
+    def __loadTagsFromAccountedSheet(self, sheetPath):
+        """
+        Load tags from specified accounted sheet.
+
+        Entries with tags from accounted sheet are locked, as they have already
+        been accounted and should not be changed any more. All other entry
+        widgets are unlocked.
+
+        :param sheetPath: path to the accounted sheet
+        :type sheetPath: str
+        :raises ValueError: if accounted sheet has boxes with unconfident tags
+            or isn't the same sheet as self (productId or sheetNumber don't
+            match)
+        """
+        self._log.debug(f'loading previous tags from {sheetPath}')
+
+        accountedSheet = ProductSheet()
+        accountedSheet.load(sheetPath)
+        if accountedSheet.productId() != self.__updatedProductId():
+            raise ValueError(f'{sheetPath} has wrong productId '
+                    f'({accountedSheet.productId()} != '
+                    f'{self.__updatedProductId()})')
+        if accountedSheet.sheetNumber != self.__updatedSheetNumber():
+            raise ValueError(f'{sheetPath} has wrong sheetNumber '
+                f'({accountedSheet.sheetNumber} != '
+                f'{self.__updatedSheetNumber()})')
+        if [box for box in accountedSheet.boxes()
+                if box.confidence != 1.0]:
+            raise ValueError(
+                    f'{sheetPath} has boxes with confidence != 1')
+
+        for accountedBox in accountedSheet.boxes():
+            box = self._boxes[accountedBox.name]
+            if box.entry is None:
+                continue
+
+            if accountedBox.text == '':
+                self._log.debug(f'resetting box {accountedBox.name}')
+                if (box.entry.text != '' and
+                        box.entry.text not in box.entry.possibleValues):
+                    # entry had been set to some now invalid value from another
+                    # accountedSheet -> clear
+                    assert(box.entry.copiedFromPreviousAccounting)
+                    box.entry.enabled = False
+                    box.entry.setArbitraryText('')
+                if box.entry.copiedFromPreviousAccounting:
+                    # entry had been set from another accountedSheet ->
+                    # probably tag was incorrect if we're switching the
+                    # accountedSheet now
+                    box.entry.confidence = 0
+                box.entry.copiedFromPreviousAccounting = False
+                box.entry.enabled = True
+            else:
+                self._log.debug('copying tag from previous accounting '
+                        f'{accountedBox.name}: {accountedBox.text}')
+                box.entry.copiedFromPreviousAccounting = True
+                box.entry.enabled = False
+                box.entry.setArbitraryText(accountedBox.text)
+                box.entry.confidence = 1
+
+            box.entry.destroyListBox()
+
+    def unlockBoxesFromPreviousAccounting(self):
+        for box in self.boxes():
+            if box.entry.copiedFromPreviousAccounting:
+                box.entry.confidence = 0
+                box.entry.copiedFromPreviousAccounting = False
+                if box.entry.text not in box.entry.possibleValues:
+                    box.entry.setArbitraryText('')
+                box.entry.enabled = True
 
     def releaseFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
         if str(event.type) == "KeyPress" and event.char != event.keysym:
             # punctuation or special key, distinguish by event.keysym
             if event.keysym == "Return":
-                event.widget.confidence=1
+                event.widget.confidence = 1
+                event.widget.manuallyValidated = True
             if event.widget.enabled:
-                event.widget.box.text = event.widget.text
-                event.widget.box.confidence = event.widget.confidence
                 if event.widget.box.name in ['nameBox', 'sheetNumberBox']:
-                    self.loadTagsFromPreviousAccounting()
+                    self.__loadTagsFromPreviousAccounting()
+                    self.__ensureEnoughValidationBoxes()
 
             shift_pressed = (event.state & 0x1)
             if event.keysym == 'Return' and shift_pressed:
@@ -132,85 +354,28 @@ class InputSheet(ProductSheet):
             elif event.keysym in ["Tab", 'Return']:
                 nextBox = self.nextUnclearBox(event.widget.box)
                 if nextBox and event.state != 'Shift':
-                    self._box_to_widget[nextBox].focus_set()
+                    nextBox.entry.focus_set()
 
             elif event.keysym in ["Up", "Down", "Left", "Right"]:
                 neighbourBox = self.neighbourBox(event.widget.box, event.keysym)
                 if neighbourBox:
-                    self._box_to_widget[neighbourBox].focus_set()
+                    neighbourBox.entry.focus_set()
 
         return event
 
-    def loadTagsFromPreviousAccounting(self):
-        """
-        Load tags from last accounting if name and sheetNumber of this sheet
-        are clear and the sheet already existed.
-        """
-        if self.boxByName('nameBox').confidence != 1:
-            return
-        if  self.boxByName('sheetNumberBox').confidence != 1:
-            return
-
-        sheetName = f'{self.productId()}_{self.sheetNumber}.csv'
-        activeSheetPath = f'{self.sheetsPath}/active/{sheetName}'
-        inactiveSheetPath = f'{self.sheetsPath}/inactive/{sheetName}'
-        if os.path.exists(activeSheetPath):
-            self.loadTagsFromAccountedSheet(activeSheetPath)
-        elif os.path.exists(inactiveSheetPath):
-            self.loadTagsFromAccountedSheet(inactiveSheetPath)
-
-    def loadTagsFromAccountedSheet(self, path):
-        self._log.debug(f'loading previous tags from {path}')
-
-        accountedSheet = ProductSheet()
-        accountedSheet.load(path)
-        if [box for box in accountedSheet.boxes()
-                if box.confidence != 1.0]:
-            raise ValueError(
-                    f'{accountedSheetPath} has boxes with confidence != 1')
-        if accountedSheet.productId() != self.productId():
-            raise ValueError(f'{accountedSheetPath} has wrong productId ({accountedSheet.productId()} != {self.productId()})')
-        if accountedSheet.sheetNumber != self.sheetNumber:
-            raise ValueError(f'{accountedSheetPath} has wrong sheetNumber')
-
-        for accountedBox in accountedSheet.boxes():
-            self._log.debug(f'{accountedBox.name} : {accountedBox.text}')
-            if accountedBox.text != '':
-                inputBox = self.boxByName(accountedBox.name)
-                inputBox.text = accountedBox.text
-                inputBox.confidence = 1
-                inputBox.copiedFromPreviousAccounting = True
-
-                assert(inputBox in self._box_to_widget)
-                autocompleteEntry = self._box_to_widget[inputBox]
-                text = inputBox.text
-                if text not in autocompleteEntry.possibleValues:
-                    autocompleteEntry.possibleValues.append(text)
-                autocompleteEntry.text = inputBox.text
-                autocompleteEntry.confidence = inputBox.confidence
-                autocompleteEntry.enabled = False
-                autocompleteEntry.destroyListBox()
-
-    def unlockBoxesFromPreviousAccounting(self):
-        for box in self.boxes():
-            if box.copiedFromPreviousAccounting == True:
-                box.confidence = 0
-                box.copiedFromPreviousAccounting = False
-                autocompleteEntry = self._box_to_widget[box]
-                autocompleteEntry.confidence = box.confidence
-                autocompleteEntry.enabled = True
-
     def nextUnclearBox(self, selectedBox):
-        if self.boxByName('nameBox').confidence != 1:
-            return self.boxByName('nameBox')
-        if  self.boxByName('sheetNumberBox').confidence != 1:
-            return self.boxByName('sheetNumberBox')
+        if self._boxes['nameBox'].entry.confidence != 1:
+            return self._boxes['nameBox']
+        if  self._boxes['sheetNumberBox'].entry.confidence != 1:
+            return self._boxes['sheetNumberBox']
         sortedBoxes = self.sortedBoxes()
-        indicesOfUnclearBoxes = [idx for idx, b in enumerate(sortedBoxes) if b.confidence<1]
+        indicesOfUnclearBoxes = [idx for idx, b in enumerate(sortedBoxes) if
+                b.entry is not None and b.entry.confidence<1]
         if not indicesOfUnclearBoxes:
             return None
         else:
-            currentIndex = 0 if selectedBox is None else sortedBoxes.index(selectedBox)
+            currentIndex = (0 if selectedBox is None else
+                    sortedBoxes.index(selectedBox))
             if max(indicesOfUnclearBoxes) <= currentIndex:
                 return sortedBoxes[min(indicesOfUnclearBoxes)]
             else:
@@ -218,19 +383,91 @@ class InputSheet(ProductSheet):
                     indicesOfUnclearBoxes))]
 
     def getValidationScore(self):
+        """
+        Compare the originally loaded confident tags with the validated input
+
+        Precondition: input has to be fully validated, i.e.
+            for box in self.boxes():
+                if box.entry is None:
+                    assert(box.entry.confidence == 1)
+        and to get useful output, store() must not yet have been called.
+
+        :return: (numCorrect, numValidated), where numCorrect is the number of
+            validated boxes which were correctly tagged in the originally
+            loaded sheet and numValidated the total number of boxes validated
+        :rtype: (int, int)
+        :raises AssertionError: if this sheet is not fully validated
+        """
+        unconfidentBoxes = [box.name for box in self.boxes()
+                if box.entry is not None and box.entry.confidence != 1]
+        if unconfidentBoxes != []:
+            raise AssertionError(
+                    f'Precondition violated by following boxes {unconfidentBoxes}')
+
         numCorrect = 0
         numValidated = 0
         for box in self.boxes():
-            if box.name in self.validationBoxTexts and box.confidence == 1:
-                numValidated += 1
-                if self.validationBoxTexts[box.name] == box.text:
-                    numCorrect += 1
+            if box.confidence != 1 or box.entry is None:
+                continue
 
+            if (box.entry.copiedFromPreviousAccounting or
+                    box.entry.manuallyValidated):
+                numValidated += 1
+                if box.text == box.entry.text:
+                    numCorrect += 1
+                else:
+                    self._log.info(f'{box.name} was incorrectly tagged '
+                            f"'{box.text}' instead of '{box.entry.text}'")
+        assert(numValidated >= len(self.__manualValidationBoxNames))
         return (numCorrect, numValidated)
+
+    def store(self, sheetDir):
+        """
+        Write user input through to sheet boxes and store the sheet to disk
+
+        Up to this point, all user input is only stored in the associated
+        autocomplete entry of each box, while the boxes still contain the
+        original tags loaded from file.
+        After this call, the input is stored in this sheets boxes.
+
+        :param sheetDir: directory to store the sheet to
+        :type sheetDir: str
+        :raises ValueError: if mandatory boxes (name, amountAndUnit,
+            grossSalesPrice, sheetNumber) are not filled in or any box has
+            confidence != 1
+        """
+        unconfidentBoxes = [box.name for box in self.boxes()
+                if box.entry is not None and box.entry.confidence != 1]
+        if unconfidentBoxes != []:
+            raise ValueError(
+                    f'Unable to store sheet, unclear boxes {unconfidentBoxes}')
+        if not self._boxes['nameBox'].entry.text:
+            raise ValueError('Unable to store sheet, name is missing')
+        if not self._boxes['unitBox'].entry.text:
+            raise ValueError('Unable to store sheet, amountAndUnit is missing')
+        if not self._boxes['priceBox'].entry.text:
+            raise ValueError('Unable to store sheet, grossSalesPrice is missing')
+        if not self._boxes['sheetNumberBox'].entry.text:
+            raise ValueError('Unable to store sheet, sheetNumber is missing')
+
+        for box in self.boxes():
+            if box.entry is None:
+                continue
+            box.text = box.entry.text
+            box.confidence = box.entry.confidence
+
+        assert(self.productId() in self.db.products.keys())
+        assert(not [b for b in self.dataBoxes()
+                if b.text != ''
+                and not b.text in self.db.members
+                and not b.entry.copiedFromPreviousAccounting])
+
+        super().store(sheetDir)
 
 class GUI(gui_components.BaseGUI):
     originalScanPostfix = '_original_scan.jpg'
     normalizedScanPostfix = '_normalized_scan.jpg'
+    minAveragePrecision = 0.98
 
     def __init__(self, accountingDataPath, log = Log(Log.LEVEL_INFO)):
         self.accountingDataPath = accountingDataPath
@@ -238,7 +475,7 @@ class GUI(gui_components.BaseGUI):
         self.sheetsPath = f'{self.accountingDataPath}0_input/sheets/'
         self.db = Database(f'{self.accountingDataPath}0_input/')
         self.numCorrectValidatedBoxes = 0
-        self.numValidatedValidatedBoxes = 0
+        self.numValidatedBoxesoxes = 0
         self.scanCanvas = None
         self.inputFrame = None
         self.log = log
@@ -258,6 +495,7 @@ class GUI(gui_components.BaseGUI):
         super().__init__(width, height, log)
 
     def populateRoot(self):
+        self.log.info('')
         self.root.title(self.csvPath)
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)
@@ -288,9 +526,10 @@ class GUI(gui_components.BaseGUI):
 
         self.root.update()
         focused = self.root.focus_displayof()
-        info = focused.place_info()
-        self.setFocusAreaOnScan(int(info['x']), int(info['y']),
-                int(info['width']), int(info['height']))
+        if focused and hasattr(focused, 'place_info'):
+            info = focused.place_info()
+            self.setFocusAreaOnScan(int(info['x']), int(info['y']),
+                    int(info['width']), int(info['height']))
 
         # Additional buttons
         buttons = []
@@ -346,46 +585,56 @@ class GUI(gui_components.BaseGUI):
                 yield p
 
     def saveAndContinue(self, event=None):
-        self.save()
+        if not self.save():
+            return
+
         try:
             self.csvPath = next(self.productToSanitizeGenerator)
         except StopIteration:
-            if self.numCorrectValidatedBoxes == self.numValidatedValidatedBoxes:
+            precision = self.numCorrectValidatedBoxes / self.numValidatedBoxesoxes
+            if precision > self.minAveragePrecision:
                 messagebox.showinfo('Sanitation complete',
                     'Congratulations, your work is done')
             else:
                 messagebox.showwarning('Sanitation complete',
                     """
-                    Your work is done, but OCR didn't work properly.
-                    Only {} out of {} validated texts were correct. Apparently OCR
-                    was overconfident and probably some of the initially green
-                    boxes contain wrong entries. Please check them and file a
-                    bug report at https://github.com/greuters/tagtrail.git/
-                    """.format(self.numCorrectValidatedBoxes, self.numValidatedValidatedBoxes))
+                    Your work is done, but OCR quality was poor.
+                    Only {} out of {} validated texts were correct, indicating
+                    tagtrail_ocr was overconfident and it can be expected that
+                    {:.0f}% of the initially green boxes contain wrong tags.
+
+                    Consider to abort accounting here and redo the scans if
+                    this is not good enough for you.
+
+                    Please check the quality of your input scans and file a
+                    bug report at https://github.com/greuters/tagtrail.git/ if
+                    you think they are comparable to those in
+                    tests/data/template_medium/0_input/scans/
+                    """.format(self.numCorrectValidatedBoxes,
+                        self.numValidatedBoxesoxes, (1-precision) * 100))
             self.root.destroy()
         else:
             self.populateRoot()
             return "break"
 
     def saveAndReloadDB(self, event=None):
-        self.save()
-        self.db = Database(f'{self.accountingDataPath}0_input/')
-        self.populateRoot()
-        return "break"
+        if self.save():
+            self.db = Database(f'{self.accountingDataPath}0_input/')
+            self.populateRoot()
+            return "break"
 
     def save(self):
-        if not self.inputSheet.name:
-            raise ValueError('Unable to store sheet, name is missing')
-        if not self.inputSheet.amountAndUnit:
-            raise ValueError('Unable to store sheet, amountAndUnit is missing')
-        if not self.inputSheet.grossSalesPrice:
-            raise ValueError('Unable to store sheet, grossSalesPrice is missing')
-        if not self.inputSheet.sheetNumber:
-            raise ValueError('Unable to store sheet, sheetNumber is missing')
+        """
+        Save the current input sheet.
+
+        :return: True if all worked. False if validation score of the sheet is
+            too low and the user canceled the operation.
+        :rtype: bool
+        """
         oldCsvPath = self.csvPath
         oldOriginalScanPath = f'{oldCsvPath}{self.originalScanPostfix}'
         oldNormalizedScanPath = f'{oldCsvPath}{self.normalizedScanPostfix}'
-        newCsvPath = f'{self.productPath}{self.inputSheet.filename}'
+        newCsvPath = f'{self.productPath}{self.inputSheet.updatedFilename}'
         newOriginalScanPath = f'{newCsvPath}{self.originalScanPostfix}'
         newNormalizedScanPath = f'{newCsvPath}{self.normalizedScanPostfix}'
         if newCsvPath != oldCsvPath:
@@ -396,28 +645,35 @@ class GUI(gui_components.BaseGUI):
             if os.path.exists(newNormalizedScanPath):
                 raise ValueError(f'Unable to store sheet, file {newNormalizedScanPath} already exists')
 
-        assert(self.inputSheet.productId() in self.db.products.keys())
-        assert(not [b for b in self.inputSheet.dataBoxes()
-                if b.text != '' and not b.text in self.db.members and not
-                b.copiedFromPreviousAccounting])
-
         numCorrect, numValidated = self.inputSheet.getValidationScore()
+        if numCorrect != numValidated:
+            answer = messagebox.askokcancel('Bad initial tags',
+                    f'Only {numCorrect} out of {numValidated} validated tags '
+                    'were correct.\n'
+                    'Please check tags again (especially the initially green '
+                    'boxes) and cancel storage if you need to edit again.',
+                    default = messagebox.CANCEL)
+            if answer == False:
+                return False
+
         self.numCorrectValidatedBoxes += numCorrect
-        self.numValidatedValidatedBoxes += numValidated
+        self.numValidatedBoxesoxes += numValidated
         self.log.info(f'sheet validation score: {numCorrect} ' + \
                 f'out of {numValidated} validated texts were correct')
         self.log.info(f'total validation score: ' + \
                 f'{self.numCorrectValidatedBoxes} out of ' + \
-                f'{self.numValidatedValidatedBoxes} validated texts were correct')
+                f'{self.numValidatedBoxesoxes} validated texts were correct')
 
-        self.log.info(f'deleting {oldCsvPath}')
-        os.remove(oldCsvPath)
         self.inputSheet.store(self.productPath)
+        if oldCsvPath != newCsvPath:
+            self.log.info(f'deleting {oldCsvPath}')
+            os.remove(oldCsvPath)
         self.csvPath = newCsvPath
         self.log.debug(f'renaming {oldOriginalScanPath} to {newOriginalScanPath}')
         os.rename(oldOriginalScanPath, newOriginalScanPath)
         self.log.debug(f'renaming {oldNormalizedScanPath} to {newNormalizedScanPath}')
         os.rename(oldNormalizedScanPath, newNormalizedScanPath)
+        return True
 
     def switchScan(self, event=None):
         if self.scannedImgPath == self.csvPath+self.normalizedScanPostfix:

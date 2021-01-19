@@ -42,7 +42,7 @@ class AutocompleteEntry(tkinter.Entry):
                     f'uppercased: {possibleValues}')
         self.possibleValues = list(possibleValues)
         self.__releaseFocus = releaseFocus
-        self.__log = helpers.Log(helpers.Log.LEVEL_DEBUG)
+        self.__log = helpers.Log()
         self.__previousValue = ""
         self.__listBox = None
         self.__var = self["textvariable"]
