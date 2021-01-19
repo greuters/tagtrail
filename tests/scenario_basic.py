@@ -7,8 +7,6 @@ from .scenario_account import AccountTest
 import unittest
 
 class BasicOcrTest(OcrTest):
-    minAverageRecall = 0.92
-
     def setUp(self):
         self.baseSetUp('template_basic')
 

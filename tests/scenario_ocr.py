@@ -15,9 +15,9 @@ import re
 class OcrTest(unittest.TestCase):
     """ Tests of tagtrail_ocr """
     minSheetPrecision = 0.95
-    minSheetRecall = 0.83
+    minSheetRecall = 0.81
     minAveragePrecision = 0.99
-    minAverageRecall = 0.94
+    minAverageRecall = 0.92
 
     writeDebugImages = False
 

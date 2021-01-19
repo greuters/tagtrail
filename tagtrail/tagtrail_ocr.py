@@ -576,49 +576,12 @@ class TagRecognizer():
     """
     A processor that takes  a normalized image of a ProductSheet and tries to
     recognize all boxes on it
-
-    :param name: name of the processor, used to identify logs and debug images
-    :type name: str
-    :param tmpDir: directory to write debug images to
-    :type tmpDir: str
-    :param db: database with possible box values and configurations
-    :type db: class: `database.Database`
-    :param tesseractApi: API interface to tesseract
-    :type tesseractApi: class `tesserocr.PyTessBaseAPI`
-    :param writeDebugImages: `True` if debug images shold be written. This
-        slows down processing significantly.
-    :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
-    :param searchMarginSize: margin by which each box image is extended to look
-        for its actual corners
-    :type searchMarginSize: int
-    :param borderSize: Size of the border of a box that is discarded. When the
-        actual corners of a box are identified, their bounding rectangle is cropped
-        by borderSize to only consider the area inside the box for ocr
-    :type borderSize: int
-    :param minPlausibleBoxSize: Minimal size of a box to be considered
-        sucessfully detected. If the area identified as being inside the box is
-        smaller than this, identification is considered to have failed.
-    :type minPlausibleBoxSize: int
-    :param minComponentArea: Minimal size of a component to be considered for
-        OCR (aka minimal expected letter size). If a single component inside the
-        box is smaller than this, it is clipped away before OCR.
-    :type minComponentArea: int
-    :param minAspectRatio: Minimal aspect ratio of a component to be considered for
-        OCR. Long, thin components are discarded if
-        min(height, width) / max(height, width) < minAspectRatio
-    :type minAspectRatio: float
-    :param minFillRatio: Minimal fill ratio of the final bounding rect
-        considered for OCR
-    :type minFillRatio: float
-    :param confidenceThreshold: Minimal confidence needed to color the
-        recognized box text as 'safely recognized' in the debug output image.
-        For confidence calculation, check `self.__findClosestString`
-    :type confidenceThreshold: float
     """
+    minNumMatchingTextsForIdentification = 8
+
     def __init__(self,
             name,
+            inputSheetsDir,
             tmpDir,
             db,
             tesseractApi,
@@ -632,7 +595,53 @@ class TagRecognizer():
             minFillRatio = .3,
             confidenceThreshold = 0.5
             ):
+        """
+        :param name: name of the processor, used to identify logs and debug images
+        :type name: str
+        :param inputSheetsDir: directory where previous versions of the scanned product
+            sheets are stored
+        :type inputSheetsDir: str
+        :param tmpDir: directory to write debug images to
+        :type tmpDir: str
+        :param db: database with possible box values and configurations
+        :type db: class: `database.Database`
+        :param tesseractApi: API interface to tesseract
+        :type tesseractApi: class `tesserocr.PyTessBaseAPI`
+        :param writeDebugImages: `True` if debug images shold be written. This
+            slows down processing significantly.
+        :param writeDebugImages: bool
+        :param log: logger to write messages to
+        :type log: class: `helpers.Log`
+        :param searchMarginSize: margin by which each box image is extended to look
+            for its actual corners
+        :type searchMarginSize: int
+        :param borderSize: Size of the border of a box that is discarded. When the
+            actual corners of a box are identified, their bounding rectangle is cropped
+            by borderSize to only consider the area inside the box for ocr
+        :type borderSize: int
+        :param minPlausibleBoxSize: Minimal size of a box to be considered
+            sucessfully detected. If the area identified as being inside the box is
+            smaller than this, identification is considered to have failed.
+        :type minPlausibleBoxSize: int
+        :param minComponentArea: Minimal size of a component to be considered for
+            OCR (aka minimal expected letter size). If a single component inside the
+            box is smaller than this, it is clipped away before OCR.
+        :type minComponentArea: int
+        :param minAspectRatio: Minimal aspect ratio of a component to be considered for
+            OCR. Long, thin components are discarded if
+            min(height, width) / max(height, width) < minAspectRatio
+        :type minAspectRatio: float
+        :param minFillRatio: Minimal fill ratio of the final bounding rect
+            considered for OCR
+        :type minFillRatio: float
+        :param confidenceThreshold: Minimal confidence needed to color the
+            recognized box text as 'safely recognized' in the debug output image.
+            For confidence calculation, check `self.__findClosestString`
+        :type confidenceThreshold: float
+        """
+
         self.name = name
+        self.inputSheetsDir = inputSheetsDir
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
         self.log = log
@@ -726,19 +735,22 @@ class TagRecognizer():
 
         self._recognizedBoxTexts = {}
         for box in self.__sheet.boxes():
-            if box.name == "nameBox":
-                name, confidence = self.__recognizeBoxText(box, self.__productNameCandidates)
+            if box.name == 'nameBox':
+                name, confidence = self.__recognizeBoxText(box,
+                        self.__productNameCandidates)
                 if name == '' or confidence < 0.5:
                     box.text, box.confidence = fallbackSheetName, 0
                 else:
                     box.text, box.confidence = name, confidence
-            elif box.name == "unitBox":
-                box.text, box.confidence = self.__recognizeBoxText(box, self.__unitCandidates)
+            elif box.name == 'unitBox':
+                box.text, box.confidence = self.__recognizeBoxText(box,
+                        self.__unitCandidates)
                 if box.text == '':
                     box.confidence = 0
-            elif box.name == "priceBox":
-                box.text, box.confidence = self.__recognizeBoxText(box, self.__priceCandidates)
-                if box.text == '' or confidence < 1:
+            elif box.name == 'priceBox':
+                box.text, box.confidence = self.__recognizeBoxText(box,
+                        self.__priceCandidates)
+                if box.text == '':
                     box.confidence = 0
             elif box.name == "sheetNumberBox":
                 sheetNumber, confidence = self.__recognizeBoxText(box,
@@ -747,42 +759,29 @@ class TagRecognizer():
                     box.text, box.confidence = str(fallbackSheetNumber), 0
                 else:
                     box.text, box.confidence = sheetNumber, confidence
-            elif box.name.find("dataBox") != -1:
-                box.text, box.confidence = self.__recognizeBoxText(box, self.__memberIdCandidates)
+            elif box.name.find('dataBox') != -1:
+                box.text, box.confidence = self.__recognizeBoxText(box,
+                        self.__memberIdCandidates)
             else:
                 box.text, box.confidence = ("", 1.0)
 
-        # try to fill in product infos if id is clear
-        nameBox = self.__sheet.boxByName('nameBox')
-        unitBox = self.__sheet.boxByName('unitBox')
-        priceBox = self.__sheet.boxByName('priceBox')
-        sheetNumberBox = self.__sheet.boxByName('sheetNumberBox')
-        if nameBox.confidence == 1:
-            product = self.__db.products[self.__sheet.productId()]
-            expectedAmountAndUnit = product.amountAndUnit
-            expectedPrice = helpers.formatPrice(product.grossSalesPrice(),
-                    self.currency)
-            if unitBox.confidence < 1:
-                self.log.info(f'Inferred unit={expectedAmountAndUnit}')
-                unitBox.text = expectedAmountAndUnit
-                unitBox.confidence = 1
-            elif unitBox.text != expectedAmountAndUnit:
-                unitBox.confidence = 0
-            if priceBox.confidence < 1:
-                self.log.info(f'Inferred price={expectedPrice}')
-                priceBox.text = expectedPrice
-                priceBox.confidence = 1
-            elif priceBox.text != expectedPrice:
-                priceBox.confidence = 0
-            if (product.previousQuantity < ProductSheet.maxQuantity()
-                    and sheetNumberBox.text == ''):
-                # previousQuantity might also be small because many units were
-                # already sold, while we still have more than one sheet
-                # => this is just a good guess
-                sheetNumberBox.confidence = 0
-                sheetNumberBox.text = self.__db.config.get('tagtrail_gen',
-                        'sheet_number_string').format(sheetNumber='1')
-                self.log.info(f'Inferred sheetNumber={sheetNumberBox.text}')
+        # set sheetNumber if identified product only has one active sheet
+        # this is a heuristic saving a lot of work in practice, as sheetNumbers
+        # are notoriously difficult to OCR (only one identifying character) and
+        # there are typically many products with only one sheet
+        if self.__sheet.boxByName('nameBox').confidence != 0:
+            productId = self.__sheet.productId()
+            sheetNumberBox = self.__sheet.boxByName('sheetNumberBox')
+            sheetFilenames = [
+                    f for f in os.listdir(f'{self.inputSheetsDir}active/')
+                    if ProductSheet.productId_from_filename(f) == productId]
+            if len(sheetFilenames) == 1:
+                self.log.info('inferred sheetNumber from productId '
+                        f'{productId} -> {sheetNumberBox.text}')
+                sheetNumberBox.text = ProductSheet.sheetNumber_from_filename(
+                        sheetFilenames[0])
+
+        self.__identifySheet()
 
         # assume box should be filled if at least two neighbours are filled
         for box in self.__sheet.boxes():
@@ -802,6 +801,87 @@ class TagRecognizer():
 
         if self.writeDebugImages:
             cv.imwrite(f'{self.__prefix}_1_outputImage.jpg', self.__sheet.createImg())
+
+    def __identifySheet(self):
+        """
+        Try to identify the sheet
+
+        Automatic identification is rather conservative, a sheet is considered
+        correctly identified if all of the following are true:
+            * nameBox has a recognized text, allowing to identify the product
+              and compare tags to the corresponding input sheets (several
+              sheets with different sheet numbers are compared)
+            * for one of the products input sheets, all confident tags on the
+              sheet match the corresponding non-empty tags of the input sheet
+            * at least `self.minNumMatchingTextsForIdentification` could be
+              compared between the sheet and the input sheet
+
+        If identification is successful, confidence of nameBox and
+        sheetNumberBox is set to 1 and sheetNumberBox.text is set to the
+        correct number.
+
+        If not, confidence of nameBox and sheetNumberBox are set to 0.
+        """
+        nameBox = self.__sheet.boxByName('nameBox')
+        sheetNumberBox = self.__sheet.boxByName('sheetNumberBox')
+        if nameBox.confidence == 0:
+            sheetNumberBox.confidence = 0
+
+        for (root, _, filenames) in itertools.chain(
+                os.walk(f'{self.inputSheetsDir}active/'),
+                os.walk(f'{self.inputSheetsDir}inactive/')):
+            for filename in filenames:
+                if (self.__sheet.productId() !=
+                        ProductSheet.productId_from_filename(filename)):
+                    continue
+                if self.__isInputSheet(f'{root}{filename}'):
+                    nameBox.confidence = 1
+                    sheetNumberBox.text = ProductSheet.sheetNumber_from_filename(filename)
+                    sheetNumberBox.confidence = 1
+                    return
+
+        nameBox.confidence = 0
+        sheetNumberBox.confidence = 0
+
+    def __isInputSheet(self, inputSheetPath):
+        """
+        Check if input sheet matches self.__sheet
+
+        :param inputSheetPath: path to load the input sheet to compare from
+        :type inputSheetPath: str
+        :return: True if the input sheet matches self.__sheet, False otherwise
+        :rtype: bool
+        :raises ValueError: if the given input sheet is not fully sanitized
+        """
+        self.log.debug(f'test if {inputSheetPath} matches this sheet')
+        inputSheet = ProductSheet()
+        inputSheet.load(inputSheetPath)
+
+        unconfidentBoxes = [box for box in inputSheet.boxes() if box.confidence != 1]
+        if unconfidentBoxes != []:
+            raise ValueError(f'{inputSheetPath} has unconfident boxes: '
+                    f'{unconfidentBoxes}')
+
+        numTextsCompared = 0
+        for box in self.__sheet.boxes():
+            if box.confidence != 1:
+                continue
+
+            inputBox = inputSheet.boxByName(box.name)
+            if inputBox.text != '':
+                numTextsCompared += 1
+                if inputBox.text != box.text:
+                    self.log.debug(f'non-matching tag in box {box.name} '
+                            f'found: {inputBox.text} != {box.text}')
+                    return False
+
+        if self.minNumMatchingTextsForIdentification <= numTextsCompared:
+            self.log.debug(f'match found: {inputSheetPath}')
+            return True
+        else:
+            self.log.debug('not enough matching tags compared to '
+                f'confirm match ({numTextsCompared})')
+            return False
 
     def __recognizeBoxText(self, box, candidateTexts):
         """
@@ -1035,8 +1115,8 @@ class TagRecognizer():
         :rtype: (str, float)
         """
         candidateStrings=list(set(candidateStrings))
-        self.log.debug(f"findClosestString: searchString={searchString}")
-        self.log.debug(f"findClosestString: candidateStrings={candidateStrings}")
+        self.log.debug("findClosestString: searchString={}", searchString)
+        self.log.debug("findClosestString: candidateStrings={}", candidateStrings)
         dists = list(map(lambda x: Levenshtein.distance(x,
             searchString.upper()), [c.upper() for c in candidateStrings]))
         self.log.debug("dists={}", dists)
@@ -1413,6 +1493,7 @@ class Model():
             clearOutputDir = True,
             writeDebugImages = False,
             log = helpers.Log(helpers.Log.LEVEL_INFO)):
+        self.rootDir = rootDir
         self.tmpDir = tmpDir
         self.scanDir = f'{rootDir}0_input/scans/'
         self.outputDir = f'{rootDir}2_taggedProductSheets/'
@@ -1552,8 +1633,10 @@ class Model():
             return
 
         fallbackSheetName = sheetRegion.name
-        recognizer = TagRecognizer("4_recognizeText", sheetRegion.tmpDir, self.db,
-                self.tesseractApi, writeDebugImages = self.writeDebugImages, log = self.log)
+        recognizer = TagRecognizer("4_recognizeText",
+                f'{self.rootDir}0_input/sheets/', sheetRegion.tmpDir, self.db,
+                self.tesseractApi, writeDebugImages = self.writeDebugImages,
+                log = self.log)
         recognizer.process(sheetRegion.processedImg, fallbackSheetName,
                 self.fallbackSheetNumber)
 
