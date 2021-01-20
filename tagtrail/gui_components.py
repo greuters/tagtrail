@@ -48,12 +48,16 @@ class AutocompleteEntry(tkinter.Entry):
         self.__var = self["textvariable"]
         if self.__var == '':
             self.__var = self["textvariable"] = tkinter.StringVar()
-        self.text = text
-        self.enabled = enabled
-        self.confidence = confidence
+        self.__var.trace_id = None
         self.listBoxParent = listBoxParent
         self.listBoxX = listBoxX
         self.listBoxY = listBoxY
+        self.enabled = enabled
+        if enabled:
+            self.text = text
+        else:
+            self.setArbitraryText(text)
+        self.confidence = confidence
 
         self.bind("<Return>", self.selection)
         self.bind("<Up>", self.up)
@@ -192,7 +196,9 @@ class AutocompleteEntry(tkinter.Entry):
             self.__var.trace_id = self.__var.trace('w', self.varTextChanged)
             self.configure(state='normal')
         else:
-            self.__var.trace_vdelete('w', self.__var.trace_id)
+            if self.__var.trace_id is not None:
+                self.__var.trace_vdelete('w', self.__var.trace_id)
+                self.__var.trace_id = None
             self.configure(state='disabled')
 
     @property

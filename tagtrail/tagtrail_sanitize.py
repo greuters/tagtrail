@@ -68,15 +68,15 @@ class InputSheet(ProductSheet):
         :type inputSheetsDir: str
         """
         super().__init__(log=Log())
+        self.parentFrame = parentFrame
         self.db = db
-        self.load(sheetPath)
         self.originalPath = sheetPath
         self.inputSheetsDir = inputSheetsDir
+        self.load(self.originalPath)
         self.__createWidgets(parentFrame)
         self.__manualValidationBoxNames = self.__selectManualValidationBoxes()
 
         self.__loadTagsFromPreviousAccounting()
-        self.__ensureEnoughValidationBoxes()
         nextUnclearBox = self.nextUnclearBox(None)
         if nextUnclearBox:
             nextUnclearBox.entry.focus_set()
@@ -146,8 +146,9 @@ class InputSheet(ProductSheet):
             if listBoxY + self.maxEpectedListboxHeight > parentFrame.winfo_height():
                 listBoxY = y1 - self.maxEpectedListboxHeight
 
+            enabled = False if box.name in ['unitBox', 'priceBox'] else True
             entry = gui_components.AutocompleteEntry(box.text, box.confidence,
-                    choices, self.releaseFocus, True, parentFrame, x1,
+                    choices, self.releaseFocus, enabled, parentFrame, x1,
                     listBoxY, parentFrame)
             entry.place(x=x1, y=y1, w=x2-x1, h=y2-y1)
             entry.copiedFromPreviousAccounting = False
@@ -255,12 +256,39 @@ class InputSheet(ProductSheet):
 
         sheetName = '{}_{}.csv'.format(self.__updatedProductId(),
                 self.__updatedSheetNumber())
-        activeSheetPath = f'{self.inputSheetsDir}/active/{sheetName}'
-        inactiveSheetPath = f'{self.inputSheetsDir}/inactive/{sheetName}'
+        activeSheetPath = f'{self.inputSheetsDir}active/{sheetName}'
+        inactiveSheetPath = f'{self.inputSheetsDir}inactive/{sheetName}'
         if os.path.exists(activeSheetPath):
             self.__loadTagsFromAccountedSheet(activeSheetPath)
+            self.__ensureEnoughValidationBoxes()
         elif os.path.exists(inactiveSheetPath):
             self.__loadTagsFromAccountedSheet(inactiveSheetPath)
+            self.__ensureEnoughValidationBoxes()
+        else:
+            sheetCouldBeStored = False
+            unconfidentEntries = [box.entry for box in self.boxes()
+                    if box.entry is not None and box.entry.confidence != 1]
+            if (unconfidentEntries == []
+                    and self._boxes['nameBox'].entry.text
+                    and self._boxes['sheetNumberBox'].entry.text):
+                sheetCouldBeStored = True
+
+            dialog = MissingInputSheetDialog(self.parentFrame, sheetName, sheetCouldBeStored)
+            if dialog.storeSheet:
+                priceBoxEntry = self._boxes['priceBox'].entry
+                priceBoxEntry.setArbitraryText(dialog.price)
+                priceBoxEntry.confidence = 1
+
+                unitBoxEntry = self._boxes['unitBox'].entry
+                unitBoxEntry.setArbitraryText(dialog.unit)
+                unitBoxEntry.confidence = 1
+
+                self.store(f'{self.inputSheetsDir}active/')
+                self.__init__(self.parentFrame, self.db, self.originalPath,
+                        self.inputSheetsDir)
+            else:
+                self._boxes['nameBox'].entry.confidence = 0
+                self._boxes['sheetNumberBox'].entry.confidence = 0
 
     def __loadTagsFromAccountedSheet(self, sheetPath):
         """
@@ -300,19 +328,11 @@ class InputSheet(ProductSheet):
 
             if accountedBox.text == '':
                 self._log.debug(f'resetting box {accountedBox.name}')
-                if (box.entry.text != '' and
-                        box.entry.text not in box.entry.possibleValues):
-                    # entry had been set to some now invalid value from another
-                    # accountedSheet -> clear
-                    assert(box.entry.copiedFromPreviousAccounting)
-                    box.entry.enabled = False
-                    box.entry.setArbitraryText('')
                 if box.entry.copiedFromPreviousAccounting:
-                    # entry had been set from another accountedSheet ->
-                    # probably tag was incorrect if we're switching the
-                    # accountedSheet now
-                    box.entry.confidence = 0
-                box.entry.copiedFromPreviousAccounting = False
+                    # set entry back to initial state
+                    box.entry.text = box.text
+                    box.entry.confidence = box.confidence
+                    box.entry.copiedFromPreviousAccounting = False
                 box.entry.enabled = True
             else:
                 self._log.debug('copying tag from previous accounting '
@@ -324,14 +344,16 @@ class InputSheet(ProductSheet):
 
             box.entry.destroyListBox()
 
-    def unlockBoxesFromPreviousAccounting(self):
-        for box in self.boxes():
-            if box.entry.copiedFromPreviousAccounting:
-                box.entry.confidence = 0
-                box.entry.copiedFromPreviousAccounting = False
-                if box.entry.text not in box.entry.possibleValues:
-                    box.entry.setArbitraryText('')
-                box.entry.enabled = True
+    def unlockIdentificationBoxes(self):
+        nameBox = self._boxes['nameBox']
+        nameBox.entry.confidence = 0
+        nameBox.entry.copiedFromPreviousAccounting = False
+        nameBox.entry.enabled = True
+
+        sheetNumberBox = self._boxes['sheetNumberBox']
+        sheetNumberBox.entry.confidence = 0
+        sheetNumberBox.entry.copiedFromPreviousAccounting = False
+        sheetNumberBox.entry.enabled = True
 
     def releaseFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
@@ -340,10 +362,9 @@ class InputSheet(ProductSheet):
             if event.keysym == "Return":
                 event.widget.confidence = 1
                 event.widget.manuallyValidated = True
-            if event.widget.enabled:
-                if event.widget.box.name in ['nameBox', 'sheetNumberBox']:
+                if (event.widget.box.name in ['nameBox', 'sheetNumberBox']
+                        and event.widget.enabled):
                     self.__loadTagsFromPreviousAccounting()
-                    self.__ensureEnoughValidationBoxes()
 
             shift_pressed = (event.state & 0x1)
             if event.keysym == 'Return' and shift_pressed:
@@ -387,10 +408,14 @@ class InputSheet(ProductSheet):
         Compare the originally loaded confident tags with the validated input
 
         Precondition: input has to be fully validated, i.e.
+
+        .. code-block:: python
+
             for box in self.boxes():
-                if box.entry is None:
+                if box.entry is not None:
                     assert(box.entry.confidence == 1)
-        and to get useful output, store() must not yet have been called.
+
+        and to get useful output, store() must not have been called yet.
 
         :return: (numCorrect, numValidated), where numCorrect is the number of
             validated boxes which were correctly tagged in the originally
@@ -463,6 +488,121 @@ class InputSheet(ProductSheet):
                 and not b.entry.copiedFromPreviousAccounting])
 
         super().store(sheetDir)
+
+class MissingInputSheetDialog(tkinter.simpledialog.Dialog):
+    """
+    A dialog to give the user a way to recreate a missing input sheet from an
+    existing scanned sheet.
+
+    Usually, each scanned sheet should have a corresponding input sheet in
+    0_input/active (or inactive). If this is missing (e.g. because it should
+    have been removed during last accounting, but wasn't removed physically),
+    the user should have an option to recreate it based on the existing scanned
+    sheet.
+
+    This dialog provides the necessary functionality and gives advice how to go
+    about it.
+    """
+    def __init__(self,
+            parent,
+            missingSheetName,
+            sheetCouldBeStored):
+        self.missingSheetName = missingSheetName
+        self.sheetCouldBeStored = sheetCouldBeStored
+        self.storeSheet = False
+        super().__init__(parent, title = 'Sheet missing in 0_input/sheets/')
+
+    def body(self, parent):
+        ttk.Label(self, text = f"""
+                Each scanned sheet should have a corresponding input sheet
+                in 0_input/sheets/*/, but the following sheet doesn't exist:
+                {self.missingSheetName}
+
+                If the name or sheet number have been entered incorrectly,
+                simply cancel this dialog and correct them.
+
+                If they are correct you can recreate the missing sheet, but
+                information about which tags existed during last accounting and
+                which are new is lost.
+
+                To recreate the missing sheet, follow these steps:
+
+                1. cancel this dialog and fill in all tags of the scanned sheet
+                   which were billed already. Clear all new tags and don't
+                   fill in name or sheet number yet.
+
+                   Hint: tags that are filled in now won't be billed, but
+                   appear as a loss during next inventory if they haven't been
+                   accounted before.
+
+                2. fill in name and sheet number. This dialog opens again when
+                   both are filled.
+                   To save the current state of the sheet as
+                   0_input/sheets/active/{self.missingSheetName},
+                   it needs to be completely filled in first (all enabled boxes
+                   are green).
+
+                   If this is the case, fill in the price and amount on this
+                   dialog and click OK.
+
+                3. the scanned sheet is now in a normal state and can be edited
+                   as usual. Tags that are filled in now are billed during this
+                   accounting.
+                """
+                ).pack()
+
+        box = ttk.Frame(self)
+        ttk.Label(box, text = 'Amount and unit:').pack(side=tkinter.LEFT)
+        self.unitEntry = ttk.Entry(box)
+        if not self.sheetCouldBeStored:
+            self.unitEntry['state'] = tkinter.DISABLED
+        self.unitEntry.bind('<Key>', self.__updateOkButtonState)
+        self.unitEntry.pack(side=tkinter.LEFT, expand = 1, fill = tkinter.X)
+        box.pack(fill = tkinter.X)
+
+        box = ttk.Frame(self)
+        ttk.Label(box, text = 'Price:').pack(side=tkinter.LEFT)
+        self.priceEntry = ttk.Entry(box)
+        if not self.sheetCouldBeStored:
+            self.priceEntry['state'] = tkinter.DISABLED
+        self.priceEntry.bind('<Key>', self.__updateOkButtonState)
+        self.priceEntry.pack(side=tkinter.LEFT, expand = 1, fill = tkinter.X)
+        box.pack(fill = tkinter.X)
+
+    def buttonbox(self):
+        """
+        Custom copy, as OK option should only be enabled if price and amount
+        are filled in
+        """
+        box = ttk.Frame(self)
+
+        self.okButton = ttk.Button(box, text="OK", width=10, command=self.ok,
+                default=tkinter.DISABLED)
+        self.okButton['state'] = tkinter.DISABLED
+        self.okButton.pack(side=tkinter.LEFT, padx=5, pady=5)
+        w = ttk.Button(box, text="Cancel", width=10, command=self.cancel)
+        w.pack(side=tkinter.LEFT, padx=5, pady=5)
+
+        self.bind("<Escape>", self.cancel)
+
+        box.pack()
+
+    def ok(self, event = None):
+        assert(self.sheetCouldBeStored)
+        assert(self.priceEntry.get() != '')
+        assert(self.unitEntry.get() != '')
+        self.storeSheet = True
+        self.price = self.priceEntry.get()
+        self.unit = self.unitEntry.get()
+        super().ok(event)
+
+    def __updateOkButtonState(self, event):
+        if self.priceEntry.get() == '' or self.unitEntry.get() == '':
+            self.okButton['state'] = tkinter.DISABLED
+            self.unbind(self.ok)
+        else:
+            self.okButton['state'] = tkinter.NORMAL
+            self.bind("<Return>", self.ok)
 
 class GUI(gui_components.BaseGUI):
     originalScanPostfix = '_original_scan.jpg'
@@ -538,8 +678,9 @@ class GUI(gui_components.BaseGUI):
         buttons.append(('saveAndReloadDB', 'Save and reload current',
             self.saveAndReloadDB))
         buttons.append(('switchScan', 'Show original', self.switchScan))
-        buttons.append(('unlockPreviousAccounting', 'Unlock Boxes',
-            self.unlockBoxesFromPreviousAccounting))
+        buttons.append(('unlockIdentificationBoxes',
+            'Unlock identification',
+            self.unlockIdentificationBoxes))
         self.addButtonFrame(buttons)
 
     def nextProductToSanitize(self):
@@ -686,8 +827,8 @@ class GUI(gui_components.BaseGUI):
             assert(false)
         self.loadScannedImg()
 
-    def unlockBoxesFromPreviousAccounting(self, event=None):
-        self.inputSheet.unlockBoxesFromPreviousAccounting()
+    def unlockIdentificationBoxes(self, event=None):
+        self.inputSheet.unlockIdentificationBoxes()
 
     def loadScannedImg(self):
         self.scanCanvas.delete('all')
