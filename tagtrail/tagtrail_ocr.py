@@ -1248,10 +1248,11 @@ class SplitSheetDialog(Dialog):
         self.model = model
         self.log = self.model.log
         self.outputImg = None
-        self._resizedOutputImg = None
+        self._previewOutputImg = None
         self.isEmpty = False
         self._selectedCorners = []
         self.selectionMode = 'rectangle'
+        self._templateImg = ProductSheet(self.model.log).createImg()
         super().__init__(root)
 
     @property
@@ -1386,9 +1387,9 @@ class SplitSheetDialog(Dialog):
             self.inputCanvas.create_line(linePts, fill = 'green', width = 4)
 
         self.outputCanvas.delete("all")
-        if self._resizedOutputImg is not None:
+        if self._previewOutputImg is not None:
             self.outputCanvas.create_image(0, 0, anchor=tkinter.NW,
-                    image=self._resizedOutputImg)
+                    image=self._previewOutputImg)
 
     def computeOutputImg(self):
         self.update()
@@ -1430,8 +1431,14 @@ class SplitSheetDialog(Dialog):
                     self.log
                     ).process(img, np.array(frameContour))
 
-        resizedOutputImg = cv.resize(self.outputImg, (canvasW, canvasH), Image.BILINEAR)
-        self._resizedOutputImg = ImageTk.PhotoImage(Image.fromarray(resizedOutputImg))
+        resizedTemplateImg = cv.cvtColor(cv.resize(self._templateImg, (canvasW,
+            canvasH), Image.BILINEAR), cv.COLOR_RGB2GRAY)
+        resizedOutputImg = cv.resize(self.outputImg, (canvasW,
+            canvasH), Image.BILINEAR)
+        maskedOutputImg = cv.bitwise_or(resizedOutputImg, resizedOutputImg,
+                mask = resizedTemplateImg)
+
+        self._previewOutputImg = ImageTk.PhotoImage(Image.fromarray(maskedOutputImg))
 
 class SheetRegionData():
     """
