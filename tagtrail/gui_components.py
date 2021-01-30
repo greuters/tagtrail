@@ -427,7 +427,7 @@ class BaseGUI(ABC):
 
     def reportCallbackException(self, exception, value, tb):
         traceback.print_exception(exception, value, tb)
-        messagebox.showerror('Abort tagtrail', value)
+        messagebox.showerror('Unhandled Exception', value)
 
     def addButtonFrame(self, buttons):
         """

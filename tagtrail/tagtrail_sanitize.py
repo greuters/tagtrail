@@ -446,7 +446,7 @@ class InputSheet(ProductSheet):
         assert(numValidated >= len(self.__manualValidationBoxNames))
         return (numCorrect, numValidated)
 
-    def store(self, sheetDir):
+    def store(self, sheetDir, ensureSanitized = True):
         """
         Write user input through to sheet boxes and store the sheet to disk
 
@@ -457,15 +457,18 @@ class InputSheet(ProductSheet):
 
         :param sheetDir: directory to store the sheet to
         :type sheetDir: str
-        :raises ValueError: if mandatory boxes (name, amountAndUnit,
-            grossSalesPrice, sheetNumber) are not filled in or any box has
+        :param ensureSanitized: if True, a ValueError is raised if any box has
             confidence != 1
+        :type ensureSanitized: bool
+        :raises ValueError: if mandatory boxes (name, amountAndUnit,
+            grossSalesPrice, sheetNumber) are not filled in
         """
-        unconfidentBoxes = [box.name for box in self.boxes()
-                if box.entry is not None and box.entry.confidence != 1]
-        if unconfidentBoxes != []:
-            raise ValueError(
-                    f'Unable to store sheet, unclear boxes {unconfidentBoxes}')
+        if ensureSanitized:
+            unconfidentBoxes = [box.name for box in self.boxes()
+                    if box.entry is not None and box.entry.confidence != 1]
+            if unconfidentBoxes != []:
+                raise ValueError(
+                        f'Unable to store sheet, unclear boxes {unconfidentBoxes}')
         if not self._boxes['nameBox'].entry.text:
             raise ValueError('Unable to store sheet, name is missing')
         if not self._boxes['unitBox'].entry.text:
@@ -768,8 +771,9 @@ class GUI(gui_components.BaseGUI):
         """
         Save the current input sheet.
 
-        :return: True if all worked. False if validation score of the sheet is
-            too low and the user canceled the operation.
+        :return: True if all worked and the sheet has been stored. False if
+            * validation score of the sheet is too low and the user canceled
+            * the csv at the new sheet path already existed
         :rtype: bool
         """
         oldCsvPath = self.csvPath
@@ -780,7 +784,24 @@ class GUI(gui_components.BaseGUI):
         newNormalizedScanPath = f'{newCsvPath}{self.normalizedScanPostfix}'
         if newCsvPath != oldCsvPath:
             if os.path.exists(newCsvPath):
-                raise ValueError(f'Unable to store sheet, file {newCsvPath} already exists')
+                answer = messagebox.askokcancel('Sheet already exists',
+                        'Unable to store sheet, file '
+                        f'{self.inputSheet.updatedFilename} already '
+                        'exists\n\n'
+                        'Store this sheet under old name '
+                        f'{self.inputSheet.filename} and switch to '
+                        f'{self.inputSheet.updatedFilename}?',
+                        default = messagebox.CANCEL)
+                if answer == True:
+                    # reset file identification
+                    for box in [self.inputSheet.boxByName('nameBox'),
+                            self.inputSheet.boxByName('sheetNumberBox')]:
+                        box.entry.text = box.text
+                        box.entry.confidence = 0
+                    self.inputSheet.store(self.productPath, False)
+                    self.csvPath = newCsvPath
+                    self.populateRoot()
+                return False
             if os.path.exists(newOriginalScanPath):
                 raise ValueError(f'Unable to store sheet, file {newOriginalScanPath} already exists')
             if os.path.exists(newNormalizedScanPath):
