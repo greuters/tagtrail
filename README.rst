@@ -53,7 +53,7 @@ Installation from source
 On Ubuntu
 =========
 
-* sudo apt install git python3 python3-tk python3-venv tesseract-ocr libtesseract-dev libleptonica-dev pkg-config
+* sudo apt install git python3 python3-tk python3-venv python3-dev tesseract-ocr libtesseract-dev libleptonica-dev pkg-config gcc g++ make
 
 * git clone https://github.com/greuters/tagtrail.git
 

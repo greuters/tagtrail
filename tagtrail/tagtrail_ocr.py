@@ -171,7 +171,8 @@ class ScanSplitter():
         if frameContour is None:
             findMarginsByLines = LineBasedFrameFinder(
                     f'{self.name}_sheet{sheetRegionIdx}_6_frameFinderByLines',
-                    self.tmpDir, self.writeDebugImages, self.log)
+                    self.tmpDir, self.writeDebugImages, self.log,
+                    cropMargin = 40)
             frameContour = findMarginsByLines.process(sheet)
 
         if frameContour is None:
@@ -299,7 +300,7 @@ class ContourBasedFrameFinder():
         imgH, imgW = thresholdImg.shape
         _, _, cntW, cntH = cv.boundingRect(approxFrameContour)
         fillRatio = (cntW * cntH) / (imgW * imgH)
-        if fillRatio < .25:
+        if fillRatio < .5:
             self.log.debug(f'frame contour not filled enough')
             self.log.debug(f'imgH, imgW = {imgH}, {imgW}')
             self.log.debug(f'cntH, cntW = {cntH}, {cntW}')
@@ -328,9 +329,10 @@ class LineBasedFrameFinder():
     :param minLineLength: Minimum length of line. Line segments shorter than
         this are rejected
     :type minLineLength: int
-    :param maxLineGap: Maximum allowed gap between line segments to treat them
-        as single line
-    :type maxLineGap: int
+    :param cropMargin: LineBasedFrameFinder is easily confused by sheet
+        borders, thus it can help to crop sheet by cropMargin on all sides before
+        processing
+    :type cropMargin: int
     """
     def __init__(self,
                  name,
@@ -338,16 +340,15 @@ class LineBasedFrameFinder():
                  writeDebugImages = False,
                  log = helpers.Log(),
                  minLineLength = 800,
-                 maxLineGap = 5):
+                 cropMargin = 0):
         self.name = name
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
         self.log = log
         self.pixelAccuracy = 1
-        self.rotationAccuracy = np.pi/90
-        self.threshold = 100
+        self.rotationAccuracy = np.pi/180
         self.minLineLength = minLineLength
-        self.maxLineGap = maxLineGap
+        self.cropMargin = cropMargin
 
     @property
     def __prefix(self):
@@ -366,57 +367,76 @@ class LineBasedFrameFinder():
             no sensible contour could be found
         :rtype: list of four points ([int, int] each) or None
         """
-
-        frameImg = np.copy(inputImg)
-        grayImg = cv.cvtColor(inputImg,cv.COLOR_BGR2GRAY)
+        inputImgH, inputImgW, _ = inputImg.shape
+        croppedImg = np.copy(inputImg[
+            self.cropMargin:inputImgH-self.cropMargin,
+            self.cropMargin:inputImgW-self.cropMargin])
+        grayImg = cv.cvtColor(croppedImg,cv.COLOR_BGR2GRAY)
         blurredImg = cv.GaussianBlur(grayImg, (7, 7), 3)
         thresholdImg = cv.adaptiveThreshold(blurredImg, 255,
                 cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2)
         thresholdImg = cv.bitwise_not(thresholdImg)
-        dilationKernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
-        dilatedImg = cv.dilate(thresholdImg, dilationKernel, 1)
 
-        linesImg = np.copy(inputImg)
-        lines = cv.HoughLinesP(dilatedImg, self.pixelAccuracy,
-                self.rotationAccuracy, self.threshold,
-                self.maxLineGap, self.minLineLength)
+        houghLines = cv.HoughLines(thresholdImg, self.pixelAccuracy,
+                self.rotationAccuracy, self.minLineLength)
+        lineMaskImg = np.zeros(thresholdImg.shape, dtype="uint8")
+        for line in houghLines:
+            rho,theta = line[0]
+            a = np.cos(theta)
+            b = np.sin(theta)
+            x0 = a*rho
+            y0 = b*rho
+            x1 = int(x0 + 3000*(-b))
+            y1 = int(y0 + 3000*(a))
+            x2 = int(x0 - 3000*(-b))
+            y2 = int(y0 - 3000*(a))
+            cv.line(lineMaskImg, (x1,y1), (x2,y2), 255, 2)
 
         if self.writeDebugImages:
             cv.imwrite(f'{self.__prefix}_0_gray.jpg', grayImg)
             cv.imwrite(f'{self.__prefix}_1_blurred.jpg', blurredImg)
             cv.imwrite(f'{self.__prefix}_2_threshold.jpg', thresholdImg)
-            cv.imwrite(f'{self.__prefix}_3_dilated.jpg', dilatedImg)
+            cv.imwrite(f'{self.__prefix}_3_lines.jpg', lineMaskImg)
 
-        if lines is None:
-            self.log.debug('Failed to find lines, not cropping image')
+        harrisDstImg = cv.cornerHarris(lineMaskImg, 2, 3, 0.04)
+        corners = np.argwhere(harrisDstImg.transpose() >
+                0.5*harrisDstImg.max())
+        if corners is None:
+            self.log.debug('Failed to find corners, not cropping image')
             return None
 
-        corners = []
-        for line in lines:
-            x0,y0,x1,y1 = line[0]
-            corners.append([x0, y0])
-            corners.append([x1, y1])
-            if self.writeDebugImages:
-                cv.line(linesImg, (x0, y0), (x1, y1), (255, 0, 0), 2)
+        frameImg = np.copy(croppedImg)
+        for corner in corners:
+            cv.circle(frameImg, (corner[0], corner[1]), 5, (0, 0, 255), 5)
 
-        boundingRect = cv.minAreaRect(np.array(corners))
-        boundingRectCnt = np.int0(cv.boxPoints(boundingRect))
-        cv.drawContours(linesImg,[boundingRectCnt], 0, (0, 255, 0), 4)
+        hull = cv.convexHull(np.array(corners))
+        frameContour = cv.approxPolyDP(hull, 200, True)
+        frameContour = np.array([[x[0][0], x[0][1]] for x in frameContour])
+        if self.writeDebugImages:
+            cv.drawContours(frameImg, [frameContour], 0, (0, 0, 255), 4)
+
+        if len(frameContour) != 4:
+            boundingRect = cv.minAreaRect(np.array(corners))
+            frameContour = np.int0(cv.boxPoints(boundingRect))
+            if self.writeDebugImages:
+                cv.drawContours(frameImg, [frameContour], 0, (0, 255, 0), 4)
 
         if self.writeDebugImages:
-            cv.imwrite(f'{self.__prefix}_4_linesImg.jpg', linesImg)
+            cv.imwrite(f'{self.__prefix}_4_frame.jpg', frameImg)
 
-        imgH, imgW, _ = inputImg.shape
-        _, (cntW, cntH), _ = boundingRect
-        fillRatio = (cntW * cntH) / (imgW * imgH)
-        if fillRatio < .25:
+        imgH, imgW, _ = frameImg.shape
+        frameContourArea = cv.contourArea(frameContour)
+        fillRatio = frameContourArea / (imgW * imgH)
+        print(fillRatio)
+        if fillRatio < .5:
             self.log.debug(f'frame contour not filled enough')
             self.log.debug(f'imgH, imgW = {imgH}, {imgW}')
-            self.log.debug(f'cntH, cntW = {cntH}, {cntW}')
+            self.log.debug(f'frameContourArea = {frameContourArea}')
             self.log.debug(f'fillRatio = {fillRatio}')
             return None
 
-        return boundingRectCnt
+        return np.array([[x+self.cropMargin, y+self.cropMargin] for (x, y) in
+            frameContour])
 
 class SheetNormalizer():
     """
