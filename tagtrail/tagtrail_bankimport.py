@@ -209,7 +209,10 @@ class GUI(gui_components.BaseGUI):
         if not indicesOfUnclearEntries:
             return None
         else:
-            currentIndex = 0 if selectedEntry is None else self.entries.index(selectedEntry)
+            try:
+                currentIndex = self.entries.index(selectedEntry)
+            except ValueError:
+                currentIndex = 0
             if max(indicesOfUnclearEntries) <= currentIndex:
                 return self.entries[min(indicesOfUnclearEntries)]
             else:
