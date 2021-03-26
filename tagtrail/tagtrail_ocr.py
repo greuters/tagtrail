@@ -1095,6 +1095,8 @@ class TagRecognizer():
         extendedY1 = initY1+self.searchMarginSize
         cornerImg = np.copy(self.__grayImg[extendedY0:extendedY1,
             extendedX0:extendedX1])
+        assert(min(cornerImg.shape) > 1)
+
         harrisDst = cv.cornerHarris(cornerImg, 9, 3, 0.04)
         _, harrisDst = cv.threshold(harrisDst, 0.01*harrisDst.max(), 255, 0)
 
