@@ -671,8 +671,11 @@ class GUI(gui_components.BaseGUI):
         focused = self.root.focus_displayof()
         if focused and hasattr(focused, 'place_info'):
             info = focused.place_info()
-            self.setFocusAreaOnScan(int(info['x']), int(info['y']),
-                    int(info['width']), int(info['height']))
+            try:
+                self.setFocusAreaOnScan(int(info['x']), int(info['y']),
+                        int(info['width']), int(info['height']))
+            except ValueError:
+                self.log.warn('unable to set focus area on scan')
 
         # Additional buttons
         buttons = []
@@ -876,8 +879,12 @@ class GUI(gui_components.BaseGUI):
                 self.buttons['saveAndContinue'].focus_set()
             else:
                 info = focused.place_info()
-                self.setFocusAreaOnScan(int(info['x']), int(info['y']),
-                        int(info['width']), int(info['height']))
+                try:
+                    self.setFocusAreaOnScan(int(info['x']), int(info['y']),
+                            int(info['width']), int(info['height']))
+                except ValueError:
+                    self.log.warn('unable to set focus area on scan')
+
         elif event.keysym == 'Tab':
             focused.tk_focusNext().focus_set()
         else:
