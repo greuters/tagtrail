@@ -170,6 +170,11 @@ class Model():
             inactiveInputSheets = self.product_sheets_in_dir(productId,
                     f'{self.rootDir}0_input/sheets/inactive/')
             assert(product.inventoryQuantity is None)
+            if product.inventoryQuantity is not None:
+                raise ValueError(
+                        f'inventoryQuantity of {productId} is not None, '
+                        'check products.csv')
+
             if product.expectedQuantity <= 0:
                 # product out of stock but expected to be bought again
                 if self.allowRemoval:
@@ -247,9 +252,18 @@ class Model():
                     f'regenerate sheets of {product.id}: no previous sheets exist')
             return True
 
-        assert(len(set([s.name for s in inputSheets])) == 1)
-        assert(len(set([s.amountAndUnit for s in inputSheets])) == 1)
-        assert(len(set([s.grossSalesPrice for s in inputSheets])) == 1)
+        if len(set([s.name for s in inputSheets])) != 1:
+            raise ValueError(
+                    f'{product.id} has different names in different sheets:'
+                    f'{[(s.filename, s.name) for s in inputSheets]}')
+        if len(set([s.amountAndUnit for s in inputSheets])) != 1:
+            raise ValueError(
+                    f'{product.id} has different amount and unit in different '
+                    f'sheets: {[(s.filename, s.amountAndUnit) for s in inputSheets]}')
+        if len(set([s.grossSalesPrice for s in inputSheets])) != 1:
+            raise ValueError(
+                    f'{product.id} has different price in different sheets:'
+                    f'{[(s.filename, s.grossSalesPrice) for s in inputSheets]}')
         inputSheet = inputSheets[0]
 
         if product.amountAndUnit.upper() != inputSheet.amountAndUnit.upper():
