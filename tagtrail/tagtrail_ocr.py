@@ -1550,14 +1550,19 @@ class Model():
         """
         Prepare to walk over self.scanFilenames and invoke self.splitScan with
         each of them.
+        """
+        self.sheetRegions = []
+
+    def prepareTagRecognition(self):
+        """
+        Prepare to recognize tags on all split sheets again
 
         If self.clearOutputDir is `True`, any previously processed scans are
         discarded, and self.outputDir is emptied.
         """
-        self.sheetRegions = []
         if self.clearOutputDir:
             helpers.recreateDir(self.outputDir)
-        self.fallbackSheetNumber = 0
+            self.fallbackSheetNumber = 0
 
     def splitScan(self, scanFilename, sheetCoordinates, rotationAngle):
         """
@@ -1668,19 +1673,18 @@ class Model():
                 self.fallbackSheetNumber)
 
         if os.path.exists(f'{self.outputDir}{recognizer.filename()}'):
-            self.log.info('reset sheetRegion to fallback, as ' +
+            if self.clearOutputDir:
+                self.log.info('reset sheet to fallback name as '
                     f'{recognizer.filename()} already exists')
-            recognizer.resetSheetToFallback(fallbackSheetName,
-                    self.fallbackSheetNumber)
-        if (not self.clearOutputDir and
-                os.path.exists(f'{self.outputDir}{recognizer.filename()}')):
-            self.log.info(f'''overwriting {recognizer.filename()}, as it
-            already exists and output directory has not been cleared due to
-            --individualScan option''')
-            os.remove(f'{self.outputDir}{recognizer.filename()}')
+                recognizer.resetSheetToFallback(fallbackSheetName,
+                        self.fallbackSheetNumber)
+            else:
+                self.log.info(f'''overwriting {recognizer.filename()}, as it
+                already exists and output directory has not been cleared due to
+                --individualScan option''')
+                os.remove(f'{self.outputDir}{recognizer.filename()}')
 
         recognizer.storeSheet(self.outputDir)
-        sheetRegion.name = recognizer.filename()
         self.fallbackSheetNumber += 1
 
         cv.imwrite(f'{self.outputDir}{recognizer.filename()}_original_scan.jpg',
@@ -1997,13 +2001,14 @@ class GUI(BaseGUI):
             return
 
         self.setupProgressIndicator()
+        self.model.prepareTagRecognition()
         with self.model:
-            for idx, sheet in enumerate(self.model.sheetRegions):
+            for idx, sheetRegion in enumerate(self.model.sheetRegions):
                 if self.abortingProcess:
                     break
                 self.updateProgressIndicator(idx / len(self.model.sheetRegions)
-                        * 100, sheet.name)
-                self.model.recognizeTags(sheet)
+                        * 100, sheetRegion.name)
+                self.model.recognizeTags(sheetRegion)
 
         self.destroyProgressIndicator()
 
