@@ -83,7 +83,7 @@ class OcrTest(unittest.TestCase):
 
     def processScan(self, scanFilename, precisions, recalls):
         model = tagtrail_ocr.Model(self.testRootDir, self.tmpDir,
-                [scanFilename], False, self.writeDebugImages, self.log)
+                [scanFilename], True, self.writeDebugImages, self.log)
         model.prepareScanSplitting()
 
         self.assertTrue(os.path.exists(f'{self.testScanDir}{scanFilename}'))
@@ -102,6 +102,7 @@ class OcrTest(unittest.TestCase):
         model.splitScan(scanFilename, sheetCoordinates, rotationAngle)
 
         with model:
+            model.prepareTagRecognition()
             for idx, sheet in enumerate(model.sheetRegions):
                 expectedSheetName = self.scanConfig.get(scanFilename,
                         f'sheet{idx}_name')
@@ -116,9 +117,11 @@ class OcrTest(unittest.TestCase):
                         self.assertFalse(sheet.isEmpty,
                             f'{scanFilename}, sheet{idx} ' +
                             'wrongly classified as being empty')
-                        self.checkIdPrecision(expectedSheetName, sheet.name)
+                        self.checkIdPrecision(expectedSheetName,
+                                sheet.recognizedName)
                         precision, recall = self.computePerformanceMetrics(
-                                expectedSheetName, sheet.name, f'{scanFilename}_sheet{idx}')
+                                expectedSheetName, sheet.recognizedName,
+                                f'{scanFilename}_sheet{idx}')
                         precisions.append(precision)
                         recalls.append(recall)
                         self.assertGreaterEqual(precision, self.minSheetPrecision,

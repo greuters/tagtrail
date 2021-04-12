@@ -1490,6 +1490,7 @@ class SheetRegionData():
             ):
         self.inputScanFilepath=inputScanFilepath
         self.name=name
+        self.recognizedName=None
         self.tmpDir=tmpDir
         self.unprocessedImg=unprocessedImg
         self.processedImg=processedImg
@@ -1529,6 +1530,7 @@ class Model():
         self.scanFilenames = scanFilenames
         self.log = log
         self.clearOutputDir = clearOutputDir
+        self.fallbackSheetNumber = 0
         self.writeDebugImages = writeDebugImages
         self.db = Database(f'{rootDir}0_input/')
         self.sheetRegions = []
@@ -1688,6 +1690,7 @@ class Model():
 
         recognizer.storeSheet(self.outputDir)
         self.fallbackSheetNumber += 1
+        sheetRegion.recognizedName = recognizer.filename()
 
         cv.imwrite(f'{self.outputDir}{recognizer.filename()}_original_scan.jpg',
                 imutils.resize(sheetRegion.unprocessedImg, width=self.compressedImgWidth),
