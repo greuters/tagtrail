@@ -25,4 +25,7 @@ if __name__ == '__main__':
         for test in loader.loadTestsFromTestCase(suite):
             completeSuite.addTest(test)
     runner = unittest.TextTestRunner()
-    runner.run(completeSuite)
+    result = runner.run(completeSuite)
+    if not result.wasSuccessful():
+        print('scenario_basic: tests failed')
+        sys.exit(1)
