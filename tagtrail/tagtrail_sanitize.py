@@ -355,6 +355,10 @@ class InputSheet(ProductSheet):
         sheetNumberBox.entry.copiedFromPreviousAccounting = False
         sheetNumberBox.entry.enabled = True
 
+    def confirmDataBoxes(self):
+        for box in self.dataBoxes():
+            box.entry.confidence = 1
+
     def releaseFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
         if str(event.type) == "KeyPress" and event.char != event.keysym:
@@ -715,6 +719,9 @@ class GUI(gui_components.BaseGUI):
         buttons.append(('unlockIdentificationBoxes',
             'Unlock identification',
             self.unlockIdentificationBoxes))
+        buttons.append(('confirmDataBoxes',
+            'Confirm all data boxes',
+            self.confirmDataBoxes))
         self.addButtonFrame(buttons)
 
     def nextProductToSanitize(self):
@@ -909,6 +916,9 @@ class GUI(gui_components.BaseGUI):
 
     def unlockIdentificationBoxes(self, event=None):
         self.inputSheet.unlockIdentificationBoxes()
+
+    def confirmDataBoxes(self, event=None):
+        self.inputSheet.confirmDataBoxes()
 
     def loadScannedImg(self):
         self.scanCanvas.delete('all')
