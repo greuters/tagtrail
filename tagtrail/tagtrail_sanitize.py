@@ -287,8 +287,10 @@ class InputSheet(ProductSheet):
                 self.__init__(self.parentFrame, self.db, self.originalPath,
                         self.inputSheetsDir)
             else:
-                self._boxes['nameBox'].entry.confidence = 0
-                self._boxes['sheetNumberBox'].entry.confidence = 0
+                for box in self.boxes():
+                    if box.entry is None or not box.entry.enabled:
+                        continue
+                    box.entry.confidence = 0
 
     def __loadTagsFromAccountedSheet(self, sheetPath):
         """
