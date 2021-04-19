@@ -446,6 +446,34 @@ class InputSheet(ProductSheet):
         assert(numValidated >= len(self.__manualValidationBoxNames))
         return (numCorrect, numValidated)
 
+    def isIdentical(self, path):
+        """
+        Compare this input sheet to the one stored at path.
+
+        The values of box.entry are compared, as they contain the relevant,
+        user-updated information used if this sheet would be stored to disk.
+
+        :param path: path of a stored :class: `ProductSheet`
+        :type path: str
+        :return: True if self and the sheet stored at path are identical
+        :rtype: bool
+        """
+        existingSheet = ProductSheet()
+        existingSheet.load(path)
+        for box in self.boxes():
+            if box.entry is None:
+                continue
+            existingSheetBox = existingSheet.boxByName(box.name)
+            if box.entry.text != existingSheetBox.text:
+                self._log.debug(f'sheets differ in {box.name}: '
+                        f'{box.entry.text} != {existingSheetBox.text}')
+                return False
+            if  box.entry.confidence != existingSheetBox.confidence:
+                self._log.debug(f'sheets differ in {box.name}: '
+                        f'{box.entry.confidence} != {existingSheetBox.confidence}')
+                return False
+        return True
+
     def store(self, sheetDir, ensureSanitized = True):
         """
         Write user input through to sheet boxes and store the sheet to disk
@@ -776,7 +804,9 @@ class GUI(gui_components.BaseGUI):
 
         :return: True if all worked and the sheet has been stored. False if
             * validation score of the sheet is too low and the user canceled
-            * the csv at the new sheet path already existed
+            * a duplicate at the new sheet path existed and the user didn't
+              want to remove it
+            * a differing csv at the new sheet path already existed
         :rtype: bool
         """
         oldCsvPath = self.csvPath
@@ -787,24 +817,50 @@ class GUI(gui_components.BaseGUI):
         newNormalizedScanPath = f'{newCsvPath}{self.normalizedScanPostfix}'
         if newCsvPath != oldCsvPath:
             if os.path.exists(newCsvPath):
-                answer = messagebox.askokcancel('Sheet already exists',
-                        'Unable to store sheet, file '
-                        f'{self.inputSheet.updatedFilename} already '
-                        'exists\n\n'
-                        'Store this sheet under old name '
-                        f'{self.inputSheet.filename} and switch to '
-                        f'{self.inputSheet.updatedFilename}?',
-                        default = messagebox.CANCEL)
-                if answer == True:
-                    # reset file identification
-                    for box in [self.inputSheet.boxByName('nameBox'),
-                            self.inputSheet.boxByName('sheetNumberBox')]:
-                        box.entry.text = box.text
-                        box.entry.confidence = 0
-                    self.inputSheet.store(self.productPath, False)
-                    self.csvPath = newCsvPath
-                    self.populateRoot()
-                return False
+                if self.inputSheet.isIdentical(newCsvPath):
+                    answer = messagebox.askokcancel('Identical sheet already exists',
+                            'An identical sheet already exists at '
+                            f'{newCsvPath}\n\n'
+                            'Remove the duplicate and continue?',
+                            default = messagebox.OK)
+                    if answer == True:
+                        self.log.info(f'deleting {newCsvPath}')
+                        os.remove(newCsvPath)
+                        os.remove(newOriginalScanPath)
+                        os.remove(newNormalizedScanPath)
+                    else:
+                        return False
+                else:
+                    answer = messagebox.askokcancel('Sheet already exists',
+                            'Unable to store sheet, a different file '
+                            f'{newCsvPath} already exists\n\n'
+                            'Store this sheet under old name '
+                            f'{oldCsvPath} and switch to '
+                            f'{newCsvPath}?',
+                            default = messagebox.CANCEL)
+                    if answer == True:
+                        # reset file identification
+                        oldFilename = os.path.split(oldCsvPath)[-1]
+                        nameBox = self.inputSheet.boxByName('nameBox')
+                        nameBox.text = ProductSheet.productId_from_filename(
+                                oldFilename)
+                        nameBox.entry.enabled = False
+                        nameBox.entry.setArbitraryText(nameBox.text)
+                        nameBox.entry.confidence = 0
+
+                        sheetNumberBox = self.inputSheet.boxByName('sheetNumberBox')
+                        sheetNumberBox.text = ProductSheet.sheetNumber_from_filename(
+                                        oldFilename)
+                        sheetNumberBox.entry.enabled = False
+                        sheetNumberBox.entry.setArbitraryText(sheetNumberBox.text)
+                        sheetNumberBox.entry.confidence = 0
+
+                        assert(f'{self.productPath}{self.inputSheet.filename}' ==
+                                oldCsvPath)
+                        self.inputSheet.store(self.productPath, False)
+                        self.csvPath = newCsvPath
+                        self.populateRoot()
+                    return False
             if os.path.exists(newOriginalScanPath):
                 raise ValueError(f'Unable to store sheet, file {newOriginalScanPath} already exists')
             if os.path.exists(newNormalizedScanPath):
