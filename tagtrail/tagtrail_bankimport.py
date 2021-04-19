@@ -129,6 +129,8 @@ class GUI(gui_components.BaseGUI):
         canvasWidth = self.width - self.buttonFrameWidth
         if self.inputCanvas is None:
             self.inputCanvas = tkinter.Canvas(self.root)
+        for w in self.inputCanvas.winfo_children():
+            w.destroy()
         self.inputCanvas.place(x=0, y=0, width=canvasWidth, height=self.height)
 
         entryWidth = self.buttonFrameWidth
