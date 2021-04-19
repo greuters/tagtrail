@@ -604,7 +604,7 @@ class Model():
         self.keyringPassword = keyringPassword
         self.log = log
         self.db = database.Database(f'{rootDir}0_input/')
-        if (self.db.products.inventoryQuantityDate and
+        if (self.db.products.inventoryQuantityDate is not None and
                 self.db.products.inventoryQuantityDate != accountingDate):
             raise ValueError(
                 'Inventory (when you check the actually remaining products) '

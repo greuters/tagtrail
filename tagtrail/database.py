@@ -472,9 +472,8 @@ class ProductDict(DatabaseDict):
         if self.inventoryQuantityDate is None:
             if rowValues[8]:
                 raise ValueError('Invalid products file: '
-                        f'inventoryQuantityDate {inventoryQuantityDate} is '
-                        f'empty, but inventoryQuantity of {rowValues[0]} is '
-                        'given')
+                        'inventoryQuantityDate is empty, but '
+                        f'inventoryQuantity of {rowValues[0]} is given')
         else:
             if not rowValues[8]:
                 raise ValueError('Invalid products file: '

@@ -63,7 +63,7 @@ class Model():
         self.sheets = []
 
         if self.db.products.inventoryQuantityDate is not None:
-            raise ValueError(f'inventoryQuantityDate: {inventoryQuantityDate} '
+            raise ValueError(f'inventoryQuantityDate: {self.db.products.inventoryQuantityDate} '
                     'is not None\n'
                     'To do an inventory, run tagtrail_account - if you also '
                     'want to add new products, run tagtrail_gen afterwards on '
