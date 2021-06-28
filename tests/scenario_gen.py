@@ -167,6 +167,7 @@ class GenTest(TagtrailTestCase):
         """
         A product removed from the database must not exist in next/0_input
         """
+        testedAtLeastOneProduct = False
         for testProductId in self.testProductIds:
             with self.subTest(testProductId = testProductId):
                 model = tagtrail_gen.Model(self.testRootDir, True,
@@ -182,12 +183,17 @@ class GenTest(TagtrailTestCase):
                         f'{self.templateRootDir}0_input/sheets/active'):
                     self.assertIn(filename, [s.filename for s in
                         model.obsoleteSheetsFromActive])
+                    testedAtLeastOneProduct = True
 
                 for filename in model.product_sheet_filenames_in_dir(
                         testProductId,
                         f'{self.templateRootDir}0_input/sheets/inactive'):
                     self.assertIn(filename, [s.filename for s in
                         model.obsoleteSheetsFromInactive])
+                    testedAtLeastOneProduct = True
+
+        self.assertTrue(testedAtLeastOneProduct,
+                'No product with existing sheets to deactivate found.')
 
     def test_product_out_of_stock(self):
         """
