@@ -5,6 +5,7 @@ from .scenario_gen import GenTest
 from .scenario_account import AccountTest
 
 import unittest
+import sys
 
 class MediumOcrTest(OcrTest):
     def setUp(self):
