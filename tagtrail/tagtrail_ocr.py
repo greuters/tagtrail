@@ -1223,9 +1223,8 @@ class RotateLabel():
         minAreaRectHeight *= 1.1
 
         # extract the rotated minAreaRect from the original
-        # cudos to http://felix.abecassis.me/2011/10/opencv-rotation-deskewing/
-        if rotationAngle < -45.0:
-            rotationAngle += 90.0
+        if minAreaRectWidth < minAreaRectHeight:
+            rotationAngle -= 90
             minAreaRectWidth, minAreaRectHeight = minAreaRectHeight, minAreaRectWidth
         rotationMatrix = cv.getRotationMatrix2D(center, rotationAngle, 1.0)
 
