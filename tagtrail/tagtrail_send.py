@@ -92,7 +92,7 @@ class MailSender(ABC):
 
         for bill in self.billsToBeSent:
             if (self.db.config.getint('general', 'liquidity_threshold')
-                    < bill.currentBalance):
+                    <= bill.currentBalance):
                 invoiceTextTemplate = self.invoiceAboveThresholdTemplate
             else:
                 invoiceTextTemplate = self.invoiceBelowThresholdTemplate
