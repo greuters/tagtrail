@@ -319,7 +319,7 @@ class BaseGUI(ABC):
             if sys.platform == "linux" or sys.platform == "linux2":
                 self.root.attributes('-zoomed', True)
             elif sys.platform == "darwin":
-                self.root.attributes('-zoomed', True)
+                self.root.state('zoomed')
             elif sys.platform == "win32":
                 self.root.state('zoomed')
         else:

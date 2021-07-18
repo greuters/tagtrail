@@ -67,6 +67,22 @@ On Ubuntu
 
 * To verify everything works as expected: make test
 
+On MacOs
+========
+* install dependencies (see Ubuntu section for the moment)
+
+* git clone https://github.com/greuters/tagtrail.git
+
+* cd tagtrail
+
+* python3 -m venv tagtrail-env
+
+* source tagtrail-env/bin/activate
+
+* pip install --upgrade pip && pip install -r requirements.txt
+
+* To verify everything works as expected: make test
+
 On Windows
 ==========
 
