@@ -44,7 +44,7 @@ sphinxcontrib-htmlhelp==1.0.3  # via sphinx
 sphinxcontrib-jsmath==1.0.1  # via sphinx
 sphinxcontrib-qthelp==1.0.3  # via sphinx
 sphinxcontrib-serializinghtml==1.1.4  # via sphinx
-tesserocr==2.5.1          # via -r requirements.in
+tesserocr==2.5.2          # via -r requirements.in
 text-unidecode==1.3       # via python-slugify
 urllib3==1.26.4           # via requests
 
