@@ -813,18 +813,6 @@ class TagRecognizer():
 
         self.__identifySheet()
 
-        # assume box should be filled if at least two neighbours are filled
-        for box in self.__sheet.boxes():
-            if box.text != '' or box.confidence == 0:
-                continue
-            numFilledNeighbours = 0
-            for direction in ["Up", "Down", "Left", "Right"]:
-                neighbourBox = self.__sheet.neighbourBox(box, direction)
-                if neighbourBox is not None and neighbourBox.text != '':
-                    numFilledNeighbours += 1
-            if 2 <= numFilledNeighbours:
-                box.confidence = 0
-
         for box in self.__sheet.boxes():
             if box.confidence < self.confidenceThreshold:
                 box.bgColor = (0, 0, 80)
