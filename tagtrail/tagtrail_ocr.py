@@ -608,7 +608,8 @@ class TagRecognizer():
             writeDebugImages = False,
             log = helpers.Log(),
             searchMarginSize = 25,
-            borderSize = 5,
+            cornerBorderSize = 5,
+            rotationBorderSize = 20,
             minPlausibleBoxSize = 1000,
             minComponentArea = 100,
             minAspectRatio = .2,
@@ -635,10 +636,18 @@ class TagRecognizer():
         :param searchMarginSize: margin by which each box image is extended to look
             for its actual corners
         :type searchMarginSize: int
-        :param borderSize: Size of the border of a box that is discarded. When the
-            actual corners of a box are identified, their bounding rectangle is cropped
-            by borderSize to only consider the area inside the box for ocr
-        :type borderSize: int
+        :param cornerBorderSize: Size of the border of a box that is discarded
+            when identifying relevant contours in a box. After the actual
+            corners of a box are identified, their bounding rectangle is shrunk
+            by cornerBorderSize before searching contours relevant for OCR.
+        :type cornerBorderSize: int
+        :param rotationBorderSize: Size of the border around a box that is
+            additionally used for rotation. After the actual corners of a box
+            are identified and the relevant contours have been found, the min
+            enclosing rectangle of the contours is found and rotated to be
+            horizontal. To avoid missing pixels during rotation, a region
+            rotationBorderSize larger than the box is used for rotation.
+        :type rotationBorderSize: int
         :param minPlausibleBoxSize: Minimal size of a box to be considered
             sucessfully detected. If the area identified as being inside the box is
             smaller than this, identification is considered to have failed.
@@ -666,7 +675,8 @@ class TagRecognizer():
         self.writeDebugImages = writeDebugImages
         self.log = log
         self.searchMarginSize = searchMarginSize
-        self.borderSize = borderSize
+        self.cornerBorderSize = cornerBorderSize
+        self.rotationBorderSize = rotationBorderSize
         self.minPlausibleBoxSize = minPlausibleBoxSize
         self.minComponentArea = minComponentArea
         self.minAspectRatio = minAspectRatio
@@ -1055,9 +1065,17 @@ class TagRecognizer():
             box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
-        p = RotateLabel(f'_{box.name}_09_rotation', self.__prefix,
+        # use a bigger region around the tag for rotation, to avoid cutting
+        # corners when rotating
+        p = RotateTag(f'_{box.name}_09_rotation', self.__prefix,
                 writeDebugImages = self.writeDebugImages, log=self.log)
-        rotatedImg = p.process(maskImg, boxInputImg)
+        rotationInputImg = self.__inputImg[
+                y0-self.rotationBorderSize:y1+self.rotationBorderSize,
+                x0-self.rotationBorderSize:x1+self.rotationBorderSize]
+        rotationInputMask = cv.copyMakeBorder(maskImg, self.rotationBorderSize,
+                self.rotationBorderSize, self.rotationBorderSize, self.rotationBorderSize,
+                cv.BORDER_CONSTANT, value=(0, 0, 0))
+        rotatedImg = p.process(rotationInputImg, rotationInputMask)
 
         # blend ocrImg with thresholded version
         grayImg = cv.cvtColor(rotatedImg, cv.COLOR_BGR2GRAY)
@@ -1117,10 +1135,10 @@ class TagRecognizer():
             cv.imwrite(f'{self.__prefix}_{box.name}_00_cornerImg.jpg', cornerImg)
 
         return [
-                [extendedX0 + cornerX0 + self.borderSize,
-                   extendedY0 + cornerY0 + self.borderSize],
-                [extendedX0 + cornerX1 - self.borderSize,
-                    extendedY0 + cornerY1 - self.borderSize]
+                [extendedX0 + cornerX0 + self.cornerBorderSize,
+                   extendedY0 + cornerY0 + self.cornerBorderSize],
+                [extendedX0 + cornerX1 - self.cornerBorderSize,
+                    extendedY0 + cornerY1 - self.cornerBorderSize]
                 ]
 
     def __findClosestString(self, searchString, candidateStrings):
@@ -1168,11 +1186,12 @@ class TagRecognizer():
                 f'{outputDir}{self.filename()} already exists')
         self.__sheet.store(outputDir)
 
-class RotateLabel():
+class RotateTag():
     """
-    A processor that takes a mask and original image of a label, identifies the
-    bounding rectangle of all contours on the mask and returns the original
-    image cropped to the bounding rectangle and rotated to be horizontal.
+    A processor that takes the original image of a tag and a cleaned mask of
+    the characters on the tag, identifies the bounding rectangle of all
+    contours on the mask and returns a copy of the original image cropped to
+    the bounding rectangle of the contours and rotated to be horizontal.
 
     :param name: name of the processor, used to identify logs and debug images
     :type name: str
@@ -1193,27 +1212,20 @@ class RotateLabel():
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
         self.log = log
-        self.borderSize = 20
 
-    def process(self, maskImg, originalImg):
+    def process(self, originalImg, maskImg):
         """
-        Crop and rotate the label contours
+        Crop and rotate the tag contours
 
-        :param maskImg: image where all label contours are in white
-        :type maskImg: black/white image
-        :param originalImg: original scanned image of the label, same size as maskImg
+        :param originalImg: original scanned image of the region around the tag
         :type originalImg: BGR image
-        :return: warped sub-image of the originalImg, where the masked label is
-            cropped and rotated to be horizontal
+        :param maskImg: masked copy of originalImg where all relevant contours
+            are in white
+        :type maskImg: black/white image
+        :return: warped sub-image of the originalImg, cropped to the bounding
+            rectangle of the contours in maskImg and rotated to be horizontal
         :rtype: BGR image
         """
-        maskImg = cv.copyMakeBorder(maskImg, self.borderSize,
-                self.borderSize, self.borderSize, self.borderSize,
-                cv.BORDER_CONSTANT, value=(0, 0, 0))
-        originalImg = cv.copyMakeBorder(originalImg, self.borderSize,
-                self.borderSize, self.borderSize, self.borderSize,
-                cv.BORDER_CONSTANT, value=(0, 0, 0))
-
         # find minAreaRect of joint contours
         contours, _ = cv.findContours(maskImg, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
         joinedContour = np.vstack(contours)
@@ -1229,16 +1241,21 @@ class RotateLabel():
         rotationMatrix = cv.getRotationMatrix2D(center, rotationAngle, 1.0)
 
         originalImgHeight, originalImgWidth, _ = originalImg.shape
-        rotatedImg = cv.warpAffine(originalImg, rotationMatrix, (originalImgWidth, originalImgHeight), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
-        outputImg = cv.getRectSubPix(rotatedImg, (int(minAreaRectWidth), int(minAreaRectHeight)), center)
+        rotatedImg = cv.warpAffine(originalImg, rotationMatrix,
+                (originalImgWidth, originalImgHeight), flags=cv.INTER_CUBIC,
+                borderMode=cv.BORDER_REPLICATE)
+        outputImg = cv.getRectSubPix(rotatedImg,
+                (int(minAreaRectWidth), int(minAreaRectHeight)), center)
 
         if self.writeDebugImages:
             minAreaImg = cv.cvtColor(np.copy(maskImg), cv.COLOR_GRAY2BGR)
             cv.drawContours(minAreaImg,[np.int0(cv.boxPoints(minAreaRect))],0,(0,0,255),2)
             minAreaImgHeight, minAreaImgWidth, _ = minAreaImg.shape
-            minAreaRotatedImg = cv.warpAffine(minAreaImg, rotationMatrix, (minAreaImgWidth, minAreaImgHeight), flags=cv.INTER_CUBIC, borderMode=cv.BORDER_REPLICATE)
+            minAreaRotatedImg = cv.warpAffine(minAreaImg, rotationMatrix,
+                    (minAreaImgWidth, minAreaImgHeight), flags=cv.INTER_CUBIC,
+                    borderMode=cv.BORDER_REPLICATE)
 
-            cv.imwrite(f'{self.tmpDir}{self.name}_0_input.jpg', maskImg)
+            cv.imwrite(f'{self.tmpDir}{self.name}_0_input.jpg', originalImg)
             cv.imwrite(f'{self.tmpDir}{self.name}_1_minArea.jpg', minAreaImg)
             cv.imwrite(f'{self.tmpDir}{self.name}_2_minAreaRotated.jpg', minAreaRotatedImg)
             cv.imwrite(f'{self.tmpDir}{self.name}_3_output.jpg', outputImg)
