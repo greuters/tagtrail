@@ -1025,9 +1025,15 @@ class PostfinanceTransactionList(DatabaseList):
                     '', '', '', '', '']
                 ]:
             return None
+        bookingDate = helpers.DateUtility.strptime(rowValues[0],
+                    self.dateFormat)
+        if bookingDate < self.dateFrom or self.dateTo < bookingDate:
+            raise ValueError('invalid postfinance file: date of row ' + \
+                f'{rowValues} is not in expected range '  + \
+                f'[{self.dateFrom}, {self.dateTo}]')
+
         return PostfinanceTransaction(
-                bookingDate = helpers.DateUtility.strptime(rowValues[0],
-                    self.dateFormat),
+                bookingDate,
                 notificationText = rowValues[1],
                 creditAmount = None if rowValues[2] == '' else float(rowValues[2]),
                 debitAmount = None if rowValues[3] == '' else float(rowValues[3]),
