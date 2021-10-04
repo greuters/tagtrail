@@ -98,7 +98,8 @@ class GUI(gui_components.BaseGUI):
         self.accountingDataPath = accountingDataPath
         self.accountingDate = accountingDate
 
-        self.inputCanvas = None
+        self.transactionFrame = None
+        self.scrollbarY = None
 
         if not self.loadData():
             return
@@ -117,22 +118,23 @@ class GUI(gui_components.BaseGUI):
         self.root.bind("<Left>", self.switchInputFocus)
         self.root.bind("<Right>", self.switchInputFocus)
 
-        self.loadInputCanvas()
+        if self.transactionFrame is None:
+            self.transactionFrame = gui_components.ScrollableFrame(self.root,
+                    relief=tkinter.GROOVE)
+        self.transactionFrameWidth = self.width - self.buttonFrameWidth
+        self.transactionFrame.config(width = self.transactionFrameWidth,
+                    height = self.height)
+        self.transactionFrame.place(x=0, y=0)
+        self.loadTransactions()
 
         buttons = []
         buttons.append(('saveAndExit', 'Save and exit', self.saveAndExit))
         buttons.append(('saveAndReload', 'Save and reload current', self.saveAndReloadDB))
         self.addButtonFrame(buttons)
 
-    def loadInputCanvas(self):
-        # input canvas - one entry per transaction
-        canvasWidth = self.width - self.buttonFrameWidth
-        if self.inputCanvas is None:
-            self.inputCanvas = tkinter.Canvas(self.root)
-        for w in self.inputCanvas.winfo_children():
+    def loadTransactions(self):
+        for w in self.transactionFrame.scrolledwindow.winfo_children():
             w.destroy()
-        self.inputCanvas.place(x=0, y=0, width=canvasWidth, height=self.height)
-
         entryWidth = self.buttonFrameWidth
         possibleMemberIds = list(sorted(self.db.members.keys()))
         y = 0
@@ -143,16 +145,16 @@ class GUI(gui_components.BaseGUI):
                 continue
 
             backgroundColor = backgroundColors[idx % 2]
-            frame = tkinter.Frame(self.inputCanvas, relief=tkinter.RIDGE,
-                    background=backgroundColor, borderwidth=3, width=canvasWidth)
+            frame = tkinter.Frame(self.transactionFrame.scrolledwindow, relief=tkinter.RIDGE,
+                    background=backgroundColor, borderwidth=3)
             frame.pack(fill=tkinter.BOTH)
 
             label = tkinter.Message(frame,
                     text=transaction.notificationText,
                     anchor=tkinter.E,
                     background=backgroundColor,
-                    width=canvasWidth-entryWidth)
-            label.pack(side=tkinter.RIGHT)
+                    width=self.transactionFrameWidth)
+            label.pack(side=tkinter.RIGHT, fill=tkinter.BOTH)
 
             # need to update the screen to get the correct label height
             # caveat: during the update, a <Configure> event might be triggered
@@ -171,7 +173,8 @@ class GUI(gui_components.BaseGUI):
                 text = transaction.memberId
                 confidence = 1
             entry = gui_components.AutocompleteEntry(text, confidence, possibleMemberIds,
-                    self.switchFocus, True, self.inputCanvas, frame.winfo_x(),
+                    self.switchFocus, True,
+                    self.transactionFrame.scrolledwindow, frame.winfo_x(),
                     frame.winfo_y()+h, frame)
             entry.transaction = transaction
             entry.pack(side=tkinter.LEFT)
@@ -242,7 +245,7 @@ class GUI(gui_components.BaseGUI):
     def saveAndReloadDB(self, event=None):
         self.save()
         self.loadData()
-        self.loadInputCanvas()
+        self.loadTransactions()
         return "break"
 
     def save(self):
