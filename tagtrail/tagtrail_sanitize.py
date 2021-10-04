@@ -363,7 +363,7 @@ class InputSheet(ProductSheet):
 
     def releaseFocus(self, event):
         # cudos to https://www.daniweb.com/programming/software-development/code/216830/tkinter-keypress-event-python
-        if str(event.type) == "KeyPress" and event.char != event.keysym:
+        if event.type == '2' and event.char != event.keysym:
             # punctuation or special key, distinguish by event.keysym
             if event.keysym == "Return":
                 event.widget.confidence = 1
