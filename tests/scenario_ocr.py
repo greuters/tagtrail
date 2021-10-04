@@ -17,7 +17,7 @@ class OcrTest(unittest.TestCase):
     minSheetPrecision = 0.95
     minSheetRecall = 0.81
     minAveragePrecision = 0.99
-    minAverageRecall = 0.92
+    minAverageRecall = 0.94
 
     writeDebugImages = False
 
