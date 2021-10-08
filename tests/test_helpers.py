@@ -166,9 +166,19 @@ class TagtrailTestCase(unittest.TestCase):
 
         testedFilenames = list(filter(filenameFilter, testedFilenames))
 
-        match, mismatch, errors = filecmp.cmpfiles(
-                templateDir, testDir, testedFilenames)
-        self.assertEqual(len(errors), 0, errors)
-        self.assertEqual(len(mismatch), 0, mismatch)
-        self.assertEqual(len(match), len(testedFilenames),
-                f'match: {match}, testedFilenames: {testedFilenames}')
+        for filename in testedFilenames:
+            self.assert_file_equality(f'{templateDir}/{filename}',
+                f'{testDir}/{filename}')
+                    
+    def assert_file_equality(self, path1, path2):
+        with open(path1, 'r') as file1, open(path2, 'r') as file2:
+            line1 = line2 = True
+            while line1 and line2:
+                line1 = file1.readline()
+                line2 = file2.readline()
+                self.assertEqual(line1, line2, 
+                        f"""{path1} and {path2} differ in the following line:
+                            {line1} != {line2}""")
+                self.assertEqual(line1, line2, 
+                    f'{path1} and {path2} have different numbers of lines')
+    

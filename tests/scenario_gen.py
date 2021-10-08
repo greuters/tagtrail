@@ -137,12 +137,12 @@ class GenTest(TagtrailTestCase):
         for root, dirs, filenames in os.walk(f'{self.testGenDir}0_input/'):
             if root.startswith(f'{self.testGenDir}0_input/sheets'):
                 continue
-            path = root.split(os.sep)
+            path = root.split('/')
             for filename in filenames:
                 if filename == 'products.csv':
                     continue
                 self.assertTrue(filecmp.cmp(f'{root}/{filename}',
-                        f'{self.testNextDir}{os.sep.join(path[3:])}/{filename}'))
+                        f'{self.testNextDir}{"/".join(path[3:])}/{filename}'))
 
         ## check consistency of next/0_input/products.csv
         nextDb = database.Database(f'{self.testNextDir}0_input/')

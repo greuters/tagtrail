@@ -113,37 +113,39 @@ class AccountTest(TagtrailTestCase):
         outputSheetDir = f'{self.testAccountDir}5_output/sheets/'
         taggedSheetDir = f'{self.testAccountDir}2_taggedProductSheets/'
         nextSheetDir = f'{self.testNextDir}0_input/sheets/'
-        def assert_sheet_equality(sheet, inputDir, outputDir):
-            self.assertTrue(filecmp.cmp(f'{inputDir}{sheet.filename}',
-                f'{outputDir}{sheet.filename}'),
-                f'{inputDir} and {outputDir} of {sheet.category} sheet '
-                f'{sheet.filename} differ')
 
         for sheet in model.accountedSheets:
             if sheet.category == 'newActive':
                 if os.path.exists(f'{taggedSheetDir}{sheet.filename}'):
-                    assert_sheet_equality(sheet, taggedSheetDir,
-                            f'{outputSheetDir}active/')
+                    self.assert_file_equality(
+                        f'{taggedSheetDir}{sheet.filename}',
+                        f'{outputSheetDir}active/{sheet.filename}')
                 else:
-                    assert_sheet_equality(sheet, f'{inputSheetDir}inactive/',
-                            f'{outputSheetDir}active/')
+                    self.assert_file_equality(
+                        f'{inputSheetDir}inactive/{sheet.filename}',
+                        f'{outputSheetDir}active/{sheet.filename}')
             elif sheet.category == 'missingActive':
-                assert_sheet_equality(sheet, f'{inputSheetDir}active/',
-                        f'{outputSheetDir}active/')
+                self.assert_file_equality(
+                    f'{inputSheetDir}active/{sheet.filename}',
+                    f'{outputSheetDir}active/{sheet.filename}')
             elif sheet.category == 'active':
-                assert_sheet_equality(sheet, taggedSheetDir,
-                        f'{outputSheetDir}active/')
+                self.assert_file_equality(
+                    f'{taggedSheetDir}{sheet.filename}',
+                    f'{outputSheetDir}active/{sheet.filename}')
             elif sheet.category == 'newInactive':
-                assert_sheet_equality(sheet, taggedSheetDir,
-                        f'{outputSheetDir}inactive/')
+                self.assert_file_equality(
+                    f'{taggedSheetDir}{sheet.filename}',
+                    f'{outputSheetDir}inactive/{sheet.filename}')
                 self.assertTrue(model.db.products[sheet.productId()].expectedQuantity
                         <= 0)
             elif sheet.category == 'inactive':
-                assert_sheet_equality(sheet, f'{inputSheetDir}inactive/',
-                        f'{outputSheetDir}inactive/')
+                self.assert_file_equality(
+                    f'{inputSheetDir}inactive/{sheet.filename}',
+                    f'{outputSheetDir}inactive/{sheet.filename}')
             elif sheet.category == 'replace':
-                assert_sheet_equality(sheet, f'{inputSheetDir}active/',
-                        f'{outputSheetDir}obsolete/replaced/')
+                self.assert_file_equality(
+                    f'{inputSheetDir}active/{sheet.filename}',
+                    f'{outputSheetDir}obsolete/replaced/{sheet.filename}')
                 self.assertTrue(os.path.exists(f'{self.testAccountDir}'
                     f'/1_emptySheets/{sheet.filename}.jpg'),
                     f'new empty sheet {sheet.filename} missing')
@@ -156,8 +158,9 @@ class AccountTest(TagtrailTestCase):
                         sheets.ProductSheet.maxQuantity(),
                         'new replacing sheet is not empty')
             elif sheet.category == 'remove':
-                assert_sheet_equality(sheet, taggedSheetDir,
-                        f'{outputSheetDir}obsolete/removed/')
+                self.assert_file_equality(
+                    f'{taggedSheetDir}{sheet.filename}',
+                    f'{outputSheetDir}obsolete/removed/{sheet.filename}')
                 removedSheet = sheets.ProductSheet()
                 removedSheet.load(f'{taggedSheetDir}{sheet.filename}')
                 self.assertTrue(removedSheet.isFull(),
@@ -169,11 +172,13 @@ class AccountTest(TagtrailTestCase):
         for sheet in model.accountedSheets:
             if sheet.category in ['newActive', 'missingActive', 'active',
                     'replace']:
-                assert_sheet_equality(sheet, f'{outputSheetDir}active/',
-                        f'{nextSheetDir}active/')
+                self.assert_file_equality(
+                    f'{outputSheetDir}active/{sheet.filename}',
+                    f'{nextSheetDir}active/{sheet.filename}')
             elif sheet.category in ['newInactive', 'inactive']:
-                assert_sheet_equality(sheet, f'{outputSheetDir}inactive/',
-                        f'{nextSheetDir}inactive/')
+                self.assert_file_equality(
+                    f'{outputSheetDir}inactive/{sheet.filename}',
+                    f'{nextSheetDir}inactive/{sheet.filename}')
             else:
                 assert(sheet.category == 'remove')
                 self.assertFalse(os.path.exists(
@@ -219,21 +224,19 @@ class AccountTest(TagtrailTestCase):
                 modifiedMemberIds)
 
         if modifiedProductIds == [] and modifiedMemberIds == []:
-            self.assertTrue(filecmp.cmp(
+            self.assert_file_equality(
                 f'{self.testAccountDir}4_gnucash/transactions.csv',
-                f'{self.templateAccountDir}4_gnucash/transactions.csv'),
-                f'{self.testAccountDir}4_gnucash/transactions.csv '
-                'differs from template')
+                f'{self.templateAccountDir}4_gnucash/transactions.csv')
 
         if modifiedMemberIds == []:
-            self.assertTrue(filecmp.cmp(f'{self.testNextDir}0_input/members.tsv',
-                f'{self.templateNextDir}0_input/members.tsv'),
-                f'{self.testNextDir}0_input/members.tsv differs from template')
+            self.assert_file_equality(
+                f'{self.testNextDir}0_input/members.tsv',
+                f'{self.templateNextDir}0_input/members.tsv')
 
         if modifiedProductIds == []:
-            self.assertTrue(filecmp.cmp(f'{self.testNextDir}0_input/products.csv',
-                f'{self.templateNextDir}0_input/products.csv'),
-                f'{self.testNextDir}0_input/products.csv differs from template')
+            self.assert_file_equality(
+                f'{self.testNextDir}0_input/products.csv',
+                f'{self.templateNextDir}0_input/products.csv')
 
     def check_members_tsv(self, model):
         """
