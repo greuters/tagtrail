@@ -10,7 +10,6 @@ import argparse
 import unittest
 import shutil
 import os
-import filecmp
 
 class GenTest(TagtrailTestCase):
     """ Tests of tagtrail_gen """
@@ -141,8 +140,9 @@ class GenTest(TagtrailTestCase):
             for filename in filenames:
                 if filename == 'products.csv':
                     continue
-                self.assertTrue(filecmp.cmp(f'{root}/{filename}',
-                        f'{self.testNextDir}{"/".join(path[3:])}/{filename}'))
+                self.assert_file_equality(
+                    f'{root}/{filename}',
+                    f'{self.testNextDir}{"/".join(path[3:])}/{filename}')
 
         ## check consistency of next/0_input/products.csv
         nextDb = database.Database(f'{self.testNextDir}0_input/')

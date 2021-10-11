@@ -20,7 +20,6 @@ from .context import database
 from .context import helpers
 from .context import sheets
 
-import filecmp
 import os
 import random
 import unittest
@@ -157,8 +156,7 @@ class TagtrailTestCase(unittest.TestCase):
         """
         testedFilenames = os.listdir(testDir)
 
-        # make sure no template files are missed, as filecmp only compares the
-        # given testedFilenames
+        # make sure no template files are missed
         for filename in os.listdir(templateDir):
             if not filenameFilter(filename):
                 continue
@@ -169,16 +167,39 @@ class TagtrailTestCase(unittest.TestCase):
         for filename in testedFilenames:
             self.assert_file_equality(f'{templateDir}/{filename}',
                 f'{testDir}/{filename}')
-                    
+
     def assert_file_equality(self, path1, path2):
-        with open(path1, 'r') as file1, open(path2, 'r') as file2:
-            line1 = line2 = True
-            while line1 and line2:
-                line1 = file1.readline()
-                line2 = file2.readline()
-                self.assertEqual(line1, line2, 
-                        f"""{path1} and {path2} differ in the following line:
-                            {line1} != {line2}""")
-                self.assertEqual(line1, line2, 
-                    f'{path1} and {path2} have different numbers of lines')
-    
+        """
+        Check that files at path1 and path2 are the same.
+
+        For text files, this compares line by line to avoid issues with line
+        break encoding on different platforms (e.g. template file written on
+        linux, test run on windows).
+
+        If a file cannot be decoded as utf-8, it is compared in binary mode.
+
+        :param path1: path to first file
+        :type path1: str
+        :param path2: path to second file
+        :type path2: str
+        """
+        try:
+            with open(path1, 'r') as file1, open(path2, 'r') as file2:
+                line1 = line2 = True
+                while line1 and line2:
+                    line1 = file1.readline()
+                    line2 = file2.readline()
+                    self.assertEqual(line1, line2,
+                            f"""{path1} and {path2} differ in the following line:
+                                {line1} != {line2}""")
+                    self.assertEqual(line1, line2,
+                        f'{path1} and {path2} have different numbers of lines')
+        except UnicodeDecodeError:
+            with open(path1, 'rb') as file1, open(path2, 'rb') as file2:
+                chunkSize = 1000
+                chunk1 = chunk2 = True
+                while chunk1 and chunk2:
+                    chunk1 = file1.read(chunkSize)
+                    chunk2 = file2.read(chunkSize)
+                    self.assertEqual(chunk1, chunk2,
+                            f'{path1} and {path2} differ (binary comparison)')

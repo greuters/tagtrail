@@ -13,7 +13,6 @@ import unittest
 import shutil
 import os
 import random
-import filecmp
 import slugify
 
 class AccountTest(TagtrailTestCase):
