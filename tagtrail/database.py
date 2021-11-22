@@ -332,6 +332,7 @@ class Product(DatabaseObject):
             addedQuantity = None,
             soldQuantity = None,
             sheetsToPrint = None,
+            supplier = None,
             eaternityName = None,
             origin = None,
             production = None,
@@ -385,6 +386,7 @@ class Product(DatabaseObject):
         self.addedQuantity = addedQuantity
         self.soldQuantity = soldQuantity
         self.sheetsToPrint = sheetsToPrint
+        self.supplier = supplier
         self.eaternityName = eaternityName
         self.origin = origin
         self.production = production
@@ -492,13 +494,14 @@ class ProductDict(DatabaseDict):
                 # not reading expectedQuantity
                 inventoryQuantity = None if not rowValues[8] else int(rowValues[8]),
                 sheetsToPrint = rowValues[9],
+                supplier = rowValues[10],
                 # Comment is not used within tagtrail
-                eaternityName = rowValues[11],
-                origin = rowValues[12],
-                production = rowValues[13],
-                transport = rowValues[14],
-                conservation = rowValues[15],
-                gCo2e = None if not rowValues[16] else int(rowValues[16]))
+                eaternityName = rowValues[12],
+                origin = rowValues[13],
+                production = rowValues[14],
+                transport = rowValues[15],
+                conservation = rowValues[16],
+                gCo2e = None if not rowValues[17] else int(rowValues[17]))
 
     def prefixValues(self):
         return ['' if self.previousQuantityDate is None else str(self.previousQuantityDate),
@@ -516,6 +519,7 @@ class ProductDict(DatabaseDict):
                 '' if p.expectedQuantity is None else str(p.expectedQuantity),
                 '' if p.inventoryQuantity is None else str(p.inventoryQuantity),
                 '' if p.sheetsToPrint is None else ','.join(p.sheetsToPrint),
+                '' if p.supplier is None else p.supplier,
                 '', # Comment is not used within tagtrail
                 '' if p.eaternityName is None else p.eaternityName,
                 '' if p.origin is None else p.origin,
