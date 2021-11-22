@@ -22,6 +22,7 @@ import os
 import datetime
 import time
 import re
+from decimal import Decimal
 from keyrings.cryptfile.cryptfile import CryptFileKeyring
 import getpass
 
@@ -127,7 +128,7 @@ class DateUtility:
     def strptime(cls, dateStr, dateFormat = None):
         if dateFormat is None:
             dateFormat = cls.dateFormat
-        try: 
+        try:
             t = time.strptime(dateStr, dateFormat)
         except ValueError as e:
             print(f'Error: expected format: {dateFormat}')
@@ -144,26 +145,42 @@ def readPrefixRow(prefix, row):
     return row[1]
 
 def roundPriceCH(price):
-    # round to 5-cent precision
-    # price : float
-    # returns float
-    return round(price * 20) / 20
+    """
+    Round price to 5-cent precision
+
+    :param price: price to be rounded
+    :type price: Decimal
+    :return: Decimal
+    """
+    twenty = Decimal(20)
+    return round(price * twenty) / twenty
 
 def formatPrice(price, currency = None):
-    # price : float
-    # returns string
+    """
+    Quantize to '.01' and append currency if provided
+
+    :param price: price to be formatted
+    :type price: Decimal
+    :param currency: currency identifier to be appended
+    :type currency: str
+    :return: str
+    """
+    if not isinstance(price, Decimal):
+        raise TypeError(f'price must be a Decimal, type is {type(price)}')
+
+    template = Decimal(".01")
     if currency is None:
-        return '%.2f' % (price)
+        return f'{price.quantize(template)}'
     else:
-        return f'%.2f {currency}' % (price)
+        return f'{price.quantize(template)} {currency}'
 
 
 def priceFromFormatted(priceStr):
     numberOnly = ''.join(re.findall('\d|\.', priceStr))
     if numberOnly:
-        return float(numberOnly)
+        return Decimal(numberOnly)
     else:
-        return 0
+        raise ValueError(f"'{priceStr}' is not a formatted number")
 
 class Log(ABC):
     LEVEL_DEBUG = 0

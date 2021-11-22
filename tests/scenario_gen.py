@@ -10,6 +10,7 @@ import argparse
 import unittest
 import shutil
 import os
+from decimal import Decimal
 
 class GenTest(TagtrailTestCase):
     """ Tests of tagtrail_gen """
@@ -239,7 +240,8 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir, self.log)
 
-        testProduct = database.Product('test product', 100, 'g', 12.3, .05, 0,
+        testProduct = database.Product('test product', 100, 'g',
+                Decimal(12.3), Decimal(.05), 0,
                 addedQuantity = 0, soldQuantity = 0)
         model.db.products[testProduct.id] = testProduct
         assert(testProduct.expectedQuantity == 0)
@@ -286,9 +288,10 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir, self.log)
         (testProduct, _) = self.create_inactive_test_product(model.db)
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 + priceChangeThreshold * 1.5
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) + priceChangeThreshold
+                * Decimal(1.5))
         model.initializeSheets()
         model.save()
         self.check_files(model, [testProduct.id])
@@ -304,9 +307,10 @@ class GenTest(TagtrailTestCase):
         (testProduct, _) = self.create_active_test_product(model.db)
         sheet = model.generateProductSheet(testProduct, 4)
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 - priceChangeThreshold * 3
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) - priceChangeThreshold
+                * Decimal(3))
         model.initializeSheets()
         model.save()
         self.check_files(model, [testProduct.id])
@@ -324,9 +328,10 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir, self.log)
         (testProduct, _) = self.create_inactive_test_product(model.db)
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 - priceChangeThreshold / 2
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) - priceChangeThreshold
+                / Decimal(2))
         model.initializeSheets()
         model.save()
 
@@ -343,9 +348,10 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir, self.log)
         (testProduct, _) = self.create_active_test_product(model.db)
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 + priceChangeThreshold / 3
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) + priceChangeThreshold
+                / Decimal(3))
         model.initializeSheets()
         model.save()
 
@@ -364,9 +370,10 @@ class GenTest(TagtrailTestCase):
         (testProduct, _) = self.create_active_test_product(model.db)
         model.initializeSheets()
         # smuggle in price change after initialization
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 + priceChangeThreshold * 3
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) + priceChangeThreshold
+                * Decimal(3))
         self.assertRaises(AssertionError, model.save)
 
     def test_amount_change_with_low_price(self):
@@ -378,9 +385,10 @@ class GenTest(TagtrailTestCase):
                 self.testGenDir, self.testNextDir, self.log)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.amount -= 5
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 + priceChangeThreshold / 3
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) + priceChangeThreshold
+                / Decimal(3))
         model.initializeSheets()
         model.save()
 
@@ -403,9 +411,10 @@ class GenTest(TagtrailTestCase):
                 self.testGenDir, self.testNextDir, self.log)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.unit = 'l'
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 - priceChangeThreshold / 2
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) - priceChangeThreshold
+                / Decimal(2))
         model.initializeSheets()
         model.save()
 
@@ -428,9 +437,10 @@ class GenTest(TagtrailTestCase):
                 self.testGenDir, self.testNextDir, self.log)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.addedQuantity = 100
-        priceChangeThreshold = self.config.getint('tagtrail_gen',
-                'max_neglectable_price_change_percentage') / 100
-        testProduct.purchasePrice *= 1 - priceChangeThreshold / 2
+        priceChangeThreshold = (self.config.getint('tagtrail_gen',
+            'max_neglectable_price_change_percentage') / Decimal(100))
+        testProduct.purchasePrice *= (Decimal(1) - priceChangeThreshold
+                / Decimal(2))
         model.initializeSheets()
         model.save()
 
@@ -667,7 +677,7 @@ class GenTest(TagtrailTestCase):
         for sheet in model.sheets:
             if sheet.name == testProduct.description:
                 sheet.grossSalesPrice = helpers.formatPrice(
-                        testProduct.grossSalesPrice()+0.1,
+                        testProduct.grossSalesPrice()+Decimal(0.1),
                         self.config.get('general', 'currency'))
                 break
 

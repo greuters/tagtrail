@@ -33,6 +33,7 @@ import copy
 import re
 import itertools
 import configparser
+from decimal import Decimal
 from collections import UserDict, UserList
 
 from . import helpers
@@ -268,8 +269,8 @@ class Member(DatabaseObject):
 
     @balance.setter
     def balance(self, balance):
-        if not type(balance) is float:
-            raise TypeError(f'balance is not a float: {balance}')
+        if not type(balance) is Decimal:
+            raise TypeError(f'balance is not a decimal {balance}')
         self.__balance = balance
 
 
@@ -305,8 +306,8 @@ class MemberDict(DatabaseDict):
             emails = [rowValues[2]]
         else:
             emails = []
-        balance = rowValues[3] if rowValues[3] else 0
-        return Member(memberId, name, emails, float(balance))
+        balance = Decimal(rowValues[3]) if rowValues[3] else Decimal(0)
+        return Member(memberId, name, emails, Decimal(balance))
 
     def prefixValues(self):
         return [self.accountingDate]
@@ -346,10 +347,10 @@ class Product(DatabaseObject):
             raise TypeError(f'amount is not an integer, {amount}')
         if not type(unit) is str:
             raise TypeError(f'unit is not a string, {unit}')
-        if not type(purchasePrice) is float:
-            raise TypeError(f'purchasePrice is not a float, {purchasePrice}')
-        if not type(marginPercentage) is float:
-            raise TypeError(f'marginPercentage is not a float, {marginPercentage}')
+        if not type(purchasePrice) is Decimal:
+            raise TypeError(f'purchasePrice is not a decimal, {purchasePrice}')
+        if not type(marginPercentage) is Decimal:
+            raise TypeError(f'marginPercentage is not a decimal, {marginPercentage}')
         if inventoryQuantity and not type(inventoryQuantity) is int:
             raise TypeError(f'inventoryQuantity is not an integer, {inventoryQuantity}')
         if sheetsToPrint:
@@ -459,8 +460,8 @@ class ProductDict(DatabaseDict):
         self.previousQuantityDate = None if previousQuantityDate == '' else helpers.DateUtility.strptime(previousQuantityDate)
         self.expectedQuantityDate = None if expectedQuantityDate == '' else helpers.DateUtility.strptime(expectedQuantityDate)
         self.inventoryQuantityDate = None if inventoryQuantityDate == '' else helpers.DateUtility.strptime(inventoryQuantityDate)
-        self.productMarginPercentage = config.getfloat('general',
-                'product_margin_percentage')
+        self.productMarginPercentage = Decimal(config.get('general',
+                'product_margin_percentage'))
 
     @classmethod
     def configSection(cls):
@@ -486,7 +487,7 @@ class ProductDict(DatabaseDict):
         return Product(description = rowValues[0],
                 amount = int(rowValues[1]),
                 unit = rowValues[2],
-                purchasePrice = float(rowValues[3]),
+                purchasePrice = Decimal(rowValues[3]),
                 marginPercentage = self.productMarginPercentage,
                 previousQuantity = int(rowValues[4]),
                 addedQuantity = 0 if not rowValues[5] else int(rowValues[5]),
@@ -640,11 +641,11 @@ class Bill(DatabaseDict):
         self.currentAccountingDate = currentAccountingDate \
                 if isinstance(currentAccountingDate, datetime.date) else \
                 helpers.DateUtility.strptime(currentAccountingDate)
-        self.previousBalance = float(previousBalance)
-        self.totalPayments = float(totalPayments)
-        self.setCorrection(float(correctionTransaction), correctionJustification)
-        self.expectedTotalPrice = expectedTotalPrice
-        self.currentExpectedBalance = currentExpectedBalance
+        self.previousBalance = Decimal(previousBalance)
+        self.totalPayments = Decimal(totalPayments)
+        self.setCorrection(Decimal(correctionTransaction), correctionJustification)
+        self.expectedTotalPrice = None if expectedTotalPrice is None else Decimal(expectedTotalPrice)
+        self.currentExpectedBalance = None if currentExpectedBalance is None else Decimal(currentExpectedBalance)
         self.expectedTotalGCo2e = expectedTotalGCo2e
         self.textRepresentationHeader = config.get(
                 self.configSection(), 'text_representation_header')
@@ -679,6 +680,8 @@ class Bill(DatabaseDict):
             raise ValueError('if a correction transaction is made, ' + \
                     'a justification has to be given. ' + \
                     f'transaction={transaction}, justification={justification}')
+        if not type(transaction) is Decimal:
+            raise TypeError(f'transaction is not a Decimal, {type(transaction)}')
         self.__correctionTransaction = transaction
         self.__correctionJustification = justification
 
@@ -691,28 +694,31 @@ class Bill(DatabaseDict):
         return totalGCo2e
 
     def totalGrossSalesPrice(self):
-        totalGrossSalesPrice = sum([p.totalGrossSalesPrice() for p in self.values()])
+        totalGrossSalesPrice = Decimal(sum([p.totalGrossSalesPrice()
+            for p in self.values()]))
+
         if (self.expectedTotalPrice and
-                helpers.formatPrice(totalGrossSalesPrice) !=
+                Decimal(helpers.formatPrice(totalGrossSalesPrice)) !=
                 self.expectedTotalPrice):
             raise ValueError(f'expectedTotalPrice ({self.expectedTotalPrice}) is '
                     + f'not consistent with sum of prices ({totalGrossSalesPrice})')
         return totalGrossSalesPrice
 
     def totalPurchasePrice(self):
-        return sum([p.totalPurchasePrice() for p in self.values()])
+        return Decimal(sum([p.totalPurchasePrice() for p in
+            self.values()]))
 
     @property
     def currentBalance(self):
         currentBalance = self.previousBalance + self.totalPayments + \
                 self.correctionTransaction - self.totalGrossSalesPrice()
         if (self.currentExpectedBalance and
-                helpers.formatPrice(currentBalance) !=
+                Decimal(helpers.formatPrice(currentBalance)) !=
                 self.currentExpectedBalance):
-            raise ValueError(f'inconsistent price calculation for {memberId},\n'
+            raise ValueError(f'inconsistent price calculation for {self.memberId},\n'
                     + f'({currentBalance} == {self.previousBalance} + '
                     + f'{self.totalPayments} + {self.correctionTransaction} - '
-                    + f'{self.totalGrossSalesPrice()}) != {self.currentExpectedBalance}')
+                            + f'{self.totalGrossSalesPrice()}) != {self.currentExpectedBalance}')
         return currentBalance
 
     @classmethod
@@ -828,6 +834,9 @@ class GnucashTransaction:
             targetAccount,
             date
             ):
+        if not isinstance(amount, Decimal):
+            raise TypeError( 'amount must be a Decimal, '
+                    f'is {type(amount)}')
         self.description = description
         self.amount = amount
         self.sourceAccount = sourceAccount
@@ -849,7 +858,7 @@ class GnucashTransactionList(DatabaseList):
                 date = helpers.DateUtility.strptime(rowValues[0]),
                 description = rowValues[1],
                 sourceAccount = rowValues[2],
-                amount = float(rowValues[3]),
+                amount = Decimal(rowValues[3]),
                 targetAccount = rowValues[4])
 
     def prefixValues(self):
@@ -881,6 +890,9 @@ class CorrectionTransaction(DatabaseObject):
             amount,
             justification):
         super().__init__(memberId)
+        if not isinstance(amount, Decimal):
+            raise TypeError( 'amount must be a Decimal, '
+                    f'is {type(amount)}')
         self.amount = amount
         self.justification = justification
 
@@ -907,7 +919,7 @@ class CorrectionTransactionDict(DatabaseDict):
     def databaseObjectFromCsvRow(self, rowValues):
         return CorrectionTransaction(
                 memberId = rowValues[0],
-                amount = float(rowValues[1]),
+                amount = Decimal(rowValues[1]),
                 justification = rowValues[2])
 
     def prefixValues(self):
@@ -934,6 +946,15 @@ class PostfinanceTransaction:
                     "must be given")
         if not isinstance(bookingDate, datetime.date):
             raise TypeError('bookingDate must be a datetime.date')
+        if creditAmount and not isinstance(creditAmount, Decimal):
+            raise TypeError( 'creditAmount must be a Decimal, '
+                    f'is {type(creditAmount)}')
+        if debitAmount and not isinstance(debitAmount, Decimal):
+            raise TypeError( 'debitAmount must be a Decimal, '
+                    f'is {type(debitAmount)}')
+        if balance and not isinstance(balance, Decimal):
+            raise TypeError( 'balance must be a Decimal, '
+                    f'is {type(balance)}')
         self.bookingDate = bookingDate
         self.notificationText = notificationText
         self.creditAmount = creditAmount
@@ -1026,7 +1047,8 @@ class PostfinanceTransactionList(DatabaseList):
                 ['Disclaimer:', '', '', '', '', ''],
                 ['This is not a document created by PostFinance Ltd. PostFinance Ltd is not responsible for the content.'],
                 ['This is not a document created by PostFinance Ltd. PostFinance Ltd is not responsible for the content.',
-                    '', '', '', '', '']
+                    '', '', '', '', ''],
+                ['', '', '', '', '', ''],
                 ]:
             return None
         bookingDate = helpers.DateUtility.strptime(rowValues[0],
@@ -1039,10 +1061,10 @@ class PostfinanceTransactionList(DatabaseList):
         return PostfinanceTransaction(
                 bookingDate,
                 notificationText = rowValues[1],
-                creditAmount = None if rowValues[2] == '' else float(rowValues[2]),
-                debitAmount = None if rowValues[3] == '' else float(rowValues[3]),
+                creditAmount = None if rowValues[2] == '' else Decimal(rowValues[2]),
+                debitAmount = None if rowValues[3] == '' else Decimal(rowValues[3]),
                 value = rowValues[4],
-                balance = rowValues[5]
+                balance = None if rowValues[5] == '' else Decimal(rowValues[5])
                 )
 
     def prefixValues(self):

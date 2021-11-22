@@ -14,6 +14,7 @@ import shutil
 import os
 import random
 import slugify
+from decimal import Decimal
 
 class AccountTest(TagtrailTestCase):
     """ Tests of tagtrail_account """
@@ -257,15 +258,10 @@ class AccountTest(TagtrailTestCase):
             bill = model.db.readCsv(
                     f'{self.testAccountDir}/3_bills/to_be_sent/{memberId}.csv',
                     database.Bill)
-# TODO: replace with following assertions after switch to Decimal
-#            self.assertEqual(inputMembers[memberId].balance,
-#                    bill.previousBalance)
-#            self.assertEqual(nextMembers[memberId].balance,
-#                    bill.currentBalance)
-        self.assertLess(abs(inputMembers[memberId].balance
-            - bill.previousBalance), .1)
-        self.assertLess(abs(nextMembers[memberId].balance
-            - bill.currentBalance), .1)
+            self.assertEqual(inputMembers[memberId].balance,
+                    bill.previousBalance)
+            self.assertEqual(nextMembers[memberId].balance,
+                    bill.currentBalance)
 
     def check_products_csv(self, model):
         """
@@ -328,16 +324,14 @@ class AccountTest(TagtrailTestCase):
                 database.MemberDict).values()])
 
         # total money transfer must add up
-# TODO: assertEqual after switch to Decimal
-        self.assertLess(abs(
-            (nextTotalMemberBalance - inputTotalMemberBalance)
-            - (sum(paymentTransactions.values())
+        balanceDifference = nextTotalMemberBalance - inputTotalMemberBalance
+        totalMoneyPaid = ( sum(paymentTransactions.values())
                + sum([t.amount for t in correctionTransactions.values()])
                - sum(marginTransactions.values())
-               - sum(merchandiseTransactions.values()))),
-            0.1,
-            'total money paid in all transactions must add up to total '
-            'balance difference')
+               - sum(merchandiseTransactions.values()) )
+        self.assertLess(abs(balanceDifference - totalMoneyPaid), 0.1,
+            f'total money paid in all transactions ({totalMoneyPaid}) must add '
+            f'up to total balance difference ({balanceDifference})')
 
         # value sold per product should be equivalent to billed sum
         for productId, product in model.db.products.items():
@@ -358,8 +352,7 @@ class AccountTest(TagtrailTestCase):
                     if billPosition.id == productId:
                         sumBilled += billPosition.totalGrossSalesPrice()
             expectedTotal = product.soldQuantity * actualProductPrice
-# TODO: assertEqual after switch to Decimal
-            self.assertLess(abs(sumBilled - expectedTotal), 0.1,
+            self.assertLess(abs(sumBilled - expectedTotal), 0.01,
                         f'billed sum for {productId} differs from expected'
                         f'total: {sumBilled} != {expectedTotal}')
 
@@ -372,10 +365,11 @@ class AccountTest(TagtrailTestCase):
                 self.assertNotIn(product.id, inventoryDifferenceTransactions)
             else:
                 self.assertIn(product.id, inventoryDifferenceTransactions)
-# TODO: assertEqual after switch to Decimal
-                self.assertLess(abs(inventoryDifferenceTransactions[product.id]
-                    - product.grossSalesPrice() * quantityDifference), 0.1,
-                    f'unexpected inventoryQuantityDifference for {product.id}')
+                inventoryDifference = inventoryDifferenceTransactions[product.id]
+                calculatedDifference = product.grossSalesPrice() * quantityDifference
+                self.assertLess(abs(inventoryDifference - calculatedDifference), 0.01,
+                    f'unexpected inventoryQuantityDifference for {product.id}: '
+                    f'{inventoryDifference} != {calculatedDifference}')
 
     def load_accounts_csv(self):
         exportedAccounts = set()
@@ -404,24 +398,24 @@ class AccountTest(TagtrailTestCase):
                     'inventory_difference_account'):
                     productId = row[1].split(':')[0]
                     if productId not in inventoryDifferenceTransactions:
-                        inventoryDifferenceTransactions[productId] = 0.0
-                    inventoryDifferenceTransactions[productId] += float(row[3])
+                        inventoryDifferenceTransactions[productId] = Decimal("0")
+                    inventoryDifferenceTransactions[productId] += Decimal(row[3])
                 elif row[2] == self.config.get('tagtrail_account',
                         'margin_account'):
                     self.assertNotIn(row[4], marginTransactions)
-                    marginTransactions[row[4]] = float(row[3])
+                    marginTransactions[row[4]] = Decimal(row[3])
                     self.assertEqual(row[0], str(self.testDate))
                     self.assertIn(row[4], model.db.members)
                 elif row[2] == self.config.get('tagtrail_account',
                         'merchandise_value_account'):
                     self.assertNotIn(row[4], merchandiseTransactions)
-                    merchandiseTransactions[row[4]] = float(row[3])
+                    merchandiseTransactions[row[4]] = Decimal(row[3])
                     self.assertEqual(row[0], str(self.testDate))
                     self.assertIn(row[4], model.db.members)
                 elif row[2] in model.db.members:
                     if row[2] not in paymentTransactions:
-                        paymentTransactions[row[2]] = 0.0
-                    paymentTransactions[row[2]] += float(row[3])
+                        paymentTransactions[row[2]] = Decimal("0")
+                    paymentTransactions[row[2]] += Decimal(row[3])
                     self.assertEqual(row[4], self.config.get(
                         'tagtrail_bankimport', 'checking_account'))
                 else:
@@ -819,7 +813,7 @@ class AccountTest(TagtrailTestCase):
         # (corection will be negative if we didn't manage to make the member's
         # balance negative enough, else positive if we were overshooting too
         # much)
-        expectedBalance = -100.25
+        expectedBalance = Decimal("-100.25")
         correctionTransactions = unmodifiedModel.db.readCsv(
                 f'{self.testRootDir}0_input/correctionTransactions.csv',
                 database.CorrectionTransactionDict)
@@ -847,7 +841,7 @@ class AccountTest(TagtrailTestCase):
         """
         db = database.Database(f'{self.testRootDir}0_input/')
         testMember = database.Member('testMember', 'Test Member',
-                ['test1@gmail.com', 'test2@gmail.com'], 0.0)
+                ['test1@gmail.com', 'test2@gmail.com'], Decimal("0.0"))
         db.members[testMember.id] = testMember
         db.writeCsv(f'{self.testRootDir}0_input/members.tsv', db.members)
 
@@ -856,7 +850,8 @@ class AccountTest(TagtrailTestCase):
         model.loadAccountData()
         model.save()
         self.check_output(model, modifiedMemberIds = [testMember.id])
-        self.assertEqual(model.bills[testMember.id].currentBalance, 0)
+        self.assertEqual(model.bills[testMember.id].currentBalance,
+                Decimal("0"))
 
     def test_removing_active_member(self):
         """
@@ -933,7 +928,7 @@ class AccountTest(TagtrailTestCase):
         Test adding a payment works
         """
         # create and add a new member
-        initialBalance = 123.12
+        initialBalance = Decimal("123.15")
         db = database.Database(f'{self.testRootDir}0_input/')
         testMember = database.Member('testMember', 'Test Member',
                 ['test1@gmail.com', 'test2@gmail.com'], initialBalance)
@@ -941,7 +936,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(f'{self.testRootDir}0_input/members.tsv', db.members)
 
         # add some payment
-        paymentAmount = 222.22
+        paymentAmount = Decimal("222.22")
         transactionsfilepath = f'{self.testRootDir}4_gnucash/transactions.csv'
         inputTransactions = db.readCsv(transactionsfilepath,
                 database.GnucashTransactionList)

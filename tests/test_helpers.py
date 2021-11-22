@@ -23,6 +23,7 @@ from .context import sheets
 import os
 import random
 import unittest
+from decimal import Decimal
 
 class TagtrailTestCase(unittest.TestCase):
     def create_active_test_product(self, db):
@@ -35,7 +36,8 @@ class TagtrailTestCase(unittest.TestCase):
         :return: the new product and sheet
         :rtype: (:class: `database.Product`, :class: `sheets.ProductSheet`)
         """
-        testProduct = database.Product('test product', 100, 'g', 12.3, .05, 50,
+        testProduct = database.Product('test product', 100, 'g',
+                Decimal(12.3), Decimal(.05), 50,
                 addedQuantity = 0, soldQuantity = 0)
         db.products[testProduct.id] = testProduct
         sheet = self.generateProductSheet(db.config, testProduct, 1)
@@ -52,7 +54,8 @@ class TagtrailTestCase(unittest.TestCase):
         :return: the new product and sheet
         :rtype: (:class: `database.Product`, :class: `sheets.ProductSheet`)
         """
-        testProduct = database.Product('test product', 100, 'kg', 1.3, .05, -3,
+        testProduct = database.Product('test product', 100, 'kg',
+                Decimal(1.3), Decimal(.05), -3,
                 addedQuantity = 0, soldQuantity = 0)
         db.products[testProduct.id] = testProduct
         sheet = self.generateProductSheet(db.config, testProduct, 1)

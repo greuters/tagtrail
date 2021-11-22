@@ -11,7 +11,7 @@ Bianca Amabile (weiss);75;cl;13.375;33;0;;;;;;;wein;schweiz;organic;ground;canne
 Birnel;1;kg;8.8;9;0;;;;;;;birnel;schweiz;organic;ground;boiled-down;920
 Blütenhonig Fest;1;Glas;15.85;15;0;;;;;;;honig;schweiz;;;;
 Buchweizenkörner;500;g;2.85;4;0;;;;;;;buchweizen;schweiz;;;;460
-Buntwaschmittel Colora;3;kg;27.0;6;0;;;;;;;waschmittel;schweiz;;ground;;2759
+Buntwaschmittel Colora;3;kg;27;6;0;;;;;;;waschmittel;schweiz;;ground;;2759
 Carponata (Auberginen in Tomatensauce);1;Glas;5.67;0;0;;;;;;;;;;;;
 Cashews nature;200;g;4.97;56;0;;;;;;;Cashew;ghana;organic;ground;dried;342
 Dinkelflakes;400;g;5.33;27;0;;;;;;;dinkelflakes;schweiz;organic;;;368
@@ -32,8 +32,8 @@ Getr. Tomaten im Öl;290;g;6.4;2;0;;;;;;;tomaten;italien;;ground;conserved;285
 Gnocchi di Patate;500;g;5.87666666666667;0;0;;;;;;;;;;;;
 Popcorn;500;g;3.35;9;0;;;;;;;mais;;;;;642
 Haferflocken fein;500;g;2.15456140350877;-12;0;;;;;;;haferflocken;schweiz;organic;ground;;460
-iisziit Glace klein;75;ml;2.0;69;0;;;;;;;eiscreme;schweiz;organic;ground;frozen;89
-iisziit Glace gross;400;ml;10.0;5;0;;;;;;;eiscreme;schweiz;organic;ground;frozen;474
+iisziit Glace klein;75;ml;2;69;0;;;;;;;eiscreme;schweiz;organic;ground;frozen;89
+iisziit Glace gross;400;ml;10;5;0;;;;;;;eiscreme;schweiz;organic;ground;frozen;474
 Ingwer (gemahlen);125;g;2.55;4;0;;;;;;;ingwer;;organic,fair-trade;;dried;160
 Kaffee Lupinen;500;g;12.6;0;0;;;;;;;lupinen;schweiz;organic;ground;dried;460
 Kalkentferner;500;ml;5.95;-2;0;;;;;;;putzmittel;niederlande;;ground;;489
@@ -101,9 +101,9 @@ Spaghetti Vollkorn;500;g;2.40416666666667;17;0;;;;;;;pasta;italien;organic;groun
 Steinpilze getrocknet;100;g;9.85;5;0;;;;;;;steinpilze;;;;;128
 Strozapreti (Dinkel Vollkorn);500;g;5.05;2;0;;;;;;;pasta;schweiz;organic;ground;;460
 Swiss Cereal Drink Hafer;1;l;2.63023622047244;47;0;;;;;;;haferdrink;;organic;ground;;1284
-Swiss Drink Reis;1;l;3.0;67;0;;;;;;;reisdrink;;organic;ground;;1284
-Swiss Drink Soya (ungesüsst);1;l;3.0;122;0;;;;;;;soyadrink;italien;organic;ground;;982
-Tahin (Sesammus);330;g;6.0;2;0;;;;;;;sesampaste;burkina faso;organic;;canned;539
+Swiss Drink Reis;1;l;3;67;0;;;;;;;reisdrink;;organic;ground;;1284
+Swiss Drink Soya (ungesüsst);1;l;3;122;0;;;;;;;soyadrink;italien;organic;ground;;982
+Tahin (Sesammus);330;g;6;2;0;;;;;;;sesampaste;burkina faso;organic;;canned;539
 Tamari;500;ml;9.4;-2;0;;;;;;;tamari;soyana;organic;ground;canned;460
 Toilettenpapier;1;Packung;4.33333333333333;12;0;;;;;;;papier;deutschland;standard,fair-trade;ground;;
 Tomatensauce in Flaschen;420;g;3.08333333333333;75;0;;;;;;;tomatensauce;;;;;539
@@ -113,7 +113,7 @@ WC-Reiniger;750;ml;3.7;5;0;;;;;;;putzmittel;niederlande;;ground;;734
 Wein Sacravite (rot);75;cl;16.25;15;0;;;;;;;wein;schweiz;organic;ground;canned;690
 Weissmehl;1;kg;4.7;41;0;;;;;;;mehl;schweiz;organic;ground;;920
 Weizenmehl Vollkorn;1;kg;4.42;1;0;;;;;;;;;;;;
-Zimt Ceylon (gemahlen);125;g;4.0;2;0;;;;;;;zimt;;;;;160
+Zimt Ceylon (gemahlen);125;g;4;2;0;;;;;;;zimt;;;;;160
 Kristall-Rohrohrzucker;1;kg;3.044;41;0;;;;;;;zucker;;;;;1284
 Zucker weiss Kristall;1;kg;3.64;44;0;;;;;;;;;;;;
 Öl Oliven aus Griechenland;1;l;20.79;-2;0;;;;;;;olivenöl;griechenland;organic;ground;canned;1121

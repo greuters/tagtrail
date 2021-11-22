@@ -29,6 +29,7 @@ import copy
 import sys
 import functools
 import cv2 as cv
+from decimal import Decimal
 
 from . import helpers
 from . import gui_components
@@ -762,10 +763,10 @@ class Model():
                     self.db.members.accountingDate,
                     self.accountingDate,
                     member.balance,
-                    sum([transaction.amount for transaction in
+                    Decimal(sum([transaction.amount for transaction in
                         self.paymentTransactions
-                        if transaction.sourceAccount == member.id]),
-                    self.correctionTransactions[member.id].amount if member.id in self.correctionTransactions else 0,
+                        if transaction.sourceAccount == member.id])),
+                    self.correctionTransactions[member.id].amount if member.id in self.correctionTransactions else Decimal(0),
                     self.correctionTransactions[member.id].justification if member.id in self.correctionTransactions else '')
             for productId in tagCollector.newTagsPerProduct.keys():
                 numTags = tagCollector.numNewTags(productId, [member.id])
@@ -976,11 +977,14 @@ class Model():
         newMembers = copy.deepcopy(self.db.members)
         newMembers.accountingDate = self.accountingDate
         for m in newMembers.values():
-            m.balance = self.bills[m.id].currentBalance
+            m.balance = Decimal(helpers.formatPrice(
+                self.bills[m.id].currentBalance))
+
         self.db.writeCsv(f'{self.renamedRootDir}5_output/members.tsv',
                 newMembers)
         self.db.writeCsv(f'{self.nextRootDir}0_input/members.tsv',
                 newMembers)
+        #raise ValueError
 
     def writeProductsCSVs(self):
         self.db.writeCsv(f'{self.renamedRootDir}5_output/products.csv',

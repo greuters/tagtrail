@@ -427,7 +427,6 @@ class LineBasedFrameFinder():
         imgH, imgW, _ = frameImg.shape
         frameContourArea = cv.contourArea(frameContour)
         fillRatio = frameContourArea / (imgW * imgH)
-        print(fillRatio)
         if fillRatio < .5:
             self.log.debug(f'frame contour not filled enough')
             self.log.debug(f'imgH, imgW = {imgH}, {imgW}')
