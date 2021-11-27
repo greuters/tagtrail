@@ -59,7 +59,8 @@ class Database(ABC):
                     'csvlist': lambda x: [i.strip() for i in x.split(',') if
                         i.strip() != ''],
                     'newlinelist': lambda x: [i.strip() for i in x.splitlines()
-                        if i.strip() != '']})
+                        if i.strip() != ''],
+                    'decimal': Decimal})
         self.log.info(f'Reading configuration from {configFilePath}')
         self.configFilePath = configFilePath
         self.config.read(configFilePath)

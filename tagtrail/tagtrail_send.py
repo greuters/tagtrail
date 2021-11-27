@@ -91,7 +91,8 @@ class MailSender(ABC):
                 return
 
         for bill in self.billsToBeSent:
-            if (self.db.config.getint('general', 'liquidity_threshold')
+            if (self.db.config.getdecimal('general',
+                'liquidity_threshold')
                     <= bill.currentBalance):
                 invoiceTextTemplate = self.invoiceAboveThresholdTemplate
             else:
@@ -116,7 +117,7 @@ class MailSender(ABC):
                 body = self.emailTemplate.substitute(
                             INVOICE_TEXT=invoiceTextTemplate.substitute(
                                 LIQUIDITY_THRESHOLD=helpers.formatPrice(
-                                    self.db.config.getint('general',
+                                    self.db.config.getdecimal('general',
                                         'liquidity_threshold'),
                                     self.db.config.get('general', 'currency')),
                                 ACCESS_CODE=self.accessCode,
@@ -133,7 +134,7 @@ class MailSender(ABC):
                             CURRENT_ACCOUNTING_DATE=bill.currentAccountingDate,
                             CURRENT_BALANCE=helpers.formatPrice(bill.currentBalance, self.db.config.get('general', 'currency')),
                             LIQUIDITY_THRESHOLD=helpers.formatPrice(
-                                self.db.config.getint('general',
+                                self.db.config.getdecimal('general',
                                     'liquidity_threshold'),
                                 self.db.config.get('general', 'currency')),
                             INVOICE_IBAN=self.db.config.get('general', 'our_iban'),
