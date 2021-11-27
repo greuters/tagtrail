@@ -146,7 +146,10 @@ class MailSender(ABC):
 
                 try:
                     self.sendEmail(email,
-                            'Abrechnung vom {}'.format(bill.currentAccountingDate),
+                            self.db.config.get('tagtrail_send',
+                                'email_subject')
+                            .format(bill.previousAccountingDate,
+                                bill.currentAccountingDate),
                             body, f'{self.billsToBeSentPath}{filename}', filename)
                 except smtplib.SMTPRecipientsRefused as e:
                     if str(e).find('451') != -1:
