@@ -150,7 +150,10 @@ class Database(ABC):
         with open(path, "w+", newline=container.newline, encoding=container.encoding) as fout:
             for prefix, val in zip(prefixRows,
                     container.prefixValues()):
-                fout.write(f'{prefix}{container.csvDelimiter}{val}\n')
+                if prefix == "''":
+                    fout.write('\n')
+                else:
+                    fout.write(f'{prefix}{container.csvDelimiter}{val}\n')
 
             fout.write(container.csvDelimiter.join(columnHeaders)+"\n")
             for row in container.csvRows():
@@ -1004,7 +1007,7 @@ class PostfinanceTransaction:
 
 class PostfinanceTransactionList(DatabaseList):
     colInternalDelimiter=None
-    encoding = 'latin-1'
+    encoding = 'utf-8-sig'
     """
     Configured to read standard transaction export from PostFinance
     TODO: hint for programmers, this class needs to be adapted/replaced to
@@ -1021,9 +1024,11 @@ class PostfinanceTransactionList(DatabaseList):
             ):
         self.expectedEntryType = config.get(self.configSection(),
                 'expected_entry_type')
-        self.expectedCurrency = config.get('general', 'currency')
-        self.expectedAccount = config.get('general', 'our_iban')
-        self.dateFormat = config.get(self.configSection(), 'date_format')
+        self.expectedCurrency = config.get(self.configSection(),
+                'expected_currency')
+        self.expectedAccount = config.get(self.configSection(), 'expected_iban')
+        self.prefixRowDateFormat = config.get(self.configSection(), 'prefix_row_date_format')
+        self.contentDateFormat = config.get(self.configSection(), 'content_date_format')
         if entryType != self.expectedEntryType:
             raise ValueError('unexpected entry type ' + \
                     f"'{entryType}', should be '{self.expectedEntryType}'")
@@ -1034,8 +1039,8 @@ class PostfinanceTransactionList(DatabaseList):
             raise ValueError('unexpected currency ' + \
                     f"'{currency}', should be '{self.expectedCurrency}'")
         super().__init__(config, *args)
-        self.dateFrom = helpers.DateUtility.strptime(dateFrom, self.dateFormat)
-        self.dateTo = helpers.DateUtility.strptime(dateTo, self.dateFormat)
+        self.dateFrom = helpers.DateUtility.strptime(dateFrom, self.prefixRowDateFormat)
+        self.dateTo = helpers.DateUtility.strptime(dateTo, self.prefixRowDateFormat)
 
     @classmethod
     def configSection(cls):
@@ -1053,7 +1058,7 @@ class PostfinanceTransactionList(DatabaseList):
                 ]:
             return None
         bookingDate = helpers.DateUtility.strptime(rowValues[0],
-                    self.dateFormat)
+                    self.contentDateFormat)
         if bookingDate < self.dateFrom or self.dateTo < bookingDate:
             raise ValueError('invalid postfinance file: date of row ' + \
                 f'{rowValues} is not in expected range '  + \
@@ -1069,13 +1074,21 @@ class PostfinanceTransactionList(DatabaseList):
                 )
 
     def prefixValues(self):
-        return [self.dateFrom, self.dateTo, self.expectedEntryType,
-                self.expectedAccount, self.expectedCurrency]
+        return [
+                helpers.DateUtility.strftime(self.dateFrom,
+                    self.prefixRowDateFormat),
+                helpers.DateUtility.strftime(self.dateTo,
+                    self.prefixRowDateFormat),
+                self.expectedEntryType,
+                self.expectedAccount,
+                self.expectedCurrency,
+                '']
 
     def csvRows(self):
-        return [[helpers.DateUtility.strftime(t.bookingDate, self.dateFormat),
+        return [[helpers.DateUtility.strftime(t.bookingDate, self.contentDateFormat),
             t.notificationText,
             '' if t.creditAmount is None else helpers.formatPrice(t.creditAmount),
             '' if t.debitAmount is None else helpers.formatPrice(t.debitAmount),
-            t.value, t.balance]
+            t.value,
+            '' if t.balance is None else helpers.formatPrice(t.balance)]
                 for t in self]

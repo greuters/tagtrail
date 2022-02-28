@@ -131,11 +131,16 @@ class DateUtility:
         try:
             t = time.strptime(dateStr, dateFormat)
         except ValueError as e:
-            print(f'Error: expected format: {dateFormat}')
             raise ValueError(f'Expected format: {dateFormat}') from e
         return datetime.date(t.tm_year, t.tm_mon, t.tm_mday)
 
 def readPrefixRow(prefix, row):
+    if prefix == "''":
+        if not all(e is None or e == '' for e in row):
+            raise ValueError(
+                f'empty prefix row expected, but non-null elements found, {row}')
+        return ''
+
     if len(row) < 2:
         raise ValueError(f'len(row) < 2; row = {row}')
     if not all(e is None or e == '' for e in row[2:]):

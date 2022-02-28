@@ -39,8 +39,9 @@ class EnrichedDatabase(database.Database):
         self.accountingDataPath = accountingDataPath
         filenameDateFormat = self.config.get('postfinance_transactions',
                         'filename_date_format')
-        self.inputTransactionsPath = (self.accountingDataPath
-                + '0_input/export_Transactions_'
+        self.inputTransactionsPath = (
+                self.accountingDataPath
+                + '0_input/export_transactions_'
                 + helpers.DateUtility.strftime(self.previousAccountingDate,
                     filenameDateFormat)
                 + '_'
