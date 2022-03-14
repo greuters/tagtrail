@@ -5,6 +5,7 @@ from .context import database
 from .context import sheets
 from .context import tagtrail_ocr
 
+import logging
 import argparse
 import unittest
 import configparser
@@ -50,8 +51,8 @@ class OcrTest(unittest.TestCase):
         self.testOutputDir = f'{self.testRootDir}2_taggedProductSheets/'
         self.testScanDir = f'{self.testRootDir}0_input/scans/'
 
-        self.log = helpers.Log(helpers.Log.LEVEL_INFO)
-        self.log.info(f'\nStarting test {self.id()}\n')
+        self.logger = logging.getLogger('tagtrail.tests.scenario_ocr.OcrTest')
+        self.logger.info(f'\nStarting test {self.id()}\n')
         shutil.copytree(self.templateRootDir, self.testRootDir)
         helpers.recreateDir(self.testOutputDir)
         self.db = database.Database(f'{self.testRootDir}0_input/')
@@ -69,13 +70,13 @@ class OcrTest(unittest.TestCase):
         precisions = []
         recalls = []
         for section in self.scanConfig.sections():
-            self.log.info(f'\nSubtest on scan {section}\n')
+            self.logger.info(f'\nSubtest on scan {section}\n')
             with self.subTest(scanFilename = section):
                 self.processScan(section, precisions, recalls)
         averagePrecision = sum(precisions) / len(precisions)
         averageRecall = sum(recalls) / len(recalls)
-        self.log.info(f'averagePrecision = {averagePrecision}')
-        self.log.info(f'averageRecall = {averageRecall}')
+        self.logger.info(f'averagePrecision = {averagePrecision}')
+        self.logger.info(f'averageRecall = {averageRecall}')
         self.assertGreaterEqual(averagePrecision, self.minAveragePrecision,
                 'averagePrecision not high enough')
         self.assertGreaterEqual(averageRecall, self.minAverageRecall,
@@ -83,7 +84,7 @@ class OcrTest(unittest.TestCase):
 
     def processScan(self, scanFilename, precisions, recalls):
         model = tagtrail_ocr.Model(self.testRootDir, self.tmpDir,
-                [scanFilename], True, self.writeDebugImages, self.log)
+                [scanFilename], True, self.writeDebugImages)
         model.prepareScanSplitting()
 
         self.assertTrue(os.path.exists(f'{self.testScanDir}{scanFilename}'))
@@ -131,9 +132,9 @@ class OcrTest(unittest.TestCase):
 
     def computePerformanceMetrics(self, templateSheetName, testedSheetName,
             testedSheetDebugDir):
-        templateSheet = sheets.ProductSheet(log = self.log)
+        templateSheet = sheets.ProductSheet()
         templateSheet.load(f'{self.templateOutputDir}{templateSheetName}')
-        testedSheet = sheets.ProductSheet(log = self.log)
+        testedSheet = sheets.ProductSheet()
         testedSheet.load(f'{self.testOutputDir}{testedSheetName}')
 
         truePositives = 0
@@ -151,15 +152,15 @@ class OcrTest(unittest.TestCase):
             elif self.writeDebugImages:
                 self.copyDebugImage(testedSheetDebugDir, testedBox.name,
                         self.debugOutputNotRecalledDir)
-            self.log.debug('')
-            self.log.debug(f'falsePositives = {falsePositives}')
-            self.log.debug(f'testedBox: ({testedBox.text}, {testedBox.confidence})')
-            self.log.debug(f'templateBox: ({templateBox.text}, {templateBox.confidence})')
-            self.log.debug(f'truePositives = {truePositives}')
+            self.logger.debug('')
+            self.logger.debug(f'falsePositives = {falsePositives}')
+            self.logger.debug(f'testedBox: ({testedBox.text}, {testedBox.confidence})')
+            self.logger.debug(f'templateBox: ({templateBox.text}, {templateBox.confidence})')
+            self.logger.debug(f'truePositives = {truePositives}')
 
         precision = truePositives / (truePositives + falsePositives)
         recall = truePositives / len(templateSheet.boxes())
-        self.log.info(f'{testedSheetName}: '
+        self.logger.info(f'{testedSheetName}: '
                 f'precision = {precision}, recall = {recall}')
         return (precision, recall)
 
@@ -182,9 +183,9 @@ class OcrTest(unittest.TestCase):
         Wrongly classifiyng name or sheet number must never happen,
         as it is probably not detected by the user when sanitizing.
         """
-        templateSheet = sheets.ProductSheet(log = self.log)
+        templateSheet = sheets.ProductSheet()
         templateSheet.load(f'{self.templateOutputDir}{templateSheetName}')
-        testedSheet = sheets.ProductSheet(log = self.log)
+        testedSheet = sheets.ProductSheet()
         testedSheet.load(f'{self.testOutputDir}{testedSheetName}')
 
         if testedSheet.boxByName('nameBox').confidence == 1:
@@ -200,7 +201,11 @@ class OcrTest(unittest.TestCase):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Test tagtrail_gen')
     parser.add_argument('--writeDebugImages', dest='writeDebugImages', action='store_true')
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
 
     loader = unittest.TestLoader()
     OcrTest.writeDebugImages = args.writeDebugImages

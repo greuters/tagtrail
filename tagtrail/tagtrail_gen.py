@@ -35,11 +35,11 @@ from tkinter import messagebox
 import traceback
 import os
 import shutil
+import logging
 
 from . import helpers
 from .database import Database
 from .sheets import ProductSheet
-from .helpers import Log
 from . import gui_components
 
 class Model():
@@ -51,14 +51,13 @@ class Model():
             allowRemoval,
             genDate,
             renamedRootDir,
-            nextDir,
-            log = Log(Log.LEVEL_INFO)):
+            nextDir):
         self.rootDir = rootDir
         self.allowRemoval = allowRemoval
         self.genDate = genDate
         self.renamedRootDir = renamedRootDir
         self.nextDir = nextDir
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_gen.Model')
         self.db = Database(f'{rootDir}0_input/')
         self.sheets = []
 
@@ -141,12 +140,12 @@ class Model():
         for filename in os.listdir(f'{self.rootDir}0_input/sheets/active/'):
             if ProductSheet.productId_from_filename(filename) \
                     not in self.db.products:
-                sheet = ProductSheet(Log(Log.LEVEL_ERROR))
+                sheet = ProductSheet()
                 sheet.load(f'{self.rootDir}0_input/sheets/active/{filename}')
                 sheet.previousState = 'active'
                 if self.allowRemoval:
                     sheet.newState = 'obsolete'
-                    self.log.info(f'removing {filename} - product removed from database')
+                    self.logger.info(f'removing {filename} - product removed from database')
                 else:
                     sheet.newState = 'active'
                 self.sheets.append(sheet)
@@ -154,12 +153,12 @@ class Model():
         for filename in os.listdir(f'{self.rootDir}0_input/sheets/inactive/'):
             if ProductSheet.productId_from_filename(filename) \
                     not in self.db.products:
-                sheet = ProductSheet(Log(Log.LEVEL_ERROR))
+                sheet = ProductSheet()
                 sheet.load(f'{self.rootDir}0_input/sheets/inactive/{filename}')
                 sheet.previousState = 'inactive'
                 if self.allowRemoval:
                     sheet.newState = 'obsolete'
-                    self.log.info(f'removing {filename} - product removed from database')
+                    self.logger.info(f'removing {filename} - product removed from database')
                 else:
                     sheet.newState = 'inactive'
                 self.sheets.append(sheet)
@@ -178,7 +177,7 @@ class Model():
             if product.expectedQuantity <= 0:
                 # product out of stock but expected to be bought again
                 if self.allowRemoval:
-                    self.log.info(f'{product.id} out of stock - deactivating sheets')
+                    self.logger.info(f'{product.id} out of stock - deactivating sheets')
                 for s in activeInputSheets:
                     s.previousState = 'active'
                     if self.allowRemoval:
@@ -248,7 +247,7 @@ class Model():
         :rtype: bool
         """
         if inputSheets == []:
-            self.log.info(
+            self.logger.info(
                     f'regenerate sheets of {product.id}: no previous sheets exist')
             return True
 
@@ -267,7 +266,7 @@ class Model():
         inputSheet = inputSheets[0]
 
         if product.amountAndUnit.upper() != inputSheet.amountAndUnit.upper():
-            self.log.info(
+            self.logger.info(
                     f'regenerate sheets of {product.id}: amount/unit changed '
                     f'from {inputSheet.amountAndUnit} to '
                     f'{product.amountAndUnit}')
@@ -277,7 +276,7 @@ class Model():
                 'max_neglectable_price_change_percentage')
         if (abs(product.grossSalesPrice()-inputSheet.grossSalesPrice) /
                 inputSheet.grossSalesPrice > priceChangeThreshold / 100):
-            self.log.info(
+            self.logger.info(
                     f'regenerate sheets of {product.id}: price changed more '
                     f'than {priceChangeThreshold}%, from '
                     f'{inputSheet.grossSalesPrice} to '
@@ -289,7 +288,7 @@ class Model():
             numFreeTags += len(s.emptyDataBoxes())
         if (product.grossSalesPrice() != inputSheet.grossSalesPrice and
                 numFreeTags < product.expectedQuantity):
-            self.log.info(
+            self.logger.info(
                     f'regenerate sheets of {product.id}: '
                     'not enough free tags and price changed '
                     f'from {inputSheet.grossSalesPrice} to '
@@ -319,8 +318,8 @@ class Model():
                 ProductSheet.maxQuantity())
         maxNumSheets = self.db.config.getint('tagtrail_gen',
                 'max_num_sheets_per_product')
-        self.log.debug(f'activateAndReplaceIndividualSheets for {product.id}')
-        self.log.debug(f'numSheetsNeeded for {product.id} = {numSheetsNeeded}')
+        self.logger.debug(f'activateAndReplaceIndividualSheets for {product.id}')
+        self.logger.debug(f'numSheetsNeeded for {product.id} = {numSheetsNeeded}')
         if maxNumSheets < numSheetsNeeded:
             raise ValueError(f'Quantity of {product.id} is too high, '
                     f'would need {numSheetsNeeded}, max '
@@ -384,10 +383,10 @@ class Model():
                         activeInputSheets + inactiveInputSheets,
                         key = lambda s: len(s.emptyDataBoxes()))]
 
-        self.log.debug(f'activeInputSheetNumbers: {activeInputSheetNumbers}')
-        self.log.debug(f'inactiveInputSheetNumbers: {inactiveInputSheetNumbers}')
-        self.log.debug(f'newSheetNumbers: {newSheetNumbers}')
-        self.log.debug(f'sheetNumbersInReplacementOrder: {sheetNumbersInReplacementOrder}')
+        self.logger.debug(f'activeInputSheetNumbers: {activeInputSheetNumbers}')
+        self.logger.debug(f'inactiveInputSheetNumbers: {inactiveInputSheetNumbers}')
+        self.logger.debug(f'newSheetNumbers: {newSheetNumbers}')
+        self.logger.debug(f'sheetNumbersInReplacementOrder: {sheetNumbersInReplacementOrder}')
 
         for sheetNumber in sheetNumbersInReplacementOrder:
             if numFreeTags >= product.expectedQuantity:
@@ -410,7 +409,7 @@ class Model():
             newSheet = self.generateProductSheet(product, sheetNumber)
             newSheet.previousState = None
             newSheet.newState = 'active'
-            self.log.info(f'generate empty sheet {newSheet.filename} '
+            self.logger.info(f'generate empty sheet {newSheet.filename} '
                     'to create enough free tags')
             self.sheets.append(newSheet)
             numFreeTags += ProductSheet.maxQuantity()
@@ -433,7 +432,7 @@ class Model():
         sheets = []
         for filename in self.product_sheet_filenames_in_dir(productId,
                 inputDir):
-                sheet = ProductSheet(Log(Log.LEVEL_ERROR))
+                sheet = ProductSheet()
                 sheet.load(inputDir + filename)
                 sheets.append(sheet)
         return sheets
@@ -463,7 +462,7 @@ class Model():
         :return: a new product sheet
         :rtype: :class: `sheets.ProductSheet`
         """
-        sheet = ProductSheet(Log(Log.LEVEL_ERROR))
+        sheet = ProductSheet()
         sheet.name = product.description
         sheet.amountAndUnit = product.amountAndUnit
         sheet.grossSalesPrice = helpers.formatPrice(
@@ -496,7 +495,7 @@ class Model():
         for sheet in self.activeSheetsToBePrinted:
             imgPath = f'{sheetDir}{sheet.productId()}_{sheet.sheetNumber}.jpg'
             if cv.imwrite(imgPath, sheet.createImg()) is True:
-                self.log.info(f'generated sheet {imgPath}')
+                self.logger.info(f'generated sheet {imgPath}')
             else:
                 raise ValueError(f'failed to generate sheet {imgPath}')
 
@@ -545,7 +544,7 @@ class Model():
         helpers.recreateDir(self.nextDir)
         shutil.copytree(f'{self.renamedRootDir}0_input',
                 f'{self.nextDir}0_input')
-        helpers.recreateDir(f'{self.nextDir}0_input/sheets', self.log)
+        helpers.recreateDir(f'{self.nextDir}0_input/sheets')
         shutil.copytree(f'{self.renamedRootDir}5_output/sheets/active',
                 f'{self.nextDir}0_input/sheets/active')
         shutil.copytree(f'{self.renamedRootDir}5_output/sheets/inactive',
@@ -577,10 +576,9 @@ class GUI(gui_components.BaseGUI):
     scanPostfix = '_normalized_scan.jpg'
 
     def __init__(self,
-            model,
-            log = Log(Log.LEVEL_INFO)):
+            model):
         self.model = model
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_gen.GUI')
 
         self.productFrame = None
         self.activeFrame = None
@@ -592,7 +590,7 @@ class GUI(gui_components.BaseGUI):
         width = None if width == -1 else width
         height = self.model.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
-        super().__init__(width, height, log)
+        super().__init__(width, height)
 
     def populateRoot(self):
         if self.productFrame is None:
@@ -800,7 +798,11 @@ if __name__== "__main__":
             default='data/next/',
             help=('Name of the top-level tagtrail directory to be created '
                 'for the next call to tagtrail_account/tagtrail_gen.'))
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
 
     renamedRootDir = args.renamedRootDir.format(genDate = args.genDate)
     if renamedRootDir == args.nextDir:

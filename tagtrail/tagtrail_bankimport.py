@@ -23,6 +23,7 @@ import datetime
 import time
 import tkinter
 import traceback
+import logging
 
 from . import database
 from . import helpers
@@ -35,6 +36,8 @@ class EnrichedDatabase(database.Database):
             accountingDate):
 
         super().__init__(f'{accountingDataPath}0_input/')
+        self.logger = logging.getLogger(
+                'tagtrail.tagtrail_bankimport.EnrichedDatabase')
         toDate = accountingDate-datetime.timedelta(days=1)
         self.accountingDataPath = accountingDataPath
         filenameDateFormat = self.config.get('postfinance_transactions',
@@ -58,16 +61,16 @@ class EnrichedDatabase(database.Database):
                     f'Missing required file {self.inputTransactionsPath}\n')
 
         if not os.path.isfile(self.unprocessedTransactionsPath):
-            helpers.recreateDir(f'{self.accountingDataPath}4_gnucash/', self.log)
-            helpers.recreateDir(f'{self.accountingDataPath}5_output/', self.log)
-            self.log.info("copy {} to {}".format(self.inputTransactionsPath, self.unprocessedTransactionsPath))
+            helpers.recreateDir(f'{self.accountingDataPath}4_gnucash/')
+            helpers.recreateDir(f'{self.accountingDataPath}5_output/')
+            self.logger.info(f"copy {self.inputTransactionsPath} to {self.unprocessedTransactionsPath}")
             shutil.copy(self.inputTransactionsPath, self.unprocessedTransactionsPath)
 
         self.postfinanceTransactions = self.loadPostfinanceTransactions(
                 self.previousAccountingDate, toDate)
 
     def loadPostfinanceTransactions(self, fromDate, toDate):
-        self.log.info(f"loading transactions from {self.unprocessedTransactionsPath}")
+        self.logger.info(f"loading transactions from {self.unprocessedTransactionsPath}")
         loadedTransactions = self.readCsv(
                 self.unprocessedTransactionsPath,
                 database.PostfinanceTransactionList)
@@ -81,7 +84,7 @@ class EnrichedDatabase(database.Database):
                     f"be one day before the current accounting date '{toDate}'")
         for transaction in loadedTransactions:
             transaction.memberId = transaction.inferMemberId(list(sorted(self.members.keys())))
-            self.log.debug(f'inferred memberId {transaction.memberId}')
+            self.logger.debug(f'inferred memberId {transaction.memberId}')
         return loadedTransactions
 
     @property
@@ -109,7 +112,7 @@ class GUI(gui_components.BaseGUI):
         width = None if width == -1 else width
         height = self.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
-        super().__init__(width, height, helpers.Log())
+        super().__init__(width, height)
 
     def populateRoot(self):
         self.root.bind("<Tab>", self.switchInputFocus)
@@ -259,13 +262,13 @@ class GUI(gui_components.BaseGUI):
         numberOfTransactions = len(paymentTransactions) + len(self.db.postfinanceTransactions)
         indicesToRemove = []
         for idx, pfTransaction in enumerate(self.db.postfinanceTransactions):
-            self.log.debug(f'paymentTransactions = {[t.sourceAccount for t in paymentTransactions]}')
-            self.log.debug(f'postfinanceTransactions = {[t.memberId for t in self.db.postfinanceTransactions]}')
-            self.log.debug(f'indicesToRemove = {indicesToRemove}')
+            self.logger.debug(f'paymentTransactions = {[t.sourceAccount for t in paymentTransactions]}')
+            self.logger.debug(f'postfinanceTransactions = {[t.memberId for t in self.db.postfinanceTransactions]}')
+            self.logger.debug(f'indicesToRemove = {indicesToRemove}')
             if pfTransaction.memberId is None or \
                     not pfTransaction.memberId in self.db.members:
                 continue
-            self.log.debug(f'identified transaction for {pfTransaction.memberId}')
+            self.logger.debug(f'identified transaction for {pfTransaction.memberId}')
             gnucashTransaction = database.GnucashTransaction(
                 pfTransaction.notificationText,
                 pfTransaction.creditAmount,
@@ -275,7 +278,7 @@ class GUI(gui_components.BaseGUI):
             if not gnucashTransaction in paymentTransactions:
                 paymentTransactions.append(gnucashTransaction)
                 indicesToRemove.append(idx)
-                self.log.debug(f'marked transaction to be removed from postfinanceTransactions')
+                self.logger.debug(f'marked transaction to be removed from postfinanceTransactions')
                 assert(gnucashTransaction in paymentTransactions)
                 assert(not gnucashTransaction in self.db.postfinanceTransactions)
             else:
@@ -324,5 +327,9 @@ if __name__== "__main__":
             default=helpers.DateUtility.todayStr(),
             help="Date of the new accounting, fmt='YYYY-mm-dd'",
             )
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
     GUI(args.accountingDir, args.accountingDate)

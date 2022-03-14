@@ -25,6 +25,7 @@ import smtplib
 import ssl
 import os
 import shutil
+import logging
 from email import encoders
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -42,7 +43,7 @@ class MailSender(ABC):
             testRecipient = None
             ):
         self.accessCode = accessCode
-        self.log = helpers.Log(helpers.Log.LEVEL_DEBUG)
+        self.logger = logging.getLogger('tagtrail.tagtrail_send.MailSender')
         self.billsToBeSentPath = f'{accountingPath}3_bills/to_be_sent/'
         self.billsAlreadySentPath = f'{accountingPath}3_bills/already_sent/'
         self.templatePath = accountingPath + '0_input/templates/'
@@ -109,11 +110,11 @@ class MailSender(ABC):
             filename = bill.memberId+'.csv'
             for email in self.db.members[bill.memberId].emails:
                 if not self.testRecipient is None:
-                    self.log.info(f'would send email to {email}, replaced by {self.testRecipient}: ')
+                    self.logger.info(f'would send email to {email}, replaced by {self.testRecipient}: ')
                     email = self.testRecipient
 
                 name = self.db.members[bill.memberId].name
-                self.log.info('Sending email to {}, {}'.format(email, name))
+                self.logger.info('Sending email to {}, {}'.format(email, name))
                 body = self.emailTemplate.substitute(
                             INVOICE_TEXT=invoiceTextTemplate.substitute(
                                 LIQUIDITY_THRESHOLD=helpers.formatPrice(
@@ -153,7 +154,7 @@ class MailSender(ABC):
                             body, f'{self.billsToBeSentPath}{filename}', filename)
                 except smtplib.SMTPRecipientsRefused as e:
                     if str(e).find('451') != -1:
-                        self.log.info("""Sending quota exceeded - Run tagtrail_send again later to send the remaining emails""")
+                        self.logger.info("""Sending quota exceeded - Run tagtrail_send again later to send the remaining emails""")
                         return
                     else:
                         raise e
@@ -163,7 +164,7 @@ class MailSender(ABC):
                 shutil.move(f'{self.billsToBeSentPath}{filename}',
                         f'{self.billsAlreadySentPath}{filename}')
             else:
-                self.log.info(f'would move {self.billsToBeSentPath}{filename} to {self.billsAlreadySentPath}{filename}')
+                self.logger.info(f'would move {self.billsToBeSentPath}{filename} to {self.billsAlreadySentPath}{filename}')
 
     def sendEmail(self, to, subject, body, path, attachmentName):
         message = MIMEMultipart()
@@ -223,7 +224,11 @@ if __name__ == '__main__':
             dest='configFilePath',
             default='config/tagtrail.cfg',
             help='Path to the config file to be used.')
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
 
     MailSender(args.accountingDir,
             args.accessCode,

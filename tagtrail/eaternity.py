@@ -10,7 +10,7 @@ class EaternityApi:
     headers = {
         }
 
-    def __init__(self, config, apiKey = None, log = helpers.Log()):
+    def __init__(self, config, apiKey = None):
         """
         :param config: loaded config/tagtrail.cfg
         :type config: :class: `configparser.ConfigParser`
@@ -18,7 +18,7 @@ class EaternityApi:
             will be loaded from credentials.cfg
         :type apiKey: str
         """
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.eaternity.EaternityApi')
         self.config = config
         self.kitchenId = self.config.get('eaternity', 'kitchenId')
         self.kitchenLocation = self.config.get('eaternity', 'kitchenLocation')
@@ -79,13 +79,13 @@ class EaternityApi:
                 'ingredients': ingredients
                 }
         payload={'recipe': recipe}
-        self.log.debug(f'payload: {payload}')
+        self.logger.debug(f'payload: {payload}')
         response = requests.request("POST",
                 f'{self.baseUrl}recipes',
                 data=json.dumps(payload),
                 headers=self.headers,
                 params=self.querystring).json()
-        self.log.debug(f'response: {response}')
+        self.logger.debug(f'response: {response}')
         if 'status' in response and response['status'] == 'BAD_REQUEST':
             raise ValueError(response)
         elif 'statuscode' in response:

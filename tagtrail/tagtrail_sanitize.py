@@ -18,6 +18,7 @@
 import argparse
 import slugify
 import tkinter
+import logging
 from tkinter import ttk
 from tkinter import messagebox
 import re
@@ -28,7 +29,7 @@ import traceback
 
 from .sheets import ProductSheet
 from .database import Database
-from .helpers import Log, formatPrice
+from .helpers import formatPrice, configureLogger
 from . import gui_components
 
 class InputSheet(ProductSheet):
@@ -67,12 +68,13 @@ class InputSheet(ProductSheet):
         :param inputSheetsDir: path to previously accounted sheets
         :type inputSheetsDir: str
         """
-        super().__init__(log=Log())
+        super().__init__()
         self.parentFrame = parentFrame
         self.db = db
         self.originalPath = sheetPath
         self.inputSheetsDir = inputSheetsDir
         self.load(self.originalPath)
+        self.logger = logging.getLogger('tagtrail.tagtrail_sanitize.InputSheet')
         self.__createWidgets(parentFrame)
         self.__manualValidationBoxNames = self.__selectManualValidationBoxes()
 
@@ -174,7 +176,7 @@ class InputSheet(ProductSheet):
                 if box.confidence == 1 and box.entry is not None]
         selected = random.sample(candidateValidationBoxes,
                 min(self.numBoxesToValidate, len(candidateValidationBoxes)))
-        self._log.debug(f'selected manualValidationBoxes: {selected}')
+        self.logger.debug(f'selected manualValidationBoxes: {selected}')
         return selected
 
     def __ensureEnoughValidationBoxes(self):
@@ -191,9 +193,9 @@ class InputSheet(ProductSheet):
             if (box.confidence == 1 and
                     box.entry.copiedFromPreviousAccounting):
                 numAutomaticallyValidatedBoxes += 1
-                self._log.debug(f'{box.name} can be validated automatically')
+                self.logger.debug(f'{box.name} can be validated automatically')
 
-        self._log.debug('numAutomaticallyValidatedBoxes = '
+        self.logger.debug('numAutomaticallyValidatedBoxes = '
                 f'{numAutomaticallyValidatedBoxes}')
         numRemaining = max(0,
                 self.numBoxesToValidate-numAutomaticallyValidatedBoxes)
@@ -216,7 +218,7 @@ class InputSheet(ProductSheet):
 
             else:
                 # reset this box and let the user fill it in
-                self._log.debug(
+                self.logger.debug(
                         f'{name} has to be validated manually')
                 box.entry.manuallyValidated = True
                 box.entry.enabled = True
@@ -306,7 +308,7 @@ class InputSheet(ProductSheet):
             or isn't the same sheet as self (productId or sheetNumber don't
             match)
         """
-        self._log.debug(f'loading previous tags from {sheetPath}')
+        self.logger.debug(f'loading previous tags from {sheetPath}')
 
         accountedSheet = ProductSheet()
         accountedSheet.load(sheetPath)
@@ -329,7 +331,7 @@ class InputSheet(ProductSheet):
                 continue
 
             if accountedBox.text == '':
-                self._log.debug(f'resetting box {accountedBox.name}')
+                self.logger.debug(f'resetting box {accountedBox.name}')
                 if box.entry.copiedFromPreviousAccounting:
                     # set entry back to initial state
                     box.entry.text = box.text
@@ -337,7 +339,7 @@ class InputSheet(ProductSheet):
                     box.entry.copiedFromPreviousAccounting = False
                 box.entry.enabled = True
             else:
-                self._log.debug('copying tag from previous accounting '
+                self.logger.debug('copying tag from previous accounting '
                         f'{accountedBox.name}: {accountedBox.text}')
                 box.entry.copiedFromPreviousAccounting = True
                 box.entry.enabled = False
@@ -447,7 +449,7 @@ class InputSheet(ProductSheet):
                 if box.text == box.entry.text:
                     numCorrect += 1
                 else:
-                    self._log.info(f'{box.name} was incorrectly tagged '
+                    self.logger.info(f'{box.name} was incorrectly tagged '
                             f"'{box.text}' instead of '{box.entry.text}'")
         assert(numValidated >= len(self.__manualValidationBoxNames))
         return (numCorrect, numValidated)
@@ -471,11 +473,11 @@ class InputSheet(ProductSheet):
                 continue
             existingSheetBox = existingSheet.boxByName(box.name)
             if box.entry.text != existingSheetBox.text:
-                self._log.debug(f'sheets differ in {box.name}: '
+                self.logger.debug(f'sheets differ in {box.name}: '
                         f'{box.entry.text} != {existingSheetBox.text}')
                 return False
             if  box.entry.confidence != existingSheetBox.confidence:
-                self._log.debug(f'sheets differ in {box.name}: '
+                self.logger.debug(f'sheets differ in {box.name}: '
                         f'{box.entry.confidence} != {existingSheetBox.confidence}')
                 return False
         return True
@@ -646,7 +648,7 @@ class GUI(gui_components.BaseGUI):
     normalizedScanPostfix = '_normalized_scan.jpg'
     minAveragePrecision = 0.98
 
-    def __init__(self, accountingDataPath, log = Log(Log.LEVEL_INFO)):
+    def __init__(self, accountingDataPath):
         self.accountingDataPath = accountingDataPath
         self.productPath = f'{self.accountingDataPath}2_taggedProductSheets/'
         self.sheetsPath = f'{self.accountingDataPath}0_input/sheets/'
@@ -655,7 +657,7 @@ class GUI(gui_components.BaseGUI):
         self.numValidatedBoxesoxes = 0
         self.scanCanvas = None
         self.inputFrame = None
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_sanitize.GUI')
 
         self.productToSanitizeGenerator = self.nextProductToSanitize()
         try:
@@ -669,10 +671,10 @@ class GUI(gui_components.BaseGUI):
         width = None if width == -1 else width
         height = self.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
-        super().__init__(width, height, log)
+        super().__init__(width, height)
 
     def populateRoot(self):
-        self.log.info('')
+        self.logger.info('')
         self.root.title(self.csvPath)
         self.root.bind("<Tab>", self.switchInputFocus)
         self.root.bind("<Return>", self.switchInputFocus)
@@ -709,7 +711,7 @@ class GUI(gui_components.BaseGUI):
                 self.setFocusAreaOnScan(int(info['x']), int(info['y']),
                         int(info['width']), int(info['height']))
             except ValueError:
-                self.log.warn('unable to set focus area on scan')
+                self.logger.debug('unable to set focus area on scan')
 
         # Additional buttons
         buttons = []
@@ -749,10 +751,10 @@ class GUI(gui_components.BaseGUI):
             originalScanFile = csvFile + self.originalScanPostfix
             normalizedScanFile = csvFile + self.normalizedScanPostfix
             if originalScanFile not in originalScanFiles:
-                self.log.warn(f'{csvFile} omitted, {originalScanFile} is missing')
+                self.logger.warn(f'{csvFile} omitted, {originalScanFile} is missing')
                 continue
             if normalizedScanFile not in normalizedScanFiles:
-                self.log.warn(f'{csvFile} omitted, {normalizedScanFile} is missing')
+                self.logger.warn(f'{csvFile} omitted, {normalizedScanFile} is missing')
                 continue
 
             # check if this csv needs sanitation
@@ -833,7 +835,7 @@ class GUI(gui_components.BaseGUI):
                             'Remove the duplicate and continue?',
                             default = messagebox.OK)
                     if answer == True:
-                        self.log.info(f'deleting {newCsvPath}')
+                        self.logger.info(f'deleting {newCsvPath}')
                         os.remove(newCsvPath)
                         os.remove(newOriginalScanPath)
                         os.remove(newNormalizedScanPath)
@@ -888,20 +890,20 @@ class GUI(gui_components.BaseGUI):
 
         self.numCorrectValidatedBoxes += numCorrect
         self.numValidatedBoxesoxes += numValidated
-        self.log.info(f'sheet validation score: {numCorrect} ' + \
+        self.logger.info(f'sheet validation score: {numCorrect} ' + \
                 f'out of {numValidated} validated texts were correct')
-        self.log.info(f'total validation score: ' + \
+        self.logger.info(f'total validation score: ' + \
                 f'{self.numCorrectValidatedBoxes} out of ' + \
                 f'{self.numValidatedBoxesoxes} validated texts were correct')
 
         self.inputSheet.store(self.productPath)
         if oldCsvPath != newCsvPath:
-            self.log.info(f'deleting {oldCsvPath}')
+            self.logger.info(f'deleting {oldCsvPath}')
             os.remove(oldCsvPath)
         self.csvPath = newCsvPath
-        self.log.debug(f'renaming {oldOriginalScanPath} to {newOriginalScanPath}')
+        self.logger.debug(f'renaming {oldOriginalScanPath} to {newOriginalScanPath}')
         os.rename(oldOriginalScanPath, newOriginalScanPath)
-        self.log.debug(f'renaming {oldNormalizedScanPath} to {newNormalizedScanPath}')
+        self.logger.debug(f'renaming {oldNormalizedScanPath} to {newNormalizedScanPath}')
         os.rename(oldNormalizedScanPath, newNormalizedScanPath)
         return True
 
@@ -951,7 +953,7 @@ class GUI(gui_components.BaseGUI):
                     self.setFocusAreaOnScan(int(info['x']), int(info['y']),
                             int(info['width']), int(info['height']))
                 except ValueError:
-                    self.log.warn('unable to set focus area on scan')
+                    self.logger.warn('unable to set focus area on scan')
 
         elif event.keysym == 'Tab':
             focused.tk_focusNext().focus_set()
@@ -979,5 +981,9 @@ if __name__== "__main__":
                 'completing missing tags and validating recognized ones.')
     parser.add_argument('accountingDir',
             help='Top-level tagtrail directory to process, usually data/next/')
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
     GUI(args.accountingDir)

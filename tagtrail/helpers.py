@@ -22,6 +22,7 @@ import os
 import datetime
 import time
 import re
+import logging
 from decimal import Decimal
 from keyrings.cryptfile.cryptfile import CryptFileKeyring
 import getpass
@@ -187,44 +188,30 @@ def priceFromFormatted(priceStr):
     else:
         raise ValueError(f"'{priceStr}' is not a formatted number")
 
-class Log(ABC):
-    LEVEL_DEBUG = 0
-    LEVEL_WARN = 1
-    LEVEL_INFO = 2
-    LEVEL_ERROR = 3
+def configureLogger(logger, consoleLevel = logging.INFO, fileLevels =
+        [logging.DEBUG, logging.INFO]):
+    logger.setLevel(min([consoleLevel] + fileLevels))
+    for fileLevel in fileLevels:
+        fileHandler = logging.FileHandler(f'{logging.getLevelName(fileLevel)}.log',
+                mode='w')
+        fileHandler.setLevel(fileLevel)
+        fileHandler.setFormatter(logging.Formatter(
+            '%(asctime)s | %(name)-40s | %(levelname)-8s | %(message)s'))
+        logger.addHandler(fileHandler)
 
-    defaultLogLevel = LEVEL_WARN
+    consoleHandler = logging.StreamHandler()
+    consoleHandler.setLevel(consoleLevel)
+    consoleHandler.setFormatter(logging.Formatter(
+        '%(levelname)-8s : %(message)s'))
+    logger.addHandler(consoleHandler)
 
-    def __init__(self, logLevel = defaultLogLevel):
-        self._logLevel = logLevel
 
-    def debug(self, msg, *args, **kwargs):
-        if self._logLevel<=Log.LEVEL_DEBUG:
-            self._print(msg, *args, **kwargs)
-
-    def warn(self, msg, *args, **kwargs):
-        if self._logLevel<=Log.LEVEL_WARN:
-            self._print(msg, *args, **kwargs)
-
-    def info(self, msg, *args, **kwargs):
-        if self._logLevel<=Log.LEVEL_INFO:
-            self._print(msg, *args, **kwargs)
-
-    def error(self, msg, *args, **kwargs):
-        if self._logLevel<=Log.LEVEL_ERROR:
-            self._print(msg, *args, **kwargs)
-
-    def _print(self, msg, *args, **kwargs):
-        if isinstance(msg, str):
-            print(msg.format(*args, **kwargs))
-        else:
-            print(msg)
-
-def recreateDir(path, log = Log()):
+def recreateDir(path):
     try:
         shutil.rmtree(path)
     except FileNotFoundError:
-        log.debug('Directory not found: {}', path)
+        logging.getLogger('tagtrail.helpers.recreatedDir').debug(
+            f'Directory not found: {path}')
     os.makedirs(path)
 
 # retrieve names of all files directly in directory 'dir' (no recursion)

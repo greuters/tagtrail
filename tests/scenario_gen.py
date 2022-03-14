@@ -6,6 +6,7 @@ from .context import sheets
 from .context import tagtrail_gen
 from .test_helpers import TagtrailTestCase
 
+import logging
 import argparse
 import unittest
 import shutil
@@ -33,8 +34,8 @@ class GenTest(TagtrailTestCase):
         self.testGenDir = f'{self.tmpDir}gen_{self.templateName}/'
         self.testNextDir = f'{self.tmpDir}next_{self.templateName}/'
 
-        self.log = helpers.Log(helpers.Log.LEVEL_INFO)
-        self.log.info(f'\nStarting test {self.id()}\n')
+        self.logger = logging.getLogger('tagtrail.tests.scenario_gen.GenTest')
+        self.logger.info(f'\nStarting test {self.id()}\n')
         helpers.recreateDir(self.tmpDir)
         shutil.copytree(self.templateRootDir, self.testRootDir)
         self.config = database.Database(f'{self.testRootDir}0_input/').config
@@ -159,7 +160,7 @@ class GenTest(TagtrailTestCase):
         tagtrail_gen should create the expected output on unmodified template
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         model.initializeSheets()
         model.save()
         self.check_files(model)
@@ -172,8 +173,7 @@ class GenTest(TagtrailTestCase):
         for testProductId in self.testProductIds:
             with self.subTest(testProductId = testProductId):
                 model = tagtrail_gen.Model(self.testRootDir, True,
-                        self.testDate, self.testGenDir, self.testNextDir,
-                        self.log)
+                        self.testDate, self.testGenDir, self.testNextDir)
                 model.db.products.pop(testProductId)
                 model.initializeSheets()
                 model.save()
@@ -203,8 +203,7 @@ class GenTest(TagtrailTestCase):
         for testProductId in self.testProductIds:
             with self.subTest(testProductId = testProductId):
                 model = tagtrail_gen.Model(self.testRootDir, True,
-                        self.testDate, self.testGenDir, self.testNextDir,
-                        self.log)
+                        self.testDate, self.testGenDir, self.testNextDir)
 
                 testProduct = model.db.products[testProductId]
                 testProduct.soldQuantity = (testProduct.previousQuantity +
@@ -238,7 +237,7 @@ class GenTest(TagtrailTestCase):
         No sheets should be generated for a new product with amount 0 in DB
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
 
         testProduct = database.Product('test product', 100, 'g',
                 Decimal(12.3), Decimal(.05), 0,
@@ -260,7 +259,7 @@ class GenTest(TagtrailTestCase):
         Sheets of an active product with no changes remain active
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         model.initializeSheets()
         model.save()
@@ -273,7 +272,7 @@ class GenTest(TagtrailTestCase):
         Sheets of an inactive product with no changes remain inactive
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
         model.initializeSheets()
         model.save()
@@ -286,7 +285,7 @@ class GenTest(TagtrailTestCase):
         Sheets of an inactive product with high price change remain inactive
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
             'max_neglectable_price_change_percentage') / Decimal(100))
@@ -303,7 +302,7 @@ class GenTest(TagtrailTestCase):
         Sheets of an active product with high price change are replaced
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         sheet = model.generateProductSheet(testProduct, 4)
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
@@ -326,7 +325,7 @@ class GenTest(TagtrailTestCase):
         Sheets of an inactive product with low price change remain unchanged
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
             'max_neglectable_price_change_percentage') / Decimal(100))
@@ -346,7 +345,7 @@ class GenTest(TagtrailTestCase):
         Sheets of an active product with low price change remain unchanged
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
             'max_neglectable_price_change_percentage') / Decimal(100))
@@ -366,7 +365,7 @@ class GenTest(TagtrailTestCase):
         No active sheet in next should have a high price difference to DB
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         model.initializeSheets()
         # smuggle in price change after initialization
@@ -382,7 +381,7 @@ class GenTest(TagtrailTestCase):
         (even if price change is low)
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.amount -= 5
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
@@ -408,7 +407,7 @@ class GenTest(TagtrailTestCase):
         (even if price change is low)
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.unit = 'l'
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
@@ -434,7 +433,7 @@ class GenTest(TagtrailTestCase):
         (even if price change is low)
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.addedQuantity = 100
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
@@ -461,7 +460,7 @@ class GenTest(TagtrailTestCase):
         If model.allowRemoval == False, replacing sheets must fail
         """
         model = tagtrail_gen.Model(self.testRootDir, False, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         testProduct.unit = 'l'
         self.assertRaises(ValueError, model.initializeSheets)
@@ -471,7 +470,7 @@ class GenTest(TagtrailTestCase):
         Inactive sheets must be activated to provide enough space
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
 
         inactiveSheet1 = model.generateProductSheet(testProduct, 2)
@@ -501,7 +500,7 @@ class GenTest(TagtrailTestCase):
         Inactive sheets must be activated and a new sheet added
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
 
         inactiveSheet = model.generateProductSheet(testProduct, 2)
@@ -527,7 +526,7 @@ class GenTest(TagtrailTestCase):
         If existing sheets provide enough capacity don't create any new sheets
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
 
         inactiveSheet = model.generateProductSheet(testProduct, 3)
@@ -559,7 +558,7 @@ class GenTest(TagtrailTestCase):
         Unable to add enough new sheets, replacement forbidden -> expected fail
         """
         model = tagtrail_gen.Model(self.testRootDir, False, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
 
         # add another sheet that would need to be replaced to make enough space
@@ -582,7 +581,7 @@ class GenTest(TagtrailTestCase):
         Not enough space in new sheets, need to replace fullest existing
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
 
         # add another sheet that has to be replaced to make enough space
@@ -615,7 +614,7 @@ class GenTest(TagtrailTestCase):
         Hitting max_num_sheets_per_product limitation -> expected fail
         """
         model = tagtrail_gen.Model(self.testRootDir, False, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         maxNumSheets = self.config.getint('tagtrail_gen',
                 'max_num_sheets_per_product')
@@ -629,7 +628,7 @@ class GenTest(TagtrailTestCase):
         All sheets of a product must have the exact same name
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
         sheet = model.generateProductSheet(testProduct, 2)
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
@@ -648,7 +647,7 @@ class GenTest(TagtrailTestCase):
         All sheets of a product must have the same amount and unit
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
         sheet = model.generateProductSheet(testProduct, 2)
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
@@ -667,7 +666,7 @@ class GenTest(TagtrailTestCase):
         All sheets of a product must have the exact same name
         """
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
-                self.testGenDir, self.testNextDir, self.log)
+                self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
         sheet = model.generateProductSheet(testProduct, 2)
         sheet.store(f'{self.testRootDir}/0_input/sheets/inactive/')
@@ -688,7 +687,11 @@ if __name__ == '__main__':
     parser.add_argument('--pattern',
             default=None,
             help='Only run tests containing `pattern` in there id.')
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
 
     loader = unittest.TestLoader()
     completeSuite = loader.loadTestsFromTestCase(GenTest)

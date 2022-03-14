@@ -10,3 +10,4 @@ nose
 sphinx
 sphinx_rtd_theme
 coverage
+logging

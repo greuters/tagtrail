@@ -26,6 +26,7 @@ import math
 import Levenshtein
 import slugify
 import tkinter
+import logging
 from tkinter import ttk
 from tkinter import messagebox
 from tkinter.simpledialog import Dialog
@@ -51,15 +52,13 @@ class ScanSplitter():
     as input, splits them into four regions and decides whether each region
     contains a sheet or is empty.
 
-    :param name: name of the processor, used to identify logs and debug images
+    :param name: name of the processor, used to identify debug images
     :type name: str
     :param tmpDir: directory to write debug images to
     :type tmpDir: str
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     :param sheetRegion0: relative coordinates of top left sheet, (topLeftX, topLeftY,
         bottomRightX, bottomRightY)
     :type sheetRegion0: tuple of float, each between 0.0 and 1.0
@@ -77,7 +76,6 @@ class ScanSplitter():
                  name,
                  tmpDir = 'data/tmp/',
                  writeDebugImages = False,
-                 log = helpers.Log(),
                  sheetRegion0 = (0, 0, .5, .5),
                  sheetRegion1 = (.5, 0, 1, .5),
                  sheetRegion2 = (0, .5, .5, 1),
@@ -86,7 +84,7 @@ class ScanSplitter():
         self.name = name
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_ocr.ScanSplitter')
         self.__sheetRegions = [sheetRegion0, sheetRegion1, sheetRegion2, sheetRegion3]
 
     def process(self, inputImg):
@@ -151,7 +149,7 @@ class ScanSplitter():
         cnts = sorted(cnts, key=cv.contourArea, reverse=True)
 
         if cnts == []:
-            self.log.debug(f'assume empty sheet (no sheet contour found)')
+            self.logger.debug(f'assume empty sheet (no sheet contour found)')
             return None
 
         # biggest contour is assumed to be the sheet
@@ -159,29 +157,29 @@ class ScanSplitter():
         cntX, cntY, cntW, cntH = cv.boundingRect(sheetContour)
 
         if cntW * cntH < self.minSheetSize:
-            self.log.debug(f'assume empty sheet (sheet contour too small)')
+            self.logger.debug(f'assume empty sheet (sheet contour too small)')
             return None
 
         sheet = np.copy(sheetImg[cntY:cntY+cntH, cntX:cntX+cntW])
         self.__sheetImgs.append(sheet)
 
         frameFinder = ContourBasedFrameFinder(f'{self.name}_sheet{sheetRegionIdx}_5_frameFinder',
-                self.tmpDir, self.writeDebugImages, self.log)
+                self.tmpDir, self.writeDebugImages)
         frameContour = frameFinder.process(sheet)
         if frameContour is None:
             findMarginsByLines = LineBasedFrameFinder(
                     f'{self.name}_sheet{sheetRegionIdx}_6_frameFinderByLines',
-                    self.tmpDir, self.writeDebugImages, self.log,
+                    self.tmpDir, self.writeDebugImages,
                     cropMargin = 40)
             frameContour = findMarginsByLines.process(sheet)
 
         if frameContour is None:
-            self.log.debug(f'assume empty sheet (no frame contour found)')
+            self.loger.debug(f'assume empty sheet (no frame contour found)')
             return None
 
         normalizer = SheetNormalizer(
                 f'{self.name}_sheet{sheetRegionIdx}_7_normalizer',
-                self.tmpDir, self.writeDebugImages, self.log)
+                self.tmpDir, self.writeDebugImages)
         return normalizer.process(sheet, frameContour)
 
     def __writeDebugImages(self):
@@ -214,26 +212,24 @@ class ContourBasedFrameFinder():
     faster than :class:`LineBasedFrameFinder`, but often misses distorted frames (e.g.
     if a corner is folded or a tag placed over the frame)
 
-    :param name: name of the processor, used to identify logs and debug images
+    :param name: name of the processor, used to identify debug images
     :type name: str
     :param tmpDir: directory to write debug images to
     :type tmpDir: str
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     """
     def __init__(self,
                  name,
                  tmpDir = 'data/tmp/',
                  writeDebugImages = False,
-                 log = helpers.Log(),
                  ):
         self.name = name
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
-        self.log = log
+        self.logger = logging.getLogger(
+                'tagtrail.tagtrail_ocr.ContourBasedFrameFinder')
 
     @property
     def __prefix(self):
@@ -294,17 +290,17 @@ class ContourBasedFrameFinder():
             cv.imwrite(f'{self.__prefix}_4_contours.jpg', contourImg)
 
         if approxFrameContour is None:
-            self.log.debug(f'no frame contour found')
+            self.logger.debug(f'no frame contour found')
             return None
 
         imgH, imgW = thresholdImg.shape
         _, _, cntW, cntH = cv.boundingRect(approxFrameContour)
         fillRatio = (cntW * cntH) / (imgW * imgH)
         if fillRatio < .5:
-            self.log.debug(f'frame contour not filled enough')
-            self.log.debug(f'imgH, imgW = {imgH}, {imgW}')
-            self.log.debug(f'cntH, cntW = {cntH}, {cntW}')
-            self.log.debug(f'fillRatio = {fillRatio}')
+            self.logger.debug(f'frame contour not filled enough')
+            self.logger.debug(f'imgH, imgW = {imgH}, {imgW}')
+            self.logger.debug(f'cntH, cntW = {cntH}, {cntW}')
+            self.logger.debug(f'fillRatio = {fillRatio}')
             return None
 
         return approxFrameContour.reshape(4, 2)
@@ -317,15 +313,13 @@ class LineBasedFrameFinder():
     :class:`LineBasedFrameFinder` finds frames even if they are not complete,
     but gets confused by sheet boundaries if the sheet is not well detected.
 
-    :param name: name of the processor, used to identify logs and debug images
+    :param name: name of the processor, used to identify debug images
     :type name: str
     :param tmpDir: directory to write debug images to
     :type tmpDir: str
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     :param minLineLength: Minimum length of line. Line segments shorter than
         this are rejected
     :type minLineLength: int
@@ -338,13 +332,13 @@ class LineBasedFrameFinder():
                  name,
                  tmpDir = 'data/tmp/',
                  writeDebugImages = False,
-                 log = helpers.Log(),
                  minLineLength = 800,
                  cropMargin = 0):
         self.name = name
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
-        self.log = log
+        self.logger = logging.getLogger(
+                'tagtrail.tagtrail_ocr.LineBasedFrameFinder')
         self.pixelAccuracy = 1
         self.rotationAccuracy = np.pi/180
         self.minLineLength = minLineLength
@@ -402,7 +396,7 @@ class LineBasedFrameFinder():
         corners = np.argwhere(harrisDstImg.transpose() >
                 0.5*harrisDstImg.max())
         if corners is None:
-            self.log.debug('Failed to find corners, not cropping image')
+            self.logger.debug('Failed to find corners, not cropping image')
             return None
 
         frameImg = np.copy(croppedImg)
@@ -428,10 +422,10 @@ class LineBasedFrameFinder():
         frameContourArea = cv.contourArea(frameContour)
         fillRatio = frameContourArea / (imgW * imgH)
         if fillRatio < .5:
-            self.log.debug(f'frame contour not filled enough')
-            self.log.debug(f'imgH, imgW = {imgH}, {imgW}')
-            self.log.debug(f'frameContourArea = {frameContourArea}')
-            self.log.debug(f'fillRatio = {fillRatio}')
+            self.logger.debug(f'frame contour not filled enough')
+            self.logger.debug(f'imgH, imgW = {imgH}, {imgW}')
+            self.logger.debug(f'frameContourArea = {frameContourArea}')
+            self.logger.debug(f'fillRatio = {fillRatio}')
             return None
 
         return np.array([[x+self.cropMargin, y+self.cropMargin] for (x, y) in
@@ -443,26 +437,23 @@ class SheetNormalizer():
     transforms it back to represent the original ProductSheet as closely as
     possible.
 
-    :param name: name of the processor, used to identify logs and debug images
+    :param name: name of the processor, used to identify debug images
     :type name: str
     :param tmpDir: directory to write debug images to
     :type tmpDir: str
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     """
     def __init__(self,
                  name,
                  tmpDir = 'data/tmp/',
-                 writeDebugImages = False,
-                 log = helpers.Log(),
+                 writeDebugImages = False
                  ):
         self.name = name
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_ocr.SheetNormalizer')
 
     @property
     def __prefix(self):
@@ -605,7 +596,6 @@ class TagRecognizer():
             db,
             tesseractApi,
             writeDebugImages = False,
-            log = helpers.Log(),
             searchMarginSize = 25,
             cornerBorderSize = 5,
             rotationBorderSize = 20,
@@ -616,7 +606,7 @@ class TagRecognizer():
             confidenceThreshold = 0.5
             ):
         """
-        :param name: name of the processor, used to identify logs and debug images
+        :param name: name of the processor, used to identify debug images
         :type name: str
         :param inputSheetsDir: directory where previous versions of the scanned product
             sheets are stored
@@ -630,8 +620,6 @@ class TagRecognizer():
         :param writeDebugImages: `True` if debug images shold be written. This
             slows down processing significantly.
         :param writeDebugImages: bool
-        :param log: logger to write messages to
-        :type log: class: `helpers.Log`
         :param searchMarginSize: margin by which each box image is extended to look
             for its actual corners
         :type searchMarginSize: int
@@ -672,7 +660,7 @@ class TagRecognizer():
         self.inputSheetsDir = inputSheetsDir
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_ocr.TagRecognizer')
         self.searchMarginSize = searchMarginSize
         self.cornerBorderSize = cornerBorderSize
         self.rotationBorderSize = rotationBorderSize
@@ -693,24 +681,24 @@ class TagRecognizer():
         self.__sheetNumberCandidates = [
                 sheetNumberString.format(sheetNumber=str(n))
                 for n in range(1, maxNumSheets+1)]
-        self.log.debug(f'sheetNumberCandidates={list(self.__sheetNumberCandidates)}')
+        self.logger.debug(f'sheetNumberCandidates={list(self.__sheetNumberCandidates)}')
 
         self.__productNameCandidates = [p.description
                 for p in self.__db.products.values()]
-        self.log.debug(f'productNameCandidates={list(self.__productNameCandidates)}')
+        self.logger.debug(f'productNameCandidates={list(self.__productNameCandidates)}')
 
         self.__unitCandidates = [p.amountAndUnit
                 for p in self.__db.products.values()]
-        self.log.debug(f'unitCandidates={list(self.__unitCandidates)}')
+        self.logger.debug(f'unitCandidates={list(self.__unitCandidates)}')
 
         self.currency = self.__db.config.get('general', 'currency')
         self.__priceCandidates = [
                 helpers.formatPrice(p.grossSalesPrice(), self.currency)
                 for p in self.__db.products.values()]
-        self.log.debug(f'priceCandidates={list(self.__priceCandidates)}')
+        self.logger.debug(f'priceCandidates={list(self.__priceCandidates)}')
 
         self.__memberIdCandidates = [m.id for m in self.__db.members.values()]
-        self.log.debug(f'memberIdCandidates={list(self.__memberIdCandidates)}')
+        self.logger.debug(f'memberIdCandidates={list(self.__memberIdCandidates)}')
 
     def productId(self):
         """
@@ -805,7 +793,7 @@ class TagRecognizer():
                     f for f in os.listdir(f'{self.inputSheetsDir}active/')
                     if ProductSheet.productId_from_filename(f) == productId]
             if len(sheetFilenames) == 1:
-                self.log.info('inferred sheetNumber from productId '
+                self.logger.info('inferred sheetNumber from productId '
                         f'{productId} -> {sheetNumberBox.text}')
                 sheetNumberBox.text = ProductSheet.sheetNumber_from_filename(
                         sheetFilenames[0])
@@ -870,7 +858,7 @@ class TagRecognizer():
         :rtype: bool
         :raises ValueError: if the given input sheet is not fully sanitized
         """
-        self.log.debug(f'test if {inputSheetPath} matches this sheet')
+        self.logger.debug(f'test if {inputSheetPath} matches this sheet')
         inputSheet = ProductSheet()
         inputSheet.load(inputSheetPath)
 
@@ -888,15 +876,15 @@ class TagRecognizer():
             if inputBox.text != '':
                 numTextsCompared += 1
                 if inputBox.text != box.text:
-                    self.log.debug(f'non-matching tag in box {box.name} '
+                    self.logger.debug(f'non-matching tag in box {box.name} '
                             f'found: {inputBox.text} != {box.text}')
                     return False
 
         if self.minNumMatchingTextsForIdentification <= numTextsCompared:
-            self.log.debug(f'match found: {inputSheetPath}')
+            self.logger.debug(f'match found: {inputSheetPath}')
             return True
         else:
-            self.log.debug('not enough matching tags compared to '
+            self.logger.debug('not enough matching tags compared to '
                 f'confirm match ({numTextsCompared})')
             return False
 
@@ -930,22 +918,22 @@ class TagRecognizer():
         cleanedImg = np.zeros(labeledImg.shape, dtype="uint8")
         boundingRectImg = boxInputImg.copy()
         for label in range(numComponents):
-            self.log.debug(f'stats[label, cv.CC_STAT_AREA]={stats[label, cv.CC_STAT_AREA]}')
+            self.logger.debug(f'stats[label, cv.CC_STAT_AREA]={stats[label, cv.CC_STAT_AREA]}')
             if stats[label, cv.CC_STAT_AREA] < self.minComponentArea:
-                self.log.debug('component removed, too small')
+                self.logger.debug('component removed, too small')
                 continue
 
             if maxComponentArea < stats[label, cv.CC_STAT_AREA]:
-                self.log.debug('component removed, too big')
+                self.logger.debug('component removed, too big')
                 continue
 
             componentWidth = stats[label, cv.CC_STAT_WIDTH]
             componentHeight = stats[label, cv.CC_STAT_HEIGHT]
             aspectRatio = (min(componentWidth, componentHeight) /
                     max(componentWidth, componentHeight))
-            self.log.debug(f'stats[label, cv.CC_STAT_WIDTH]={componentWidth}')
-            self.log.debug(f'stats[label, cv.CC_STAT_HEIGHT]={componentHeight}')
-            self.log.debug(f'aspectRatio={aspectRatio}')
+            self.logger.debug(f'stats[label, cv.CC_STAT_WIDTH]={componentWidth}')
+            self.logger.debug(f'stats[label, cv.CC_STAT_HEIGHT]={componentHeight}')
+            self.logger.debug(f'aspectRatio={aspectRatio}')
             if aspectRatio < self.minAspectRatio:
                 continue
 
@@ -954,13 +942,13 @@ class TagRecognizer():
             x, y, w, h = cv.boundingRect(mask)
             boundingRectArea = w * h
             if maxComponentArea < boundingRectArea:
-                self.log.debug(f'component removed, boundingRect too big {w*h}')
+                self.logger.debug(f'component removed, boundingRect too big {w*h}')
                 continue
 
             boundingRectFillFactor = stats[label, cv.CC_STAT_AREA] / boundingRectArea
             if boundingRectFillFactor < 0.35:
-                self.log.debug(f'boundingRectFillFactor = {boundingRectFillFactor}')
-                self.log.debug('component removed, too sparsly filled')
+                self.logger.debug(f'boundingRectFillFactor = {boundingRectFillFactor}')
+                self.logger.debug('component removed, too sparsly filled')
                 continue
             elif self.writeDebugImages:
                 cv.rectangle(boundingRectImg, (x, y), (x+w, y+h), (255,0,0), 2)
@@ -1036,8 +1024,8 @@ class TagRecognizer():
         h, w = maskImg.shape
         minBorderDist = 20
         if centerX < minBorderDist or w - minBorderDist < centerX or centerY < minBorderDist or h - minBorderDist < centerY:
-            self.log.debug(f'{box.name} centerX = {centerX}, centerY = {centerY}')
-            self.log.debug(f'{box.name} too close to border, h = {h}, w = {w}')
+            self.logger.debug(f'{box.name} centerX = {centerX}, centerY = {centerY}')
+            self.logger.debug(f'{box.name} too close to border, h = {h}, w = {w}')
             box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
@@ -1048,14 +1036,14 @@ class TagRecognizer():
         # if less than 3% of the mask is filled then we are looking at
         # noise and can safely ignore the contour
         if percentFilled < 0.03:
-            self.log.debug(f'not filled enough, percentFilled = {percentFilled}')
+            self.logger.debug(f'not filled enough, percentFilled = {percentFilled}')
             box.bgColor = (255, 0, 0)
             return ("", 1.0)
 
         # use a bigger region around the tag for rotation, to avoid cutting
         # corners when rotating
         p = RotateTag(f'_{box.name}_09_rotation', self.__prefix,
-                writeDebugImages = self.writeDebugImages, log=self.log)
+                writeDebugImages = self.writeDebugImages)
         rotationInputImg = self.__inputImg[
                 y0-self.rotationBorderSize:y1+self.rotationBorderSize,
                 x0-self.rotationBorderSize:x1+self.rotationBorderSize]
@@ -1077,7 +1065,7 @@ class TagRecognizer():
         ocrText = self.tesseractApi.GetUTF8Text().strip()
 
         confidence, text = self.__findClosestString(ocrText, candidateTexts)
-        self.log.info("(ocrText, confidence, text) = ({}, {}, {})", ocrText, confidence, text)
+        self.logger.info(f"(ocrText, confidence, text) = ({ocrText}, {confidence}, {text})")
         return (text, confidence)
 
     def __findBoxContour(self, box):
@@ -1142,11 +1130,11 @@ class TagRecognizer():
         :rtype: (str, float)
         """
         candidateStrings=list(set(candidateStrings))
-        self.log.debug("findClosestString: searchString={}", searchString)
-        self.log.debug("findClosestString: candidateStrings={}", candidateStrings)
+        self.logger.debug(f"findClosestString: searchString={searchString}")
+        self.logger.debug(f"findClosestString: candidateStrings={candidateStrings}")
         dists = list(map(lambda x: Levenshtein.distance(x,
             searchString.upper()), [c.upper() for c in candidateStrings]))
-        self.log.debug("dists={}", dists)
+        self.logger.debug(f"dists={dists}")
         minDist, secondDist = np.partition(dists, 1)[:2]
         if minDist > 5 or minDist == secondDist:
             return 0, ""
@@ -1172,6 +1160,7 @@ class TagRecognizer():
             raise ValueError(
                 f'{outputDir}{self.filename()} already exists')
         self.__sheet.store(outputDir)
+        self.logger.info('')
 
 class RotateTag():
     """
@@ -1187,18 +1176,15 @@ class RotateTag():
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     """
     def __init__(self,
                  name,
                  tmpDir = 'data/tmp/',
-                 writeDebugImages = False,
-                 log = helpers.Log()):
+                 writeDebugImages = False):
         self.name = name
         self.tmpDir = tmpDir
         self.writeDebugImages = writeDebugImages
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_ocr.RotateTag')
 
     def process(self, originalImg, maskImg):
         """
@@ -1271,13 +1257,13 @@ class SplitSheetDialog(Dialog):
         self.inputImg = inputImg
         self._resizedInputImg = None
         self.model = model
-        self.log = self.model.log
+        self.logger = logging.getLogger('tagtrail.tagtrail_ocr.SplitSheetDialog')
         self.outputImg = None
         self._previewOutputImg = None
         self.isEmpty = False
         self._selectedCorners = []
         self.selectionMode = 'rectangle'
-        self._templateImg = ProductSheet(self.model.log).createImg()
+        self._templateImg = ProductSheet().createImg()
         super().__init__(root)
 
     @property
@@ -1317,7 +1303,7 @@ class SplitSheetDialog(Dialog):
         resizedImgHeight, resizedImgWidth = int(o_h * aspectRatio), int(o_w * aspectRatio)
         resizedImg = cv.resize(self.inputImg, (resizedImgWidth, resizedImgHeight), Image.BILINEAR)
         self._resizedInputImg = ImageTk.PhotoImage(Image.fromarray(resizedImg))
-        self.log.debug(f'resizedImgWidth, resizedImgHeight = {resizedImgWidth}, {resizedImgHeight}')
+        self.logger.debug(f'resizedImgWidth, resizedImgHeight = {resizedImgWidth}, {resizedImgHeight}')
 
         self.inputCanvas = tkinter.Canvas(master,
                width=resizedImgWidth,
@@ -1446,7 +1432,7 @@ class SplitSheetDialog(Dialog):
             img = self.inputImg
 
         if frameContour is None:
-            self.log.debug(f'no frame contour found, using cropped input img')
+            self.logger.debug(f'no frame contour found, using cropped input img')
             self.outputImg = img.copy()
         else:
             self.outputImg = SheetNormalizer(
@@ -1516,22 +1502,19 @@ class Model():
     :param writeDebugImages: `True` if debug images shold be written. This
         slows down processing significantly.
     :param writeDebugImages: bool
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     """
     def __init__(self,
             rootDir,
             tmpDir,
             scanFilenames,
             clearOutputDir = True,
-            writeDebugImages = False,
-            log = helpers.Log(helpers.Log.LEVEL_INFO)):
+            writeDebugImages = False):
         self.rootDir = rootDir
         self.tmpDir = tmpDir
         self.scanDir = f'{rootDir}0_input/scans/'
         self.outputDir = f'{rootDir}2_taggedProductSheets/'
         self.scanFilenames = scanFilenames
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_ocr.Model')
         self.clearOutputDir = clearOutputDir
         self.fallbackSheetNumber = 0
         self.writeDebugImages = writeDebugImages
@@ -1593,7 +1576,6 @@ class Model():
                 f'0_splitSheets',
                 splitDir,
                 self.writeDebugImages,
-                self.log,
                 sheetCoordinates[0],
                 sheetCoordinates[1],
                 sheetCoordinates[2],
@@ -1602,16 +1584,17 @@ class Model():
 
         inputImg = cv.imread(self.scanDir + scanFilename)
         if inputImg is None:
-            self.log.warn(f'file {self.scanDir + scanFilename} could not be ' +
+            self.logger.warning(f'file {self.scanDir + scanFilename} could not be ' +
                     'opened as an image')
             return
 
         rotatedImg = imutils.rotate_bound(inputImg, rotationAngle)
-        self.log.info(f'Splitting scanned file: {scanFilename}')
+        self.logger.info('')
+        self.logger.info(f'Splitting scanned file: {scanFilename}')
         splitter.process(rotatedImg)
         for idx, splitImg in enumerate(splitter.outputSheetImgs):
             sheetName = f'{scanFilename}_sheet{idx}'
-            self.log.info(f'sheetName = {sheetName}')
+            self.logger.debug(f'sheetName = {sheetName}')
             sheetTmpDir = f'{self.tmpDir}{sheetName}/'
             helpers.recreateDir(sheetTmpDir)
             if splitImg is None:
@@ -1674,19 +1657,18 @@ class Model():
         fallbackSheetName = sheetRegion.name
         recognizer = TagRecognizer("4_recognizeText",
                 f'{self.rootDir}0_input/sheets/', sheetRegion.tmpDir, self.db,
-                self.tesseractApi, writeDebugImages = self.writeDebugImages,
-                log = self.log)
+                self.tesseractApi, writeDebugImages = self.writeDebugImages)
         recognizer.process(sheetRegion.processedImg, fallbackSheetName,
                 self.fallbackSheetNumber)
 
         if os.path.exists(f'{self.outputDir}{recognizer.filename()}'):
             if self.clearOutputDir:
-                self.log.info('reset sheet to fallback name as '
+                self.logger.info('reset sheet to fallback name as '
                     f'{recognizer.filename()} already exists')
                 recognizer.resetSheetToFallback(fallbackSheetName,
                         self.fallbackSheetNumber)
             else:
-                self.log.info(f'''overwriting {recognizer.filename()}, as it
+                self.logger.info(f'''overwriting {recognizer.filename()}, as it
                 already exists and output directory has not been cleared due to
                 --individualScan option''')
                 os.remove(f'{self.outputDir}{recognizer.filename()}')
@@ -1707,10 +1689,7 @@ class GUI(BaseGUI):
     buttonFrameWidth = 200
     previewScrollbarWidth = 20
 
-    def __init__(self,
-            model,
-            log = helpers.Log(helpers.Log.LEVEL_INFO)):
-
+    def __init__(self, model):
         self.model = model
         self._selectedCorners = []
         self.sheetCoordinates = list(range(4))
@@ -1726,7 +1705,7 @@ class GUI(BaseGUI):
         width = None if width == -1 else width
         height = self.model.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
-        super().__init__(width, height, log)
+        super().__init__(width, height)
 
     def rotateImage90(self, event = None):
         self.rotationAngle = (self.rotationAngle + 90) % 360
@@ -1917,12 +1896,12 @@ class GUI(BaseGUI):
         assert(self.previewCanvas == event.widget)
         x = self.previewCanvas.canvasx(event.x)
         y = self.previewCanvas.canvasy(event.y)
-        self.log.debug(f'clicked at {event.x}, {event.y} - ({x}, {y}) on canvas')
+        self.logger.debug(f'clicked at {event.x}, {event.y} - ({x}, {y}) on canvas')
 
         row = int(y // self.previewRowHeight)
         col = int(x // self.previewColumnWidth)
         sheetRegionIdx = row*self.previewColumnCount + col
-        self.log.debug(f'clicked on preview {sheetRegionIdx}, row={row}, col={col}')
+        self.logger.debug(f'clicked on preview {sheetRegionIdx}, row={row}, col={col}')
         if len(self.model.sheetRegions) <= sheetRegionIdx:
             return
 
@@ -2047,11 +2026,10 @@ def main(rootDir, individualScanFilename, tmpDir, writeDebugImages):
     if model.sheetRegions == [] or gui.abortingProcess:
         return
 
-    gui.log.info('')
-    gui.log.info(f'successfully processed {len(scanFilenames)} files')
-    gui.log.info(f'the following files generated less than {ScanSplitter.numberOfSheets} sheets')
+    gui.logger.info(f'Successfully processed {len(scanFilenames)} files')
+    gui.logger.info(f'The following files generated less than {ScanSplitter.numberOfSheets} sheets:')
     for f in model.partiallyFilledFiles:
-        gui.log.info(f)
+        gui.logger.info(f' * {f}')
 
 if __name__== "__main__":
     parser = argparse.ArgumentParser(
@@ -2065,5 +2043,9 @@ if __name__== "__main__":
     parser.add_argument('--tmpDir', dest='tmpDir', default='data/tmp/',
             help='Directory to put temporary files in')
     parser.add_argument('--writeDebugImages', dest='writeDebugImages', action='store_true')
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
     main(args.rootDir, args.individualScanFilename, args.tmpDir, args.writeDebugImages)

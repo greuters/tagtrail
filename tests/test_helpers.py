@@ -103,7 +103,7 @@ class TagtrailTestCase(unittest.TestCase):
         :return: a new product sheet
         :rtype: :class: `sheets.ProductSheet`
         """
-        sheet = sheets.ProductSheet(helpers.Log(helpers.Log.LEVEL_ERROR))
+        sheet = sheets.ProductSheet()
         sheet.name = product.description
         sheet.amountAndUnit = product.amountAndUnit
         sheet.grossSalesPrice = helpers.formatPrice(

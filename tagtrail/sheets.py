@@ -23,6 +23,7 @@ import decimal
 import itertools
 import random
 import csv
+import logging
 from abc import ABC, abstractmethod
 from PIL import ImageFont, Image, ImageDraw
 import slugify
@@ -70,9 +71,9 @@ class ProductSheet(ABC):
         return (round(u / self.sheetW * self.xRes),
                 round(v / self.sheetH * self.yRes))
 
-    def __init__(self, log = helpers.Log()):
+    def __init__(self):
         self._boxes={}
-        self._log=log
+        self._logger=logging.getLogger('tagtrail.sheets.ProductSheet')
         self._box_to_pos={}
         self._pos_to_box={}
 
@@ -125,7 +126,7 @@ class ProductSheet(ABC):
             text = ""
 
             self.addBox(Box(
-                    "dataBox{}({},{})".format(num,row,col),
+                    f"dataBox{num}({row},{col})",
                     self.pointFromMM(u0, v0),
                     self.pointFromMM(u0+self.dataRowW, v0+self.dataColH),
                     color,
@@ -246,7 +247,7 @@ class ProductSheet(ABC):
         return img
 
     def load(self, path):
-        self._log.info(f'Loading {path}')
+        self._logger.debug(f'Loading {path}')
         skipCnt=1
         csvDelimiter = ';'
         quotechar = '"'
@@ -258,14 +259,14 @@ class ProductSheet(ABC):
             for cnt, row in enumerate(reader):
                 if cnt<skipCnt:
                     continue
-                self._log.debug("row={}", row)
+                self._logger.debug(f"row={row}")
                 boxName, text, confidence = row[0], row[1], float(row[2])
                 if boxName == "frameBox":
                     continue
                 elif boxName.find("dataBox") != -1:
                     numDataBoxes += 1
                 elif boxName not in ("nameBox", "unitBox", "priceBox", "sheetNumberBox"):
-                    self._log.warn("skipped unexpected box, row = {}", row)
+                    self._logger.warn(f"skipped unexpected box, row = {row}")
                     continue
                 self._boxes[boxName].name = boxName
                 self._boxes[boxName].text = text
@@ -316,7 +317,7 @@ class ProductSheet(ABC):
 
     def store(self, path):
         filePath = f'{path}{self.filename}'
-        self._log.info(f'storing sheet {filePath}')
+        self._logger.debug(f'storing sheet {filePath}')
         with open(filePath, "w+", encoding='utf-8') as fout:
             fout.write(f'boxName;text;confidence\n')
             for box in self.boxes():
@@ -340,7 +341,7 @@ class Box(ABC):
         self.confidence = confidence
         self.lineW = lineW
         self.lineColor = lineColor
-        self._log = helpers.Log()
+        self._logger = logging.getLogger('tagtrail.sheets.Box')
 
     @property
     def text(self):
@@ -362,12 +363,12 @@ class Box(ABC):
         cv.line(img, (x1, y2), (x2,y2), self.lineColor, self.lineW)
 
         if self.text != "":
-            self._log.debug(f"text={self.text}")
+            self._logger.debug(f"text={self.text}")
             textW, textH = self.font.getsize(self.text)
-            self._log.debug(f"textW={textW}, textH={textH}")
+            self._logger.debug(f"textW={textW}, textH={textH}")
             textX = x1 + round(((x2-x1) - textW) / 2)
             textY = y1 + round(((y2-y1) - textH) / 2)
-            self._log.debug(f"textX={textX}, textY={textY}")
+            self._logger.debug(f"textX={textX}, textY={textY}")
             img_rgb = cv.cvtColor(img[textY:textY+textH,textX:textX+textW], cv.COLOR_BGR2RGB)
             canvas = Image.fromarray(img_rgb)
             draw = ImageDraw.Draw(canvas)

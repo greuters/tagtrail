@@ -6,6 +6,7 @@ from .context import sheets
 from .context import tagtrail_account
 from .test_helpers import TagtrailTestCase
 
+import logging
 import argparse
 import csv
 import datetime
@@ -38,8 +39,8 @@ class AccountTest(TagtrailTestCase):
         self.testAccountDir = f'{self.tmpDir}account_{self.templateName}/'
         self.testNextDir = f'{self.tmpDir}next_{self.templateName}/'
 
-        self.log = helpers.Log(helpers.Log.LEVEL_INFO)
-        self.log.info(f'\nStarting test {self.id()}\n')
+        self.logger = logging.getLogger('tagtrail.tests.scenario_account.AccountTest')
+        self.logger.info(f'\nStarting test {self.id()}\n')
         helpers.recreateDir(self.tmpDir)
         shutil.copytree(self.templateRootDir, self.testRootDir)
         helpers.recreateDir(f'{self.testRootDir}3_bills')
@@ -430,7 +431,7 @@ class AccountTest(TagtrailTestCase):
         tagtrail_account should create the expected output on unmodified template
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
         self.check_output(model)
@@ -465,7 +466,7 @@ class AccountTest(TagtrailTestCase):
         assert(removedTestProduct)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         self.assertRaises(ValueError, model.loadAccountData)
 
     def test_product_sheets_missing(self):
@@ -489,7 +490,7 @@ class AccountTest(TagtrailTestCase):
         assert(db.products[testProductId].expectedQuantity >= 0)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         self.assertRaises(ValueError, model.loadAccountData)
 
     def test_duplicate_sheet(self):
@@ -502,7 +503,7 @@ class AccountTest(TagtrailTestCase):
             shutil.copy(activeSheetDir+filename, inactiveSheetDir+filename)
             break
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         self.assertRaises(ValueError, model.loadAccountData)
 
     def test_missing_scan(self):
@@ -531,7 +532,7 @@ class AccountTest(TagtrailTestCase):
         assert(expectedMissingScans != [])
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
         self.check_output(model, modifiedProductIds = [testProductId],
@@ -554,7 +555,7 @@ class AccountTest(TagtrailTestCase):
         activeSheetDir = f'{self.testRootDir}0_input/sheets/active/'
         taggedSheetDir = f'{self.testRootDir}2_taggedProductSheets/'
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         (testProduct, _) = self.create_active_test_product(model.db)
         sheet = self.generateProductSheet(model.db.config, testProduct, 4)
         sheet.store(activeSheetDir)
@@ -609,7 +610,7 @@ class AccountTest(TagtrailTestCase):
         If a product is sold out, all its sheets should become inactive
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         (testProduct, activeInputSheet) = self.create_active_test_product(model.db)
 
         # add tags to the active input sheet s.t. product is sold out
@@ -664,7 +665,7 @@ class AccountTest(TagtrailTestCase):
         scanned again, it should be marked newInactive if it is sold out.
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         (testProduct, inputSheet) = self.create_inactive_test_product(model.db)
 
         # copy the inactive input sheet to be scanned again, add some more tags
@@ -734,7 +735,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(f'{self.testRootDir}0_input/products.csv', db.products)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
         self.assertIn(inputSheet.filename,
@@ -767,7 +768,7 @@ class AccountTest(TagtrailTestCase):
         Mark an active sheet to be replaced (if it was mistreated in some way)
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         (testProduct, inputSheet) = self.create_active_test_product(model.db)
         model.loadAccountData()
         for sheet in model.accountedSheets:
@@ -781,7 +782,7 @@ class AccountTest(TagtrailTestCase):
         Use up all money of the richest member to get a negative balance
         """
         unmodifiedModel = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         unmodifiedModel.loadAccountData()
 
         # select the member that would be richest after unmodified accounting
@@ -826,7 +827,7 @@ class AccountTest(TagtrailTestCase):
 
         # check outcome
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
         self.check_output(model, modifiedProductIds = modifiedProductIds,
@@ -846,7 +847,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(f'{self.testRootDir}0_input/members.tsv', db.members)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
         self.check_output(model, modifiedMemberIds = [testMember.id])
@@ -859,7 +860,7 @@ class AccountTest(TagtrailTestCase):
         """
         # search a member with at least one new tag, remove from members.tsv
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         testMemberId = None
         for memberId in model.db.members:
@@ -872,7 +873,7 @@ class AccountTest(TagtrailTestCase):
                 model.db.members)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         assert(testMemberId not in model.db.members)
         self.assertRaises(ValueError, model.loadAccountData)
 
@@ -882,7 +883,7 @@ class AccountTest(TagtrailTestCase):
         """
         # search a member without any new tags, remove from members.tsv
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         testMemberId = None
         for memberId in model.db.members:
@@ -895,7 +896,7 @@ class AccountTest(TagtrailTestCase):
                 model.db.members)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         assert(testMemberId not in model.db.members)
         model.loadAccountData()
         model.save()
@@ -906,7 +907,7 @@ class AccountTest(TagtrailTestCase):
         Only one correction transaction per member allowed, expecting error
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         assert(len(model.correctionTransactions) != 0)
 
@@ -949,7 +950,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(transactionsfilepath, inputTransactions)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
 
@@ -966,7 +967,7 @@ class AccountTest(TagtrailTestCase):
         If a tag on an input sheet is changed, an error should be raised
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         (_, activeInputSheet) = self.create_active_test_product(model.db)
         self.add_tags_to_product_sheet(activeInputSheet,
                 [memberId for memberId in model.db.members],
@@ -992,7 +993,7 @@ class AccountTest(TagtrailTestCase):
         Manipulating a bill before saving is expected to raise an error.
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
 
         billChanged = False
@@ -1022,7 +1023,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(productsFilePath, inputProducts)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
 
         # test inventory with another date - error expected
@@ -1032,7 +1033,7 @@ class AccountTest(TagtrailTestCase):
 
         self.assertRaises(ValueError, lambda: tagtrail_account.Model(
             self.testRootDir, self.testAccountDir, self.testNextDir,
-            self.testDate, False, log = self.log))
+            self.testDate, False))
 
     def test_partial_inventory(self):
         """
@@ -1040,7 +1041,7 @@ class AccountTest(TagtrailTestCase):
         """
         modelConstructor = lambda: tagtrail_account.Model(
             self.testRootDir, self.testAccountDir, self.testNextDir,
-            self.testDate, False, log = self.log)
+            self.testDate, False)
 
         db = database.Database(f'{self.testRootDir}0_input/')
         productsFilePath = f'{self.testRootDir}0_input/products.csv'
@@ -1101,7 +1102,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(productsFilePath, inputProducts)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False, log = self.log)
+                self.testNextDir, self.testDate, False)
         model.loadAccountData()
         model.save()
         self.check_output(model,
@@ -1138,7 +1139,7 @@ class AccountTest(TagtrailTestCase):
         db.writeCsv(inputProductsFilePath, inputProducts)
 
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, True, self.keyringPassword, self.log)
+                self.testNextDir, self.testDate, True, self.keyringPassword)
         model.loadAccountData()
         model.save()
         self.check_output(model,
@@ -1164,7 +1165,11 @@ if __name__ == '__main__':
             help='Password for config/credentials.cfg. '
             'If keyringPassword is missing, test_update_co2_values is '
             'omitted as it needs to retrieve an api key to access eaternity')
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
 
     AccountTest.keyringPassword = args.keyringPassword
     loader = unittest.TestLoader()

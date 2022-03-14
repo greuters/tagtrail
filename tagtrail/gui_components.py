@@ -23,6 +23,7 @@ import tkinter
 import time
 import re
 import sys
+import logging
 
 from . import helpers
 
@@ -42,7 +43,7 @@ class AutocompleteEntry(tkinter.Entry):
                     f'uppercased: {possibleValues}')
         self.possibleValues = list(possibleValues)
         self.__releaseFocus = releaseFocus
-        self.__log = helpers.Log()
+        self.__logger = logging.getLogger('tagtrail.gui_components.AutocompleteEntry')
         self.__previousValue = ""
         self.__listBox = None
         self.__var = self["textvariable"]
@@ -95,7 +96,7 @@ class AutocompleteEntry(tkinter.Entry):
 
     def varTextChanged(self, name, index, mode):
         self.__var.set(self.__var.get())
-        self.__log.debug('changed var = {}', self.text)
+        self.__logger.debug(f'changed var = {self.text}')
         self.confidence = 0
 
         if self.text == '':
@@ -105,13 +106,13 @@ class AutocompleteEntry(tkinter.Entry):
                 words = self.possibleValues
             else:
                 words = self.comparison(self.text)
-            self.__log.debug('possible words = {}', words)
+            self.__logger.debug(f'possible words = {words}')
             if not words:
                 self.text = self.__previousValue
                 self.__var.set(self.__previousValue)
             else:
                 longestCommonPrefix = self.longestCommonPrefix(words)
-                self.__log.debug('longestCommonPrefix(words) = {}', self.longestCommonPrefix(words))
+                self.__logger.debug(f'longestCommonPrefix(words) = {self.longestCommonPrefix(words)}')
                 if longestCommonPrefix != self.text:
                     self.delete(0, tkinter.END)
                     self.insert(0, longestCommonPrefix)
@@ -294,8 +295,6 @@ class BaseGUI(ABC):
     :type initWidth: int
     :param initHeight: initial width of the root window
     :type initHeight: int
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     """
     buttonFrameWidth=200
     progressBarLength = 400
@@ -303,9 +302,8 @@ class BaseGUI(ABC):
 
     def __init__(self,
             initWidth = None,
-            initHeight = None,
-            log = helpers.Log(helpers.Log.LEVEL_INFO)):
-        self.log = log
+            initHeight = None):
+        self.logger = logging.getLogger('tagtrail.gui_components.BaseGui')
         self.abortingProcess = False
         self.__lastConfigureTimestamp = time.time_ns()
         self.buttonFrame = None

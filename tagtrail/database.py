@@ -33,6 +33,7 @@ import copy
 import re
 import itertools
 import configparser
+import logging
 from decimal import Decimal
 from collections import UserDict, UserList
 
@@ -44,7 +45,7 @@ class Database(ABC):
     are relevant during a single accounting run.
     """
 
-    log = helpers.Log()
+    logger = logging.getLogger('tagtrail.database.Database')
 
     def __init__(self,
             dataPath,
@@ -61,12 +62,12 @@ class Database(ABC):
                     'newlinelist': lambda x: [i.strip() for i in x.splitlines()
                         if i.strip() != ''],
                     'decimal': Decimal})
-        self.log.info(f'Reading configuration from {configFilePath}')
+        self.logger.info(f'Reading configuration from {configFilePath}')
         self.configFilePath = configFilePath
         self.config.read(configFilePath)
-        self.log.info(f'Reading members from {self.memberFilePath}')
+        self.logger.info(f'Reading members from {self.memberFilePath}')
         self.members = self.readCsv(self.memberFilePath, MemberDict)
-        self.log.info(f'Reading products from {self.productFilePath}')
+        self.logger.info(f'Reading products from {self.productFilePath}')
         self.products = self.readCsv(self.productFilePath, ProductDict)
 
     def writeConfig(self):
@@ -85,7 +86,7 @@ class Database(ABC):
         def addDbObjectToList(dbObject, container):
             container.append(dbObject)
 
-        self.log.debug(f'reading csv file {path}')
+        self.logger.debug(f'reading csv file {path}')
         with open(path, newline=containerClass.newline, encoding=containerClass.encoding) as csvfile:
             reader = csv.reader(csvfile, delimiter=containerClass.csvDelimiter,
                     quotechar=containerClass.quotechar)
@@ -98,7 +99,7 @@ class Database(ABC):
             prefixValues = []
 
             for cnt, row in enumerate(reader):
-                self.log.debug("row={}", row)
+                self.logger.debug(f"row={row}")
                 if cnt<len(prefixRows):
                     prefixValues.append(
                             helpers.readPrefixRow(prefixRows[cnt], row))
@@ -126,7 +127,7 @@ class Database(ABC):
                             vals.append(val)
                         else:
                             vals.append([v.strip() for v in val.split(containerClass.colInternalDelimiter)])
-                    self.log.debug(f'vals={vals}')
+                    self.logger.debug(f'vals={vals}')
                     dbObject = container.databaseObjectFromCsvRow(vals)
                     if not dbObject:
                         continue
@@ -144,7 +145,7 @@ class Database(ABC):
         columnHeaders = self.config.getnewlinelist(
                 container.configSection(),
                 container.columnHeadersConfigOption())
-        self.log.debug(f'prefixRows={prefixRows}, prefixValues={container.prefixValues()}')
+        self.logger.debug(f'prefixRows={prefixRows}, prefixValues={container.prefixValues()}')
         assert(len(prefixRows) == len(container.prefixValues()))
 
         with open(path, "w+", newline=container.newline, encoding=container.encoding) as fout:
@@ -445,7 +446,8 @@ class Product(DatabaseObject):
         return helpers.roundPriceCH(self.purchasePrice * (1 + self.marginPercentage))
 
 class ProductDict(DatabaseDict):
-    log = helpers.Log()
+    logger = logging.getLogger('tagtrail.database.ProductDict')
+
     def __init__(self,
             config,
             previousQuantityDate,

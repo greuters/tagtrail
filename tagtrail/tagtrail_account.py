@@ -29,6 +29,7 @@ import copy
 import sys
 import functools
 import cv2 as cv
+import logging
 from decimal import Decimal
 
 from . import helpers
@@ -51,8 +52,8 @@ class TagCollector(ABC):
             inputSheetsPath,
             scannedSheetsPath,
             accountingDate,
-            db, log = helpers.Log()):
-        self.log = log
+            db):
+        self.logger = logging.getLogger('tagtrail.tagtrail_account.TagCollector')
         self.db = db
         self.inputSheetsPath = inputSheetsPath
         self.scannedSheetsPath = scannedSheetsPath
@@ -67,7 +68,9 @@ class TagCollector(ABC):
         self.checkAmountAndUnitConsistency()
         self.checkInputSheetsConsistency()
         self.checkScannedSheetsKnown()
+        self.logger.info('All tag checks successful')
         self.newTagsPerProduct = self.collectNewTagsPerProduct()
+        self.logger.info('Aggregating new tags for all products complete\n')
 
     def taggedGrossSalesPrice(self, productId):
         return self.__sheetGrossSalesPrice(productId, self.scannedSheets)
@@ -111,7 +114,7 @@ class TagCollector(ABC):
         if productId in self.newTagsPerProduct:
             tags = self.newTagsPerProduct[productId]
             numTags = sum([1 for tag in tags if tag in memberIds])
-            self.log.debug(f'tags={tags}, productId={productId}, ' + \
+            self.logger.debug(f'tags={tags}, productId={productId}, ' + \
                     f'memberIds={memberIds}, numTags={numTags}')
             return numTags
         else:
@@ -139,15 +142,15 @@ class TagCollector(ABC):
 
         scannedTags = self.scannedSheets[key].confidentTags()
         assert(len(inputTags) == len(scannedTags))
-        self.log.debug(f'inputTags: {inputTags}')
-        self.log.debug(f'scannedTags: {scannedTags}')
+        self.logger.debug(f'inputTags: {inputTags}')
+        self.logger.debug(f'scannedTags: {scannedTags}')
 
         changedIndices = [idx for idx, tag in enumerate(inputTags)
                 if scannedTags[idx] != tag]
-        self.log.debug(f'changedIndices: {changedIndices}')
+        self.logger.debug(f'changedIndices: {changedIndices}')
         offendingDataboxes = [f'dataBox{idx}' for idx in changedIndices if inputTags[idx] != '']
         if offendingDataboxes:
-            self.log.error(f'offendingDataboxes: {offendingDataboxes}')
+            self.logger.error(f'offendingDataboxes: {offendingDataboxes}')
             inputSheetFilename = (self.inputSheetsPath
                 + ('active/' if key in self.activeInputSheets else 'inactive/')
                 + f'{productId}_{sheetNumber}.csv')
@@ -183,14 +186,14 @@ class TagCollector(ABC):
                     {self.scannedSheetsPath}{key[0]}_{key[1]}.csv
                     contains a new tag for non-existent members '{unknownTags}'.
                     Run tagtrail_sanitize before tagtrail_account!""")
-            self.log.debug(f'newTags[{key}]={newTags[key]}')
+            self.logger.debug(f'newTags[{key}]={newTags[key]}')
 
         newTagsPerProduct = {}
         for productId, sheetNumber in self.scannedSheets.keys():
             if productId not in newTagsPerProduct:
                 newTagsPerProduct[productId] = []
             newTagsPerProduct[productId] += newTags[productId, sheetNumber]
-        self.log.debug(f'newTagsPerProduct: {newTagsPerProduct.items()}')
+        self.logger.debug(f'newTagsPerProduct: {newTagsPerProduct.items()}')
         return newTagsPerProduct
 
     def loadProductSheets(self, path):
@@ -206,7 +209,7 @@ class TagCollector(ABC):
         :return: dict of (productId, sheetNumber) -> sheet
         :rtype: dict of (str, str) -> :class:`sheets.ProductSheet`
         """
-        self.log.info(f'collecting tags in {path}')
+        self.logger.info(f'collecting tags in {path}')
         csvFilenames = helpers.sortedFilesInDir(path, ext = '.csv')
         if not csvFilenames:
             return {}
@@ -215,7 +218,7 @@ class TagCollector(ABC):
         for filename in csvFilenames:
             productId = ProductSheet.productId_from_filename(filename)
             sheetNumber = ProductSheet.sheetNumber_from_filename(filename)
-            self.log.debug(f'productId={productId}, sheetNumber={sheetNumber}')
+            self.logger.debug(f'productId={productId}, sheetNumber={sheetNumber}')
             sheet = ProductSheet()
             sheet.load(path+filename)
             if productId not in self.db.products:
@@ -243,6 +246,7 @@ class TagCollector(ABC):
         active/inactive input) must have the same price.
         Check and abort if this is not the case.
         """
+        self.logger.info('Checking price consistency for all loaded products')
         for productId in self.db.products.keys():
             activeInputPrice = self.__sheetGrossSalesPrice(productId,
                     self.activeInputSheets)
@@ -266,6 +270,7 @@ class TagCollector(ABC):
         active/inactive input) must have the same amount and unit.
         Check and abort if this is not the case.
         """
+        self.logger.info('Checking amount and unit consistency')
         for productId in self.db.products.keys():
             activeInputAmount = self.__sheetAmountAndUnit(productId,
                     self.activeInputSheets)
@@ -290,6 +295,7 @@ class TagCollector(ABC):
         in the database which has any stock left.
         Check and abort if this is not the case.
         """
+        self.logger.info('Checking input sheet consistency')
         for productId, product in self.db.products.items():
             activeSheetNumbers = set([sheetNumber
                 for (pId, sheetNumber) in self.activeInputSheets.keys()
@@ -325,6 +331,7 @@ class TagCollector(ABC):
 
         Check and abort if this is not the case.
         """
+        self.logger.info('Checking scanned sheet consistency')
         for key, sheet in self.scannedSheets.items():
             if (key not in self.activeInputSheets
                     and key not in self.inactiveInputSheets):
@@ -363,7 +370,7 @@ class GUI(gui_components.BaseGUI):
         width = None if width == -1 else width
         height = self.model.db.config.getint('general', 'screen_height')
         height = None if height == -1 else height
-        super().__init__(width, height, helpers.Log())
+        super().__init__(width, height)
 
     def populateRoot(self):
         if self.productFrame is None:
@@ -591,19 +598,17 @@ class Model():
         update Co2 statistics. If it is None, the user will be asked to enter
         it interactively.
     :type keyringPassword: str
-    :param log: logger to write messages to
-    :type log: class: `helpers.Log`
     """
     def __init__(self, rootDir, renamedRootDir,
             nextRootDir, accountingDate, updateCo2Statistics,
-            keyringPassword = None, log = helpers.Log(helpers.Log.LEVEL_INFO)):
+            keyringPassword = None):
         self.rootDir = rootDir
         self.renamedRootDir = renamedRootDir
         self.nextRootDir = nextRootDir
         self.accountingDate = accountingDate
         self.updateCo2Statistics = updateCo2Statistics
         self.keyringPassword = keyringPassword
-        self.log = log
+        self.logger = logging.getLogger('tagtrail.tagtrail_account.Model')
         self.db = database.Database(f'{rootDir}0_input/')
         if (self.db.products.inventoryQuantityDate is not None and
                 self.db.products.inventoryQuantityDate != accountingDate):
@@ -624,6 +629,7 @@ class Model():
         to do with each sheet and to prepare the next accounting.
         """
         if self.updateCo2Statistics:
+            self.logger.info('Update CO2 statistics')
             apiKey = None
             if self.keyringPassword is not None:
                 keyring = helpers.Keyring(self.db.config.get('general',
@@ -634,20 +640,20 @@ class Model():
                 try:
                     gCo2e = api.co2Value(product)
                     if product.gCo2e != gCo2e:
-                        self.log.info(f'Updated gCo2e from {product.gCo2e} '
+                        self.logger.info(f'Updated gCo2e from {product.gCo2e} '
                                 +f'to {gCo2e} for {product.id}')
                         product.gCo2e = gCo2e
                     else:
-                        self.log.debug(f'gCo2e for {product.id} = {gCo2e}')
+                        self.logger.debug(f'gCo2e for {product.id} = {gCo2e}')
 
                 except ValueError:
-                    self.log.info(f'Failed to retrieve gCo2e for {product.id}')
+                    self.logger.info(f'Failed to retrieve gCo2e for {product.id}')
 
         tagCollector = TagCollector(
                 self.rootDir+'0_input/sheets/',
                 self.rootDir+'2_taggedProductSheets/',
                 self.accountingDate,
-                self.db, self.log)
+                self.db)
 
         self.db.products.expectedQuantityDate = self.accountingDate
         for productId, product in self.db.products.items():
@@ -665,8 +671,8 @@ class Model():
                     f'correctionTransactions: {unknownMembers}')
         self.paymentTransactions = self.loadPaymentTransactions()
         self.bills = self.createBills(tagCollector)
-        self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
         self.purchaseTransactions = self.createPurchaseTransactions()
+        self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
         self.accounts = database.MemberAccountDict(self.db.config,
                 **{m.id: database.MemberAccount(m.id) for m in self.db.members.values()})
         self.accountedSheets = self.categorizeAccountedSheets(tagCollector)
@@ -726,6 +732,7 @@ class Model():
         return sorted(accountedSheets, key=lambda sheet: sheet.filename)
 
     def loadPaymentTransactions(self):
+        self.logger.info('Loading payment transactions')
         toDate = self.accountingDate-datetime.timedelta(days=1)
         unprocessedTransactionsPath = self.rootDir + \
                 '5_output/unprocessed_Transactions_' + \
@@ -756,6 +763,7 @@ class Model():
                 database.GnucashTransactionList)
 
     def createBills(self, tagCollector):
+        self.logger.info('Creating bills')
         bills = {}
         for member in self.db.members.values():
             bill = database.Bill(self.db.config,
@@ -786,13 +794,19 @@ class Model():
     def createInventoryDifferenceTransactions(self):
         transactions = database.GnucashTransactionList(self.db.config)
         if self.db.products.inventoryQuantityDate is None:
+            self.logger.info('No inventory data available\n')
             return transactions
+        else:
+            self.logger.info('Creating inventory difference transactions\n')
 
         inventoryDifference = self.db.config.get('tagtrail_account',
                 'inventory_difference')
         inventoryDifferenceAccount = self.db.config.get('tagtrail_account',
                 'inventory_difference_account')
-        self.log.info('\nDifferences between inventory and expected quantities:\n')
+        self.logger.info('Notable differences between inventory and expected quantities:\n')
+        totalInventoryDifference = 0
+        priceFormatter = lambda price: helpers.formatPrice(price,
+                self.db.config.get('general', 'currency'))
         for product in self.db.products.values():
             if product.inventoryQuantity is None:
                 continue
@@ -800,12 +814,22 @@ class Model():
             quantityDifference = product.expectedQuantity - product.inventoryQuantity
             purchasePriceDifference = quantityDifference * product.purchasePrice
             grossSalesPriceDifference = quantityDifference * product.grossSalesPrice()
+            priceDifference = purchasePriceDifference + grossSalesPriceDifference
+            totalInventoryDifference += priceDifference
 
             if quantityDifference != 0:
                 quantityDifferenceMsg = (f'{product.id}: expected = {product.expectedQuantity}, ' +
                         f'inventory = {product.inventoryQuantity}, ' +
-                        f'difference = {quantityDifference}')
-                self.log.info(quantityDifferenceMsg)
+                        f'difference = {quantityDifference}, ' +
+                        f'priceDifference = {priceFormatter(priceDifference)}')
+
+                if (abs(priceDifference) >
+                        self.db.config.getint('tagtrail_account',
+                            'min_notable_inventory_difference')):
+                    self.logger.info(quantityDifferenceMsg)
+                else:
+                    self.logger.debug(quantityDifferenceMsg)
+
                 transactions.append(database.GnucashTransaction(
                     f'{product.id}: {inventoryDifference} accounted on {self.accountingDate}',
                     purchasePriceDifference,
@@ -821,9 +845,12 @@ class Model():
                     inventoryDifferenceAccount,
                     self.accountingDate
                     ))
+        self.logger.info('Total inventory difference: '
+                f'{priceFormatter(totalInventoryDifference)}\n')
         return transactions
 
     def createPurchaseTransactions(self):
+        self.logger.info('Creating purchase transactions')
         merchandiseValue = self.db.config.get('tagtrail_account',
                 'merchandise_value')
         merchandiseValueAccount = self.db.config.get('tagtrail_account',
@@ -858,6 +885,7 @@ class Model():
         self.writeAccountedProductSheets()
         if self.renamedRootDir != self.rootDir:
             shutil.move(self.rootDir, self.renamedRootDir)
+        self.logger.info('Completed account\n')
         self.prepareNextAccounting()
 
     def checkConsistency(self):
@@ -865,6 +893,7 @@ class Model():
         Do some basic consistency checks to insure accounting quality
         """
         # value sold per product should be equivalent to billed sum
+        self.logger.info('Checking consistency before writing account data')
         for productId, product in self.db.products.items():
             numTagsBilled = 0
             for bill in self.bills.values():
@@ -880,14 +909,16 @@ class Model():
                         'https://github.com/greuters/tagtrail.')
 
     def writeBills(self):
+        self.logger.info('Writing bills')
         destPath = f'{self.rootDir}3_bills/to_be_sent/'
-        helpers.recreateDir(destPath, self.log)
-        helpers.recreateDir(f'{self.rootDir}3_bills/already_sent/', self.log)
+        helpers.recreateDir(destPath)
+        helpers.recreateDir(f'{self.rootDir}3_bills/already_sent/')
         for member in self.db.members.values():
             self.db.writeCsv(destPath+member.id+'.csv',
                     self.bills[member.id])
 
     def writeGnuCashFiles(self):
+        self.logger.info('Writing gnucash transaction files')
         destPath = f'{self.rootDir}/4_gnucash/'
         self.db.writeCsv(f'{destPath}accounts.csv', self.accounts)
         transactions = database.GnucashTransactionList(
@@ -900,13 +931,14 @@ class Model():
                 transactions)
 
     def writeAccountedProductSheets(self):
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/active/', self.log)
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/inactive/', self.log)
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/removed/', self.log)
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/replaced/', self.log)
+        self.logger.info('Writing accounted product sheets')
+        helpers.recreateDir(f'{self.rootDir}5_output/sheets/active/')
+        helpers.recreateDir(f'{self.rootDir}5_output/sheets/inactive/')
+        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/removed/')
+        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/replaced/')
         if [s for s in self.accountedSheets if s.category == 'replace'] != []:
-            helpers.recreateDir(f'{self.rootDir}1_emptySheets/', self.log)
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/replaced/', self.log)
+            helpers.recreateDir(f'{self.rootDir}1_emptySheets/')
+        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/replaced/')
         for sheet in self.accountedSheets:
             outputPath = f'{self.rootDir}5_output/sheets/'
             if sheet.category in ['active', 'newActive', 'missingActive']:
@@ -925,7 +957,7 @@ class Model():
                 emptySheetPath = (self.rootDir +
                         '1_emptySheets/' + sheet.filename + '.jpg')
                 if cv.imwrite(emptySheetPath, emptySheet.createImg()) is True:
-                    self.log.info(f'generated sheet {emptySheetPath}')
+                    self.logger.info(f'generated sheet {emptySheetPath}')
                 else:
                     raise ValueError(f'failed to generate sheet {emptySheetPath}')
                 emptySheet.store(outputPath + 'active/')
@@ -961,10 +993,11 @@ class Model():
                         f'No file found for {sheet.filename} ')
 
     def prepareNextAccounting(self):
-        helpers.recreateDir(self.nextRootDir, self.log)
-        helpers.recreateDir(f'{self.nextRootDir}0_input', self.log)
-        helpers.recreateDir(f'{self.nextRootDir}0_input/sheets', self.log)
-        helpers.recreateDir(f'{self.nextRootDir}0_input/scans', self.log)
+        self.logger.info('Preparing /next')
+        helpers.recreateDir(self.nextRootDir)
+        helpers.recreateDir(f'{self.nextRootDir}0_input')
+        helpers.recreateDir(f'{self.nextRootDir}0_input/sheets')
+        helpers.recreateDir(f'{self.nextRootDir}0_input/scans')
         self.writeMemberCSV()
         self.writeProductsCSVs()
         self.copyAccountedSheets()
@@ -972,8 +1005,10 @@ class Model():
                 database.CorrectionTransactionDict(self.db.config))
         shutil.copytree(f'{self.renamedRootDir}0_input/templates',
                 f'{self.nextRootDir}0_input/templates')
+        self.logger.info('/next is ready')
 
     def writeMemberCSV(self):
+        self.logger.info('Writing members')
         newMembers = copy.deepcopy(self.db.members)
         newMembers.accountingDate = self.accountingDate
         for m in newMembers.values():
@@ -987,12 +1022,14 @@ class Model():
         #raise ValueError
 
     def writeProductsCSVs(self):
+        self.logger.info('Writing products')
         self.db.writeCsv(f'{self.renamedRootDir}5_output/products.csv',
                 self.db.products)
         self.db.writeCsv(f'{self.nextRootDir}0_input/products.csv',
                 self.db.products.copyForNext(self.accountingDate, False, True))
 
     def copyAccountedSheets(self):
+        self.logger.info('Copy accounted sheets')
         shutil.copytree(f'{self.renamedRootDir}5_output/sheets/active',
                 f'{self.nextRootDir}0_input/sheets/active')
         shutil.copytree(f'{self.renamedRootDir}5_output/sheets/inactive',
@@ -1035,7 +1072,11 @@ if __name__ == '__main__':
             action='store_true',
             default=False,
             help='Retrieve new gCo2e statistics from eaternity')
-
+    parser.add_argument('--logLevel', dest='logLevel',
+            help='Log level to write to console', default='INFO')
     args = parser.parse_args()
+    helpers.configureLogger(logging.getLogger('tagtrail'), consoleLevel =
+            logging.getLevelName(args.logLevel))
+
     main(args.accountingDir, args.renamedAccountingDir, args.accountingDate,
             args.nextAccountingDir, args.updateCo2Statistics)
