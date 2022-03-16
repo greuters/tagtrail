@@ -807,6 +807,7 @@ class Model():
         totalInventoryDifference = 0
         priceFormatter = lambda price: helpers.formatPrice(price,
                 self.db.config.get('general', 'currency'))
+        inventoryDifferenceMessages = []
         for product in self.db.products.values():
             if product.inventoryQuantity is None:
                 continue
@@ -818,18 +819,11 @@ class Model():
             totalInventoryDifference += priceDifference
 
             if quantityDifference != 0:
-                quantityDifferenceMsg = (f'{product.id}: expected = {product.expectedQuantity}, ' +
+                msg = (f'{product.id}: expected = {product.expectedQuantity}, ' +
                         f'inventory = {product.inventoryQuantity}, ' +
                         f'difference = {quantityDifference}, ' +
                         f'priceDifference = {priceFormatter(priceDifference)}')
-
-                if (abs(priceDifference) >
-                        self.db.config.getint('tagtrail_account',
-                            'min_notable_inventory_difference')):
-                    self.logger.info(quantityDifferenceMsg)
-                else:
-                    self.logger.debug(quantityDifferenceMsg)
-
+                inventoryDifferenceMessages.append((abs(priceDifference), msg))
                 transactions.append(database.GnucashTransaction(
                     f'{product.id}: {inventoryDifference} accounted on {self.accountingDate}',
                     purchasePriceDifference,
@@ -845,8 +839,18 @@ class Model():
                     inventoryDifferenceAccount,
                     self.accountingDate
                     ))
+
+        for (priceDifference, msg) in sorted(inventoryDifferenceMessages, key =
+                lambda pair: pair[0], reverse=True):
+            if (priceDifference >
+                self.db.config.getint('tagtrail_account',
+                    'min_notable_inventory_difference')):
+                self.logger.info(msg)
+            else:
+                self.logger.debug(msg)
         self.logger.info('Total inventory difference: '
                 f'{priceFormatter(totalInventoryDifference)}\n')
+
         return transactions
 
     def createPurchaseTransactions(self):
