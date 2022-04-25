@@ -2,6 +2,6 @@ Du hast aktuell den minimalen Kontostand von ${LIQUIDITY_THRESHOLD}
 erfüllt, und hast damit bis zur nächsten Abrechnung Zugang zum Speichär (neuer Code: ${ACCESS_CODE}#).
 
 Damit dies so bleibt, überweise deine erwarteten Ausgaben für den
-nächsten Monat mit deinem Kürzel (und nur diesem) als Vermerk auf folgendes Konto:
+nächsten Monat mit deinem Kürzel als Vermerk auf folgendes Konto:
 
 ${INVOICE_IBAN}, Mitteilung: ${MEMBER_ID}

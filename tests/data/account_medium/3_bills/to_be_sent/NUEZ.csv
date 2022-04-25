@@ -5,11 +5,10 @@ Previous Balance [CHF];108.65
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];37.30
-Current Balance [CHF];71.35
-Total gCo2e;1962
+Total Price [CHF];32.30
+Current Balance [CHF];76.35
+Total gCo2e;980
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-eliche-vollkorn;Eliche Vollkorn;2;2.50;491;5.00;982
 kaffee-rebel-dia-bohnen;Kaffee Rebel Dia (Bohnen);1;19.00;None;19.00;None
 kalkentferner;Kalkentferner;1;6.25;489;6.25;489
 spaghetti;Spaghetti;1;2.25;491;2.25;491

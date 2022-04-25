@@ -5,11 +5,10 @@ Previous Balance [CHF];801.70
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];92.60
-Current Balance [CHF];709.10
-Total gCo2e;6636
+Total Price [CHF];90.10
+Current Balance [CHF];711.60
+Total gCo2e;6145
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-eliche-vollkorn;Eliche Vollkorn;1;2.50;491;2.50;491
 geschirrspulmittel;Geschirrspülmittel;1;4.95;979;4.95;979
 haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
 kaffee-rebel-dia-gemahlen;Kaffee Rebel Dia (Gemahlen);1;10.55;None;10.55;None

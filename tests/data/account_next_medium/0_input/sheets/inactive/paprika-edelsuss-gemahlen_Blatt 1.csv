@@ -1,11 +1,11 @@
 boxName;text;confidence
-frameBox;;1
-nameBox;Paprika Edelsüss (gemahlen);1
-unitBox;125g;1
-priceBox;3.60 CHF;1
+frameBox;;1.0
+nameBox;Paprika edelsüss (gemahlen);1.0
+unitBox;125g;1.0
+priceBox;3.60 CHF;1.0
 sheetNumberBox;Blatt 1;1.0
 dataBox0(0,0);EJAS;1.0
-dataBox1(0,1);;1
+dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0
 dataBox3(0,3);;1.0
 dataBox4(0,4);;1.0

@@ -174,7 +174,7 @@ class ScanSplitter():
             frameContour = findMarginsByLines.process(sheet)
 
         if frameContour is None:
-            self.loger.debug(f'assume empty sheet (no frame contour found)')
+            self.logger.debug(f'assume empty sheet (no frame contour found)')
             return None
 
         normalizer = SheetNormalizer(

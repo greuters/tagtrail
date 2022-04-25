@@ -5,12 +5,11 @@ Previous Balance [CHF];975.60
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];83.50
-Current Balance [CHF];892.10
-Total gCo2e;11523
+Total Price [CHF];76.00
+Current Balance [CHF];899.60
+Total gCo2e;10050
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
 cornflakes;Cornflakes;3;5.10;368;15.30;1104
-eliche-vollkorn;Eliche Vollkorn;3;2.50;491;7.50;1473
 kalkentferner;Kalkentferner;2;6.25;489;12.50;978
 mandeln;Mandeln;1;4.95;211;4.95;211
 papier-mondi-nautilus;Papier Mondi Nautilus;1;11.25;None;11.25;None

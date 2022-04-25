@@ -1,16 +1,16 @@
 boxName;text;confidence
-frameBox;;1
+frameBox;;1.0
 nameBox;Toilettenpapier;1.0
 unitBox;1Packung;1.0
 priceBox;4.55 CHF;1.0
 sheetNumberBox;Blatt 1;1.0
 dataBox0(0,0);DGL;1.0
 dataBox1(0,1);RER;1.0
-dataBox2(0,2);;1
+dataBox2(0,2);;1.0
 dataBox3(0,3);;1.0
 dataBox4(0,4);;1.0
 dataBox5(1,0);NASA;1.0
-dataBox6(1,1);MM08;1
+dataBox6(1,1);MM08;1.0
 dataBox7(1,2);;1.0
 dataBox8(1,3);;1.0
 dataBox9(1,4);;1.0
@@ -20,7 +20,7 @@ dataBox12(2,2);;1.0
 dataBox13(2,3);;1.0
 dataBox14(2,4);;1.0
 dataBox15(3,0);FAME;1.0
-dataBox16(3,1);;1
+dataBox16(3,1);;1.0
 dataBox17(3,2);;1.0
 dataBox18(3,3);;1.0
 dataBox19(3,4);;1.0
@@ -49,7 +49,7 @@ dataBox41(8,1);;1.0
 dataBox42(8,2);;1.0
 dataBox43(8,3);;1.0
 dataBox44(8,4);;1.0
-dataBox45(9,0);;1
+dataBox45(9,0);;1.0
 dataBox46(9,1);;1.0
 dataBox47(9,2);;1.0
 dataBox48(9,3);;1.0

@@ -1,9 +1,9 @@
 boxName;text;confidence
-frameBox;;1
-nameBox;Sonnenblumenöl;1
-unitBox;1l;1
-priceBox;12.65 CHF;1
-sheetNumberBox;Blatt 1;1
+frameBox;;1.0
+nameBox;Sonnenblumenöl;1.0
+unitBox;1l;1.0
+priceBox;12.65 CHF;1.0
+sheetNumberBox;Blatt 1;1.0
 dataBox0(0,0);;1.0
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0
@@ -78,4 +78,4 @@ dataBox70(14,0);;1.0
 dataBox71(14,1);;1.0
 dataBox72(14,2);;1.0
 dataBox73(14,3);;1.0
-dataBox74(14,4);;1
+dataBox74(14,4);;1.0

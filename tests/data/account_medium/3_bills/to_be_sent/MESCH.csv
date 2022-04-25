@@ -5,11 +5,10 @@ Previous Balance [CHF];315.60
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];32.05
-Current Balance [CHF];283.55
-Total gCo2e;1866
+Total Price [CHF];30.30
+Current Balance [CHF];285.30
+Total gCo2e;1473
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
 kaffee-rebel-dia-bohnen;Kaffee Rebel Dia (Bohnen);1;19.00;None;19.00;None
-pelato-tomaten;Pelato Tomaten;1;1.75;393;1.75;393
 spaghetti;Spaghetti;3;2.25;491;6.75;1473
 toilettenpapier;Toilettenpapier;1;4.55;None;4.55;None

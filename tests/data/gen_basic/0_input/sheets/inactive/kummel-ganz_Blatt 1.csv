@@ -1,40 +1,40 @@
 boxName;text;confidence
-frameBox;;1
-nameBox;Kümmel (ganz);1
-unitBox;125g;1
-priceBox;1.95;1
-sheetNumberBox;Blatt 1;1
-dataBox0(0,0);FAN;1
-dataBox1(0,1);;1
+frameBox;;1.0
+nameBox;Kümmel (ganz);1.0
+unitBox;125g;1.0
+priceBox;1.95;1.0
+sheetNumberBox;Blatt 1;1.0
+dataBox0(0,0);FAN;1.0
+dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0
 dataBox3(0,3);;1.0
 dataBox4(0,4);;1.0
-dataBox5(1,0);HASE;1
+dataBox5(1,0);HASE;1.0
 dataBox6(1,1);;1.0
 dataBox7(1,2);;1.0
 dataBox8(1,3);;1.0
 dataBox9(1,4);;1.0
-dataBox10(2,0);SUED2;1
+dataBox10(2,0);SUED2;1.0
 dataBox11(2,1);;1.0
 dataBox12(2,2);;1.0
 dataBox13(2,3);;1.0
 dataBox14(2,4);;1.0
-dataBox15(3,0);GEN;1
+dataBox15(3,0);GEN;1.0
 dataBox16(3,1);;1.0
 dataBox17(3,2);;1.0
 dataBox18(3,3);;1.0
 dataBox19(3,4);;1.0
-dataBox20(4,0);SWAG;1
+dataBox20(4,0);SWAG;1.0
 dataBox21(4,1);;1.0
 dataBox22(4,2);;1.0
 dataBox23(4,3);;1.0
 dataBox24(4,4);;1.0
-dataBox25(5,0);KLEIN;1
+dataBox25(5,0);KLEIN;1.0
 dataBox26(5,1);;1.0
 dataBox27(5,2);;1.0
 dataBox28(5,3);;1.0
 dataBox29(5,4);;1.0
-dataBox30(6,0);D6N1;1
+dataBox30(6,0);D6N1;1.0
 dataBox31(6,1);;1.0
 dataBox32(6,2);;1.0
 dataBox33(6,3);;1.0

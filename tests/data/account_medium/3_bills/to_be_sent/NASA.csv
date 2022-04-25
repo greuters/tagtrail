@@ -5,11 +5,10 @@ Previous Balance [CHF];331.20
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];21.95
-Current Balance [CHF];309.25
-Total gCo2e;2060
+Total Price [CHF];19.45
+Current Balance [CHF];311.75
+Total gCo2e;1569
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-eliche-vollkorn;Eliche Vollkorn;1;2.50;491;2.50;491
 haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
 kalkentferner;Kalkentferner;1;6.25;489;6.25;489
 pfeffer-schwarz-ganz;Pfeffer schwarz ganz;1;4.75;160;4.75;160

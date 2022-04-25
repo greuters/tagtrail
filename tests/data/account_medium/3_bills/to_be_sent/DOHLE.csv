@@ -5,11 +5,10 @@ Previous Balance [CHF];318.00
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];97.50
-Current Balance [CHF];220.50
-Total gCo2e;17224
+Total Price [CHF];87.50
+Current Balance [CHF];230.50
+Total gCo2e;15260
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-eliche-vollkorn;Eliche Vollkorn;4;2.50;491;10.00;1964
 rebel-dia-kaffee-gemahlen;Rebel Dia Kaffee (Gemahlen);5;9.50;591;47.50;2955
 soya-gehacktes;Soya-Gehacktes;3;2.25;257;6.75;771
 soya-kloesse;Soya-Kloesse;3;1.85;257;5.55;771

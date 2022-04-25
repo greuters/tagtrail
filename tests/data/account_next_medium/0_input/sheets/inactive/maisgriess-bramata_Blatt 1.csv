@@ -1,11 +1,11 @@
 boxName;text;confidence
-frameBox;;1
+frameBox;;1.0
 nameBox;Maisgriess Bramata;1.0
 unitBox;500g;1.0
 priceBox;3.90 CHF;1.0
 sheetNumberBox;Blatt 1;1.0
 dataBox0(0,0);MMJQ;1.0
-dataBox1(0,1);;1
+dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0
 dataBox3(0,3);;1.0
 dataBox4(0,4);;1.0
@@ -19,12 +19,12 @@ dataBox11(2,1);;1.0
 dataBox12(2,2);;1.0
 dataBox13(2,3);;1.0
 dataBox14(2,4);;1.0
-dataBox15(3,0);FLOS;1
+dataBox15(3,0);FLOS;1.0
 dataBox16(3,1);;1.0
 dataBox17(3,2);;1.0
 dataBox18(3,3);;1.0
 dataBox19(3,4);;1.0
-dataBox20(4,0);SISI;1
+dataBox20(4,0);SISI;1.0
 dataBox21(4,1);;1.0
 dataBox22(4,2);;1.0
 dataBox23(4,3);;1.0

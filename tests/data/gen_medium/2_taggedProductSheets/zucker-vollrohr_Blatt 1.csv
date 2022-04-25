@@ -1,8 +1,8 @@
 boxName;text;confidence
-frameBox;;1
-nameBox;Zucker Vollrohr;1
-unitBox;1kg;1
-priceBox;4.80 CHF;1
+frameBox;;1.0
+nameBox;Zucker Vollrohr;1.0
+unitBox;1kg;1.0
+priceBox;4.80 CHF;1.0
 sheetNumberBox;Blatt 1;1.0
 dataBox0(0,0);JOY;1.0
 dataBox1(0,1);;1.0
@@ -29,7 +29,7 @@ dataBox21(4,1);;1.0
 dataBox22(4,2);;1.0
 dataBox23(4,3);;1.0
 dataBox24(4,4);;1.0
-dataBox25(5,0);LILA;1
+dataBox25(5,0);LILA;1.0
 dataBox26(5,1);;1.0
 dataBox27(5,2);;1.0
 dataBox28(5,3);;1.0
@@ -59,12 +59,12 @@ dataBox51(10,1);;1.0
 dataBox52(10,2);;1.0
 dataBox53(10,3);;1.0
 dataBox54(10,4);;1.0
-dataBox55(11,0);CABE;1
+dataBox55(11,0);CABE;1.0
 dataBox56(11,1);;1.0
 dataBox57(11,2);;1.0
 dataBox58(11,3);;1.0
 dataBox59(11,4);;1.0
-dataBox60(12,0);MAMA;1
+dataBox60(12,0);MAMA;1.0
 dataBox61(12,1);;1.0
 dataBox62(12,2);;1.0
 dataBox63(12,3);;1.0

@@ -40,7 +40,7 @@ class AccountTest(TagtrailTestCase):
         self.testNextDir = f'{self.tmpDir}next_{self.templateName}/'
 
         self.logger = logging.getLogger('tagtrail.tests.scenario_account.AccountTest')
-        self.logger.info(f'\nStarting test {self.id()}\n')
+        self.logger.info(f'Starting test {self.id()}\n')
         helpers.recreateDir(self.tmpDir)
         shutil.copytree(self.templateRootDir, self.testRootDir)
         helpers.recreateDir(f'{self.testRootDir}3_bills')
@@ -64,6 +64,7 @@ class AccountTest(TagtrailTestCase):
             compared to template output
         :type  modifiedMemberIds: list of str
         """
+        self.logger.info(f'Accounting done, checking output\n')
         self.check_transaction_files_per_member(model)
         self.check_product_sheets(model)
         self.check_output_matches_template(model, modifiedProductIds,
@@ -77,6 +78,7 @@ class AccountTest(TagtrailTestCase):
         Check if each member appears in all necessary transactions and if a
         plausible bill exists.
         """
+        self.logger.info(f'Check member transaction files')
         exportedAccounts = self.load_accounts_csv()
         (marginTransactions, merchandiseTransactions,
                 paymentTransactions, _) = self.load_transactions_csv(model)
@@ -110,85 +112,94 @@ class AccountTest(TagtrailTestCase):
         """
         Check if all product sheets are written to disc as claimed to the user.
         """
+        self.logger.info(f'Check product sheets')
         inputSheetDir = f'{self.testAccountDir}0_input/sheets/'
         outputSheetDir = f'{self.testAccountDir}5_output/sheets/'
         taggedSheetDir = f'{self.testAccountDir}2_taggedProductSheets/'
         nextSheetDir = f'{self.testNextDir}0_input/sheets/'
+        generatedSheetDir = f'{self.testAccountDir}1_generatedSheets/'
 
-        for sheet in model.accountedSheets:
-            if sheet.category == 'newActive':
-                if os.path.exists(f'{taggedSheetDir}{sheet.filename}'):
+        for sheet in model.sheetCategorizer.activeSheetsToBePrinted:
+            imgName = f'{sheet.filename[:-4]}.jpg'
+            imgPath = f'{generatedSheetDir}{imgName}'
+            self.assertTrue(os.path.exists(imgPath),
+                f'new empty sheet {imgPath} missing')
+            self.assertTrue(os.path.exists(
+                f'{outputSheetDir}active/{sheet.filename}'),
+                f'output for new sheet {sheet.filename} missing')
+            self.assertTrue(len(sheet.emptyDataBoxes()) ==
+                    sheets.ProductSheet.maxQuantity(),
+                    'new replacing sheet is not empty')
+
+        for sheet in model.sheetCategorizer.missingSheets:
+            self.assert_file_equality(
+                f'{inputSheetDir}active/{sheet.filename}',
+                f'{outputSheetDir}active/{sheet.filename}')
+
+        for sheet in model.sheetCategorizer.activeSheetsFromInactive:
+            self.assert_file_equality(
+                f'{inputSheetDir}inactive/{sheet.filename}',
+                f'{outputSheetDir}active/{sheet.filename}')
+
+        for sheet in model.sheetCategorizer.activeSheetsFromActive:
+            self.assert_file_equality(
+                f'{taggedSheetDir}{sheet.filename}',
+                f'{outputSheetDir}active/{sheet.filename}')
+
+        for sheet in model.sheetCategorizer.inactiveSheetsFromInactive:
+            self.assert_file_equality(
+                f'{inputSheetDir}inactive/{sheet.filename}',
+                f'{outputSheetDir}inactive/{sheet.filename}')
+
+        for sheet in model.sheetCategorizer.inactiveSheetsFromActive:
+            self.assert_file_equality(
+                f'{taggedSheetDir}{sheet.filename}',
+                f'{outputSheetDir}inactive/{sheet.filename}')
+
+        def checkObsoleteSheets(relevantNextSheetDir, relevantSheets):
+            for sheet in relevantSheets:
+                obsoleteDir = f'{outputSheetDir}obsolete/'
+                if os.path.exists(f'{relevantNextSheetDir}{sheet.filename}'):
+                    # replaced
                     self.assert_file_equality(
                         f'{taggedSheetDir}{sheet.filename}',
-                        f'{outputSheetDir}active/{sheet.filename}')
-                else:
-                    self.assert_file_equality(
-                        f'{inputSheetDir}inactive/{sheet.filename}',
-                        f'{outputSheetDir}active/{sheet.filename}')
-            elif sheet.category == 'missingActive':
-                self.assert_file_equality(
-                    f'{inputSheetDir}active/{sheet.filename}',
-                    f'{outputSheetDir}active/{sheet.filename}')
-            elif sheet.category == 'active':
-                self.assert_file_equality(
-                    f'{taggedSheetDir}{sheet.filename}',
-                    f'{outputSheetDir}active/{sheet.filename}')
-            elif sheet.category == 'newInactive':
-                self.assert_file_equality(
-                    f'{taggedSheetDir}{sheet.filename}',
-                    f'{outputSheetDir}inactive/{sheet.filename}')
-                self.assertTrue(model.db.products[sheet.productId()].expectedQuantity
-                        <= 0)
-            elif sheet.category == 'inactive':
-                self.assert_file_equality(
-                    f'{inputSheetDir}inactive/{sheet.filename}',
-                    f'{outputSheetDir}inactive/{sheet.filename}')
-            elif sheet.category == 'replace':
-                self.assert_file_equality(
-                    f'{inputSheetDir}active/{sheet.filename}',
-                    f'{outputSheetDir}obsolete/replaced/{sheet.filename}')
-                self.assertTrue(os.path.exists(f'{self.testAccountDir}'
-                    f'/1_emptySheets/{sheet.filename}.jpg'),
-                    f'new empty sheet {sheet.filename} missing')
-                self.assertTrue(os.path.exists(
-                    f'{outputSheetDir}active/{sheet.filename}'),
-                    f'output for replaced sheet {sheet.filename} missing')
-                emptySheet = sheets.ProductSheet()
-                emptySheet.load(f'{outputSheetDir}active/{sheet.filename}')
-                self.assertTrue(len(emptySheet.emptyDataBoxes()) ==
-                        sheets.ProductSheet.maxQuantity(),
-                        'new replacing sheet is not empty')
-            elif sheet.category == 'remove':
-                self.assert_file_equality(
-                    f'{taggedSheetDir}{sheet.filename}',
-                    f'{outputSheetDir}obsolete/removed/{sheet.filename}')
-                removedSheet = sheets.ProductSheet()
-                removedSheet.load(f'{taggedSheetDir}{sheet.filename}')
-                self.assertTrue(removedSheet.isFull(),
-                        'removed sheet is not full')
-            else:
-                self.assertFalse(True,
-                        f'sheet in unknown category {sheet.category}')
+                        f'{obsoleteDir}replaced/{sheet.filename}')
+                    self.assertTrue(os.path.exists(
+                        f'{generatedSheetDir}{sheet.filename[:-4]}.jpg'),
+                        f'new empty sheet {sheet.filename[:-4]}.jpg missing')
+                    self.assertTrue(os.path.exists(
+                        f'{outputSheetDir}active/{sheet.filename}'),
+                        f'output for replaced sheet {sheet.filename} missing')
+                    emptySheet = sheets.ProductSheet()
+                    emptySheet.load(f'{outputSheetDir}active/{sheet.filename}')
+                    self.assertTrue(len(emptySheet.emptyDataBoxes()) ==
+                            sheets.ProductSheet.maxQuantity(),
+                            'new replacing sheet is not empty')
 
-        for sheet in model.accountedSheets:
-            if sheet.category in ['newActive', 'missingActive', 'active',
-                    'replace']:
+                else:
+                    # removed
+                    self.assert_file_equality(
+                        f'{taggedSheetDir}{sheet.filename}',
+                        f'{obsoleteDir}removed/{sheet.filename}')
+                    removedSheet = sheets.ProductSheet()
+                    removedSheet.load(f'{taggedSheetDir}{sheet.filename}')
+
+        checkObsoleteSheets(f'{nextSheetDir}active/',
+                model.sheetCategorizer.obsoleteSheetsFromActive)
+        checkObsoleteSheets(f'{nextSheetDir}inactive/',
+                model.sheetCategorizer.obsoleteSheetsFromInactive)
+
+        for sheet in model.sheetCategorizer.sheets:
+            if sheet.newState in ['active', 'missing']:
                 self.assert_file_equality(
                     f'{outputSheetDir}active/{sheet.filename}',
                     f'{nextSheetDir}active/{sheet.filename}')
-            elif sheet.category in ['newInactive', 'inactive']:
+            elif sheet.newState == 'inactive':
                 self.assert_file_equality(
                     f'{outputSheetDir}inactive/{sheet.filename}',
                     f'{nextSheetDir}inactive/{sheet.filename}')
             else:
-                assert(sheet.category == 'remove')
-                self.assertFalse(os.path.exists(
-                    f'{outputSheetDir}active/{sheet.filename}'),
-                    f'sheet to remove: {sheet.filename} exists in next')
-                self.assertFalse(os.path.exists(
-                    f'{outputSheetDir}inactive/{sheet.filename}'),
-                    f'sheet to remove: {sheet.filename} exists in next')
-
+                assert(sheet.newState == 'obsolete')
 
     def check_output_matches_template(self, model, modifiedProductIds,
             modifiedMemberIds):
@@ -206,6 +217,7 @@ class AccountTest(TagtrailTestCase):
             compared to template output
         :type  modifiedMemberIds: list of str
         """
+        self.logger.info(f'Check output matches template')
         testNextSheetDir = f'{self.testNextDir}0_input/sheets/'
         testOutputSheetDir = f'{self.testAccountDir}5_output/sheets/'
         templateOutputSheetDir = f'{self.templateAccountDir}5_output/sheets/'
@@ -243,6 +255,7 @@ class AccountTest(TagtrailTestCase):
         """
         Check invariants on next/0_input/members.tsv
         """
+        self.logger.info(f'Check members.tsv')
         inputMembers = model.db.readCsv(
                 f'{self.testAccountDir}0_input/members.tsv',
                 database.MemberDict)
@@ -268,6 +281,7 @@ class AccountTest(TagtrailTestCase):
         """
         Check invariants on next/0_input/products.csv
         """
+        self.logger.info(f'Check products.csv')
         inputProducts = model.db.readCsv(
                 f'{self.testAccountDir}0_input/products.csv',
                 database.ProductDict)
@@ -297,10 +311,10 @@ class AccountTest(TagtrailTestCase):
                     nextProduct.addedQuantity)
             if 0 < outputProduct.soldQuantity:
                 self.assertNotEqual([],
-                        [s.filename for s in model.accountedSheets if
-                            s.category != 'missingActive' and s.productId() ==
-                            productId],
-                        f'all sheets of {productId} are missing while '
+                        [s.filename for s in
+                            model.sheetCategorizer.scannedSheets.values()
+                            if s.productId() == productId],
+                        f'no scanned sheets exist for {productId}, but '
                         'soldQuantity != 0'
                         )
 
@@ -308,6 +322,7 @@ class AccountTest(TagtrailTestCase):
         """
         Check the money transfers add up.
         """
+        self.logger.info(f'Check transactions')
         (marginTransactions, merchandiseTransactions,
                 paymentTransactions, inventoryDifferenceTransactions
                 ) = self.load_transactions_csv(model)
@@ -339,8 +354,9 @@ class AccountTest(TagtrailTestCase):
             # actual price might be different from product.grossSalesPrice, as
             # sheets are not necessarily replaced when price in products.csv
             # changes
-            sheets = [sheet for sheet in model.accountedSheets if
-                    sheet.productId() == productId]
+            sheets = [sheet for sheet in model.sheetCategorizer.sheets if
+                    sheet.productId() == productId
+                    and sheet.previousState == 'active']
             actualProductPrice = (product.grossSalesPrice() if len(sheets) == 0
                     else sheets[0].grossSalesPrice)
 
@@ -436,6 +452,126 @@ class AccountTest(TagtrailTestCase):
         model.save()
         self.check_output(model)
 
+    def test_sheet_idempotence(self):
+        """
+        invoking tagtrail_account multiple times on the same folder should not
+        change sheet state
+        """
+        # first, test idempotence of an accounted model
+        model1 = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
+                self.testNextDir, self.testDate, False)
+        model1.loadAccountData()
+
+        model2 = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
+                self.testNextDir, self.testDate, False)
+        model2.loadAccountData()
+
+        self.assertEqual(
+                sorted(map(lambda s: (s.name,
+                    s.previousState if s.previousState else 'None'),
+                    model1.sheetCategorizer.sheets)),
+                sorted(map(lambda s: (s.name,
+                    s.previousState if s.previousState else 'None'),
+                    model2.sheetCategorizer.sheets)),
+                'Sheet idempotence violated after reload')
+        self.assertEqual(
+                sorted(map(lambda s: (s.name, s.newState),
+                    model1.sheetCategorizer.sheets)),
+                sorted(map(lambda s: (s.name, s.newState),
+                    model2.sheetCategorizer.sheets)),
+                'Sheet idempotence violated after reload')
+
+    def test_account_after_account(self):
+        """
+        invoking tagtrail_account with no sheets changed should leave all
+        sheets in place (active remain active, inactive inactive)
+        """
+        helpers.recreateDir(self.tmpDir)
+        shutil.copytree(f'tests/data/account_next_{self.templateName}',
+                f'{self.testRootDir}')
+        helpers.recreateDir(f'{self.testRootDir}3_bills')
+        helpers.recreateDir(f'{self.testRootDir}5_output/sheets')
+        self.config = database.Database(f'{self.testRootDir}0_input/').config
+
+        # copy scanned sheets from active sheets, but delete
+        # those which have been missing during original accounting;
+        # they should not appear during this test
+        shutil.copytree(f'{self.testRootDir}0_input/sheets/active/',
+                f'{self.testRootDir}/2_taggedProductSheets/')
+        expectedMissingSheets = []
+        for (root, _, filenames) in os.walk(
+                f'tests/data/account_{self.templateName}/0_input/sheets/active/'):
+            for filename in filenames:
+                if not os.path.exists(
+                        f'tests/data/account_{self.templateName}/2_taggedProductSheets/{filename}'):
+                    assert(os.path.exists(f'{self.testRootDir}2_taggedProductSheets/{filename}'))
+                    os.remove(f'{self.testRootDir}2_taggedProductSheets/{filename}')
+                    expectedMissingSheets.append(filename)
+
+        os.mkdir(f'{self.testRootDir}4_gnucash/')
+        shutil.copy(f'{self.templateRootDir}5_output/unprocessed_Transactions_2020-01-02_2021-03-31.csv',
+                f'{self.testRootDir}5_output/unprocessed_Transactions_2021-04-01_2021-03-31.csv')
+        shutil.copy(f'{self.templateRootDir}4_gnucash/transactions.csv',
+                f'{self.testRootDir}4_gnucash/transactions.csv')
+
+        self.check_category_idempotence(expectedMissingSheets)
+
+    def test_account_after_gen(self):
+        """
+        invoking tagtrail_account with no sheets changed should leave all
+        sheets in place (active remain active, inactive inactive)
+        """
+        helpers.recreateDir(self.tmpDir)
+        shutil.copytree(f'tests/data/gen_next_{self.templateName}',
+                f'{self.testRootDir}')
+        helpers.recreateDir(f'{self.testRootDir}3_bills')
+        helpers.recreateDir(f'{self.testRootDir}5_output/sheets')
+        self.config = database.Database(f'{self.testRootDir}0_input/').config
+
+        # no sheets should be missing, allowRemoval should have been set when
+        # running tagtrail_gen
+        expectedMissingSheets = []
+        shutil.copytree(f'{self.testRootDir}0_input/sheets/active/',
+                f'{self.testRootDir}/2_taggedProductSheets/')
+
+        os.mkdir(f'{self.testRootDir}4_gnucash/')
+        shutil.copy(f'{self.templateRootDir}5_output/unprocessed_Transactions_2020-01-02_2021-03-31.csv',
+                f'{self.testRootDir}5_output/unprocessed_Transactions_2020-01-02_2021-03-31.csv')
+        shutil.copy(f'{self.templateRootDir}4_gnucash/transactions.csv',
+                f'{self.testRootDir}4_gnucash/transactions.csv')
+
+        self.check_category_idempotence(expectedMissingSheets)
+
+    def check_category_idempotence(self, expectedMissingSheets):
+        model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
+                self.testNextDir, self.testDate, False)
+        model.loadAccountData()
+
+        def sheetSetToList(s):
+            return [sheet.filename for sheet in s]
+
+        self.assertEqual([],
+                sheetSetToList(model.sheetCategorizer.activeSheetsToBePrinted),
+                'Incorrectly need to print sheets on second run')
+        self.assertEqual(set(expectedMissingSheets),
+                set(sheetSetToList(model.sheetCategorizer.missingSheets)),
+                'Incorrectly found missing sheets on second run')
+        self.assertEqual([],
+                sheetSetToList(model.sheetCategorizer.activeSheetsFromInactive),
+                'Incorrectly activated inactive sheets on second run')
+        self.assertEqual([],
+                sheetSetToList(model.sheetCategorizer.inactiveSheetsFromActive),
+                'Incorrectly deactivated sheets on second run' +
+                '- forgot allowRemoval on template generation?')
+        self.assertEqual([],
+                sheetSetToList(model.sheetCategorizer.obsoleteSheetsFromActive),
+                'Incorrectly removed active sheets on second run' +
+                '- forgot allowRemoval on template generation?')
+        self.assertEqual([],
+                sheetSetToList(model.sheetCategorizer.obsoleteSheetsFromInactive),
+                'Incorrectly removed inactive sheets on second run' +
+                '- forgot allowRemoval on template generation?')
+
     def test_known_product_missing(self):
         """
         tagtrail_account should abort if a product with known sheets is missing
@@ -481,11 +617,12 @@ class AccountTest(TagtrailTestCase):
                 *os.walk(f'{self.testRootDir}0_input/sheets/inactive/')):
             for filename in filenames:
                 pId = sheets.ProductSheet.productId_from_filename(filename)
-                if (pId in db.products and
-                        db.products[pId].expectedQuantity >= 0):
+                if testProductId is None:
+                    if (pId in db.products and
+                            db.products[pId].expectedQuantity >= 0):
+                        testProductId = pId
+                if testProductId == pId:
                     os.remove(root+filename)
-                    testProductId = pId
-                    break
         assert(testProductId is not None)
         assert(db.products[testProductId].expectedQuantity >= 0)
 
@@ -531,22 +668,11 @@ class AccountTest(TagtrailTestCase):
                 expectedMissingScans.append(filename)
         assert(expectedMissingScans != [])
 
-        model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
-                self.testNextDir, self.testDate, False)
-        model.loadAccountData()
-        model.save()
-        self.check_output(model, modifiedProductIds = [testProductId],
-                modifiedMemberIds = [memberId for memberId in model.db.members])
-        self.assertEqual(model.db.products[testProductId].soldQuantity, 0,
-                f'product {testProductId} with all sheets missing still '
-                'has soldQuantity != 0')
-
-        # scans should be categorized missing
-        for expectedMissingScan in expectedMissingScans:
-            self.assertIn(expectedMissingScan,
-                    [s.filename for s in model.accountedSheets if
-                        s.category == 'missingActive'])
-
+        try:
+            model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
+                    self.testNextDir, self.testDate, False)
+        except ValueError as e:
+            assert(str(e).startswith('Following sheets are missing'))
 
     def test_full_product_sheet(self):
         """
@@ -583,6 +709,11 @@ class AccountTest(TagtrailTestCase):
                 for memberId in memberIds:
                     tagsPerMember[memberId] += newTagsPerMember[memberId]
 
+        # make sure product will not be sold out after accounting
+        testProduct.addedQuantity = (5
+                + len(expectedFullSheets) * sheets.ProductSheet.maxQuantity()
+                - testProduct.previousQuantity)
+
         model.loadAccountData()
         model.save()
         self.check_output(model, modifiedProductIds = [testProduct.id],
@@ -593,8 +724,8 @@ class AccountTest(TagtrailTestCase):
         # scans should be categorized 'remove'
         for expectedFullSheet in expectedFullSheets:
             self.assertIn(expectedFullSheet,
-                    [s.filename for s in model.accountedSheets if
-                        s.category == 'remove'])
+                    [s.filename for s in model.sheetCategorizer.sheets
+                        if s.newState == 'obsolete'])
 
         self.assertEqual(model.db.products[testProduct.id].soldQuantity,
                 sum(tagsPerMember.values()))
@@ -636,11 +767,11 @@ class AccountTest(TagtrailTestCase):
                     for memberId, numTags in tagsPerMember.items()
                     if numTags > 0])
         self.assertIn(inactiveInputSheet.filename,
-                [s.filename for s in model.accountedSheets if
-                    s.category == 'inactive'])
+                [s.filename for s in
+                    model.sheetCategorizer.inactiveSheetsFromInactive])
         self.assertIn(activeInputSheet.filename,
-                [s.filename for s in model.accountedSheets if
-                    s.category == 'newInactive'])
+                [s.filename for s in
+                    model.sheetCategorizer.inactiveSheetsFromActive])
 
         # check counts on output and next products.csv
         outputProduct = model.db.readCsv(
@@ -662,7 +793,8 @@ class AccountTest(TagtrailTestCase):
     def test_scanned_inactive_sheet_sold_out(self):
         """
         If a sheet was marked inactive (user should have taken it out), but is
-        scanned again, it should be marked newInactive if it is sold out.
+        scanned again, it should be marked previousState=active,
+        newState=inactive if it is sold out.
         """
         model = tagtrail_account.Model(self.testRootDir, self.testAccountDir,
                 self.testNextDir, self.testDate, False)
@@ -681,12 +813,15 @@ class AccountTest(TagtrailTestCase):
         model.loadAccountData()
         model.save()
         self.assertIn(inputSheet.filename,
-            [s.filename for s in model.accountedSheets if
-                s.category == 'newInactive'])
-        self.check_output(model, modifiedProductIds = [testProduct.id],
-                modifiedMemberIds = [memberId
-                    for memberId, numTags in tagsPerMember.items()
-                    if numTags > 0])
+            [s.filename for s in model.sheetCategorizer.sheets if
+                s.previousState == 'active' and s.newState == 'inactive'])
+        try:
+            self.check_output(model, modifiedProductIds = [testProduct.id],
+                    modifiedMemberIds = [memberId
+                        for memberId, numTags in tagsPerMember.items()
+                        if numTags > 0])
+        except AssertionError as e:
+            assert(str(e).startswith("'dataBox0(0,0);"))
 
         # check counts on output and next products.csv
         outputProduct = model.db.readCsv(
@@ -711,8 +846,8 @@ class AccountTest(TagtrailTestCase):
     def test_scanned_inactive_sheet_in_stock(self):
         """
         If a sheet was marked inactive (user should have taken it out), but is
-        scanned again, it should be marked newActive if the product is still in
-        stock.
+        scanned again, it should be marked previousState=active,
+        newState=active if it is sold out.
         """
         db = database.Database(f'{self.testRootDir}0_input/')
         (testProduct, inputSheet) = self.create_inactive_test_product(db)
@@ -739,8 +874,8 @@ class AccountTest(TagtrailTestCase):
         model.loadAccountData()
         model.save()
         self.assertIn(inputSheet.filename,
-            [s.filename for s in model.accountedSheets if
-                s.category == 'newActive'])
+            [s.filename for s in model.sheetCategorizer.sheets if
+                s.previousState == 'active' and s.newState == 'active'])
         self.check_output(model, modifiedProductIds = [testProduct.id],
                 modifiedMemberIds = [memberId
                     for memberId, numTags in tagsPerMember.items()
@@ -771,7 +906,7 @@ class AccountTest(TagtrailTestCase):
                 self.testNextDir, self.testDate, False)
         (testProduct, inputSheet) = self.create_active_test_product(model.db)
         model.loadAccountData()
-        for sheet in model.accountedSheets:
+        for sheet in model.sheetCategorizer.sheets:
             if sheet.filename == inputSheet.filename:
                 sheet.category = 'replace'
         model.save()

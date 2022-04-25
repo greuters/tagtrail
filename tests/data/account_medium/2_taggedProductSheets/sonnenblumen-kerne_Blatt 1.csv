@@ -1,12 +1,12 @@
 boxName;text;confidence
-frameBox;;1
+frameBox;;1.0
 nameBox;Sonnenblumen Kerne;1.0
 unitBox;200g;1.0
 priceBox;3.80 CHF;1.0
-sheetNumberBox;Blatt 1;1
+sheetNumberBox;Blatt 1;1.0
 dataBox0(0,0);DGL;1.0
-dataBox1(0,1);ANGE;1
-dataBox2(0,2);;1
+dataBox1(0,1);ANGE;1.0
+dataBox2(0,2);;1.0
 dataBox3(0,3);;1.0
 dataBox4(0,4);;1.0
 dataBox5(1,0);DGL;1.0
@@ -15,7 +15,7 @@ dataBox7(1,2);;1.0
 dataBox8(1,3);;1.0
 dataBox9(1,4);;1.0
 dataBox10(2,0);MALA;1.0
-dataBox11(2,1);;1
+dataBox11(2,1);;1.0
 dataBox12(2,2);;1.0
 dataBox13(2,3);;1.0
 dataBox14(2,4);;1.0
@@ -74,7 +74,7 @@ dataBox66(13,1);;1.0
 dataBox67(13,2);;1.0
 dataBox68(13,3);;1.0
 dataBox69(13,4);;1.0
-dataBox70(14,0);ANGE;1
+dataBox70(14,0);ANGE;1.0
 dataBox71(14,1);;1.0
 dataBox72(14,2);;1.0
 dataBox73(14,3);;1.0

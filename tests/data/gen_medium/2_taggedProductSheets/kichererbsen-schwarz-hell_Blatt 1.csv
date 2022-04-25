@@ -1,10 +1,10 @@
 boxName;text;confidence
-frameBox;;1
-nameBox;Kichererbsen (schwarz / hell);1
-unitBox;1kg;1
-priceBox;11.60 CHF;1
-sheetNumberBox;Blatt 1;1
-dataBox0(0,0);MMJQ;1
+frameBox;;1.0
+nameBox;Kichererbsen (schwarz / hell);1.0
+unitBox;1kg;1.0
+priceBox;11.60 CHF;1.0
+sheetNumberBox;Blatt 1;1.0
+dataBox0(0,0);MMJQ;1.0
 dataBox1(0,1);;1.0
 dataBox2(0,2);;1.0
 dataBox3(0,3);;1.0
@@ -23,13 +23,13 @@ dataBox15(3,0);SWAG;1.0
 dataBox16(3,1);;1.0
 dataBox17(3,2);;1.0
 dataBox18(3,3);;1.0
-dataBox19(3,4);;1
-dataBox20(4,0);SB;1
+dataBox19(3,4);;1.0
+dataBox20(4,0);SB;1.0
 dataBox21(4,1);;1.0
 dataBox22(4,2);;1.0
 dataBox23(4,3);;1.0
 dataBox24(4,4);;1.0
-dataBox25(5,0);SISI;1
+dataBox25(5,0);SISI;1.0
 dataBox26(5,1);;1.0
 dataBox27(5,2);;1.0
 dataBox28(5,3);;1.0

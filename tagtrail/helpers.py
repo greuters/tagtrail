@@ -205,7 +205,6 @@ def configureLogger(logger, consoleLevel = logging.INFO, fileLevels =
         '%(levelname)-8s : %(message)s'))
     logger.addHandler(consoleHandler)
 
-
 def recreateDir(path):
     try:
         shutil.rmtree(path)

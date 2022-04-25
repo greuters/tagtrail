@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from .context import helpers
+from .context import sheet_categorizer
 from .context import database
 from .context import sheets
 from .context import tagtrail_gen
@@ -46,6 +47,20 @@ class GenTest(TagtrailTestCase):
         filename = f'{productId}_{sheetNumberStr}.csv'
         self.assertIn(filename, [s.filename for s in sheetsInCategory])
 
+    def product_sheet_filenames_in_dir(self, productId, inputDir):
+        """
+        Retrieve filenames of all sheets of a given product in a directory
+
+        :param productId: id of the product to look for
+        :type productId: str
+        :param inputDir: directory to check
+        :type inputDir: str
+        :return: list of filenames
+        :rtype: list of str
+        """
+        return [filename for filename in os.listdir(inputDir) if
+                sheets.ProductSheet.productId_from_filename(filename) == productId]
+
     def check_files(self, model, excludedProductIds = []):
         """
         Check if all files are written as claimed to the user, and if they
@@ -66,45 +81,46 @@ class GenTest(TagtrailTestCase):
         self.assertTrue(os.path.exists(self.testNextDir))
 
         # check if categories shown to the user claim the correct origin
-        for filename in [s.filename for s in model.activeSheetsFromActive
-                .union(model.inactiveSheetsFromActive)
-                .union(model.obsoleteSheetsFromActive)]:
+        for filename in [s.filename for s in model.sheetCategorizer.activeSheetsFromActive
+                .union(model.sheetCategorizer.inactiveSheetsFromActive)
+                .union(model.sheetCategorizer.missingSheets)
+                .union(model.sheetCategorizer.obsoleteSheetsFromActive)]:
             p = f'{self.testGenDir}0_input/sheets/active/{filename}'
             self.assertTrue(os.path.exists(p), p)
 
-        for filename in [s.filename for s in model.activeSheetsFromInactive
-                .union(model.inactiveSheetsFromInactive)
-                .union(model.obsoleteSheetsFromInactive)]:
+        for filename in [s.filename for s in model.sheetCategorizer.activeSheetsFromInactive
+                .union(model.sheetCategorizer.inactiveSheetsFromInactive)
+                .union(model.sheetCategorizer.obsoleteSheetsFromInactive)]:
             p = f'{self.testGenDir}0_input/sheets/inactive/{filename}'
             self.assertTrue(os.path.exists(p), p)
 
         # check if files were written according to the categories which are
         # shown to the user
         activeFilenames = [sheet.filename
-                for sheet in model.activeSheetsToBePrinted
-                    .union(model.activeSheetsFromInactive)
-                    .union(model.activeSheetsFromActive)]
+                for sheet in model.sheetCategorizer.activeSheetsToBePrinted
+                    .union(model.sheetCategorizer.activeSheetsFromInactive)
+                    .union(model.sheetCategorizer.activeSheetsFromActive)]
         for filename in activeFilenames:
             p = f'{testOutputActiveDir}{filename}'
             self.assertTrue(os.path.exists(p), p)
             p = f'{nextInputActiveDir}{filename}'
             self.assertTrue(os.path.exists(p), p)
 
-        for sheet in model.activeSheetsToBePrinted:
+        for sheet in model.sheetCategorizer.activeSheetsToBePrinted:
             p = (f'{self.testGenDir}1_generatedSheets/{sheet.productId()}'
                     f'_{sheet.sheetNumber}.jpg')
             self.assertTrue(os.path.exists(p), p)
 
-        for sheet in (model.inactiveSheetsFromInactive
-                .union(model.inactiveSheetsFromActive)):
+        for sheet in (model.sheetCategorizer.inactiveSheetsFromInactive
+                .union(model.sheetCategorizer.inactiveSheetsFromActive)):
             p = f'{testOutputInactiveDir}{sheet.filename}'
             self.assertTrue(os.path.exists(p), p)
             p = f'{nextInputInactiveDir}{sheet.filename}'
             self.assertTrue(os.path.exists(p), p)
 
 
-        for sheet in (model.obsoleteSheetsFromInactive
-                .union(model.obsoleteSheetsFromActive)):
+        for sheet in (model.sheetCategorizer.obsoleteSheetsFromInactive
+                .union(model.sheetCategorizer.obsoleteSheetsFromActive)):
             if os.path.exists(
                     f'{self.testGenDir}5_output/sheets/obsolete/removed/{sheet.filename}'):
                 p = f'{nextInputActiveDir}{sheet.filename}'
@@ -179,18 +195,18 @@ class GenTest(TagtrailTestCase):
                 model.save()
                 self.check_files(model, [testProductId])
 
-                for filename in model.product_sheet_filenames_in_dir(
+                for filename in self.product_sheet_filenames_in_dir(
                         testProductId,
                         f'{self.templateRootDir}0_input/sheets/active'):
                     self.assertIn(filename, [s.filename for s in
-                        model.obsoleteSheetsFromActive])
+                        model.sheetCategorizer.obsoleteSheetsFromActive])
                     testedAtLeastOneProduct = True
 
-                for filename in model.product_sheet_filenames_in_dir(
+                for filename in self.product_sheet_filenames_in_dir(
                         testProductId,
                         f'{self.templateRootDir}0_input/sheets/inactive'):
                     self.assertIn(filename, [s.filename for s in
-                        model.obsoleteSheetsFromInactive])
+                        model.sheetCategorizer.obsoleteSheetsFromInactive])
                     testedAtLeastOneProduct = True
 
         self.assertTrue(testedAtLeastOneProduct,
@@ -211,26 +227,26 @@ class GenTest(TagtrailTestCase):
                 assert(testProduct.expectedQuantity <= 0)
 
                 # add one active and one inactive sheet
-                activeSheet = model.generateProductSheet(testProduct, 5)
+                activeSheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 5)
                 activeSheet.store(f'{self.testRootDir}/0_input/sheets/active/')
-                inactiveSheet = model.generateProductSheet(testProduct, 6)
+                inactiveSheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 6)
                 inactiveSheet.store(f'{self.testRootDir}/0_input/sheets/inactive/')
 
                 model.initializeSheets()
                 model.save()
                 self.check_files(model, [testProductId])
 
-                for filename in model.product_sheet_filenames_in_dir(
+                for filename in self.product_sheet_filenames_in_dir(
                         testProductId,
                         f'{self.templateRootDir}0_input/sheets/active'):
                     self.assertIn(filename, [s.filename for s in
-                        model.inactiveSheetsFromActive])
+                        model.sheetCategorizer.inactiveSheetsFromActive])
 
-                for filename in model.product_sheet_filenames_in_dir(
+                for filename in self.product_sheet_filenames_in_dir(
                         testProductId,
                         f'{self.templateRootDir}0_input/sheets/inactive'):
                     self.assertIn(filename,  [s.filename for s in
-                        model.inactiveSheetsFromInactive])
+                        model.sheetCategorizer.inactiveSheetsFromInactive])
 
     def test_add_product_out_of_stock(self):
         """
@@ -249,9 +265,9 @@ class GenTest(TagtrailTestCase):
         model.save()
         self.check_files(model, [testProduct.id])
 
-        self.assertEqual(len(model.product_sheet_filenames_in_dir(
+        self.assertEqual(len(self.product_sheet_filenames_in_dir(
             testProduct.id, f'{self.testNextDir}/0_input/sheets/active')), 0)
-        self.assertEqual(len(model.product_sheet_filenames_in_dir(
+        self.assertEqual(len(self.product_sheet_filenames_in_dir(
             testProduct.id, f'{self.testNextDir}/0_input/sheets/inactive')), 0)
 
     def test_product_remaining_active(self):
@@ -265,7 +281,7 @@ class GenTest(TagtrailTestCase):
         model.save()
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsFromActive)
+                model.sheetCategorizer.activeSheetsFromActive)
 
     def test_product_remaining_inactive(self):
         """
@@ -278,7 +294,7 @@ class GenTest(TagtrailTestCase):
         model.save()
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.inactiveSheetsFromInactive)
+                model.sheetCategorizer.inactiveSheetsFromInactive)
 
     def test_high_price_change_on_inactive_product(self):
         """
@@ -295,7 +311,7 @@ class GenTest(TagtrailTestCase):
         model.save()
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.inactiveSheetsFromInactive)
+                model.sheetCategorizer.inactiveSheetsFromInactive)
 
     def test_high_price_change_on_active_product(self):
         """
@@ -304,7 +320,7 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
-        sheet = model.generateProductSheet(testProduct, 4)
+        sheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 4)
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
         priceChangeThreshold = (self.config.getint('tagtrail_gen',
             'max_neglectable_price_change_percentage') / Decimal(100))
@@ -314,11 +330,11 @@ class GenTest(TagtrailTestCase):
         model.save()
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsToBePrinted)
+                model.sheetCategorizer.activeSheetsToBePrinted)
         self.check_sheet_in_category(testProduct.id, 1,
-                model.obsoleteSheetsFromActive)
+                model.sheetCategorizer.obsoleteSheetsFromActive)
         self.check_sheet_in_category(testProduct.id, 4,
-                model.obsoleteSheetsFromActive)
+                model.sheetCategorizer.obsoleteSheetsFromActive)
 
     def test_low_price_change_on_inactive_product(self):
         """
@@ -335,10 +351,10 @@ class GenTest(TagtrailTestCase):
         model.save()
 
         self.check_files(model, [testProduct.id])
-        self.assertEqual([s for s in model.activeSheetsToBePrinted
+        self.assertEqual([s for s in model.sheetCategorizer.activeSheetsToBePrinted
             if s.filename.find(testProduct.id) != -1], [])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.inactiveSheetsFromInactive)
+                model.sheetCategorizer.inactiveSheetsFromInactive)
 
     def test_low_price_change_on_active_product(self):
         """
@@ -355,10 +371,10 @@ class GenTest(TagtrailTestCase):
         model.save()
 
         self.check_files(model, [testProduct.id])
-        self.assertEqual([s for s in model.activeSheetsToBePrinted
+        self.assertEqual([s for s in model.sheetCategorizer.activeSheetsToBePrinted
             if s.filename.find(testProduct.id) != -1], [])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsFromActive)
+                model.sheetCategorizer.activeSheetsFromActive)
 
     def test_high_price_difference_active_sheet_to_db_fails(self):
         """
@@ -393,10 +409,10 @@ class GenTest(TagtrailTestCase):
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.obsoleteSheetsFromActive)
+                model.sheetCategorizer.obsoleteSheetsFromActive)
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsToBePrinted)
-        for s in model.activeSheetsToBePrinted:
+                model.sheetCategorizer.activeSheetsToBePrinted)
+        for s in model.sheetCategorizer.activeSheetsToBePrinted:
             if s.productId() == testProduct.id:
                 self.assertEqual(s.grossSalesPrice,
                         testProduct.grossSalesPrice())
@@ -419,10 +435,10 @@ class GenTest(TagtrailTestCase):
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.obsoleteSheetsFromActive)
+                model.sheetCategorizer.obsoleteSheetsFromActive)
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsToBePrinted)
-        for s in model.activeSheetsToBePrinted:
+                model.sheetCategorizer.activeSheetsToBePrinted)
+        for s in model.sheetCategorizer.activeSheetsToBePrinted:
             if s.productId() == testProduct.id:
                 self.assertEqual(s.grossSalesPrice,
                         testProduct.grossSalesPrice())
@@ -445,12 +461,12 @@ class GenTest(TagtrailTestCase):
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.obsoleteSheetsFromActive)
+                model.sheetCategorizer.obsoleteSheetsFromActive)
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsToBePrinted)
+                model.sheetCategorizer.activeSheetsToBePrinted)
         self.check_sheet_in_category(testProduct.id, 2,
-                model.activeSheetsToBePrinted)
-        for s in model.activeSheetsToBePrinted:
+                model.sheetCategorizer.activeSheetsToBePrinted)
+        for s in model.sheetCategorizer.activeSheetsToBePrinted:
             if s.productId() == testProduct.id:
                 self.assertEqual(s.grossSalesPrice,
                         testProduct.grossSalesPrice())
@@ -473,11 +489,11 @@ class GenTest(TagtrailTestCase):
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
 
-        inactiveSheet1 = model.generateProductSheet(testProduct, 2)
+        inactiveSheet1 = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
         inactiveSheet1.boxByName('dataBox0(0,0)').text = 'TEST'
         inactiveSheet1.boxByName('dataBox0(0,0)').confidence = 1
         inactiveSheet1.store(f'{self.testRootDir}/0_input/sheets/inactive/')
-        inactiveSheet2 = model.generateProductSheet(testProduct, 4)
+        inactiveSheet2 = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 4)
         inactiveSheet2.store(f'{self.testRootDir}/0_input/sheets/inactive/')
 
         # make sure we need two full sheets for next accounting
@@ -489,11 +505,17 @@ class GenTest(TagtrailTestCase):
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsFromActive)
-        self.check_sheet_in_category(testProduct.id, 2,
-                model.inactiveSheetsFromInactive)
+                model.sheetCategorizer.activeSheetsFromActive)
         self.check_sheet_in_category(testProduct.id, 4,
-                model.activeSheetsFromInactive)
+                model.sheetCategorizer.activeSheetsFromInactive)
+        try:
+            # inactiveSheet1 could be active or inactive, as other two sheets
+            # already provide enough space
+            self.check_sheet_in_category(testProduct.id, 2,
+                    model.sheetCategorizer.activeSheetsFromInactive)
+        except AssertionError:
+            self.check_sheet_in_category(testProduct.id, 2,
+                    model.sheetCategorizer.inactiveSheetsFromInactive)
 
     def test_added_quantity_not_enough_space(self):
         """
@@ -503,7 +525,7 @@ class GenTest(TagtrailTestCase):
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
 
-        inactiveSheet = model.generateProductSheet(testProduct, 2)
+        inactiveSheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
         inactiveSheet.store(f'{self.testRootDir}/0_input/sheets/inactive/')
 
         # make sure we need more than two full sheets for next accounting
@@ -515,11 +537,11 @@ class GenTest(TagtrailTestCase):
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsFromActive)
+                model.sheetCategorizer.activeSheetsFromActive)
         self.check_sheet_in_category(testProduct.id, 2,
-                model.activeSheetsFromInactive)
+                model.sheetCategorizer.activeSheetsFromInactive)
         self.check_sheet_in_category(testProduct.id, 3,
-                model.activeSheetsToBePrinted)
+                model.sheetCategorizer.activeSheetsToBePrinted)
 
     def test_fill_all_sheets(self):
         """
@@ -529,27 +551,28 @@ class GenTest(TagtrailTestCase):
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
 
-        inactiveSheet = model.generateProductSheet(testProduct, 3)
+        inactiveSheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 3)
         inactiveSheet.store(f'{self.testRootDir}/0_input/sheets/inactive/')
 
         # make sure we need exactly two full sheets for next accounting
         testProduct.addedQuantity = (sheets.ProductSheet.maxQuantity() * 2
                 - testProduct.expectedQuantity)
+        assert(testProduct.expectedQuantity == sheets.ProductSheet.maxQuantity() * 2)
         model.initializeSheets()
         model.save()
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsFromActive)
-        self.assertEqual(len([s for s in model.activeSheetsFromActive
+                model.sheetCategorizer.activeSheetsFromActive)
+        self.assertEqual(len([s for s in model.sheetCategorizer.activeSheetsFromActive
             if s.productId() == testProduct.id]),
             1)
         self.check_sheet_in_category(testProduct.id, 3,
-                model.activeSheetsFromInactive)
-        self.assertEqual(len([s for s in model.activeSheetsFromInactive
+                model.sheetCategorizer.activeSheetsFromInactive)
+        self.assertEqual(len([s for s in model.sheetCategorizer.activeSheetsFromInactive
             if s.productId() == testProduct.id]),
             1)
-        self.assertEqual([s for s in model.activeSheetsToBePrinted
+        self.assertEqual([s for s in model.sheetCategorizer.activeSheetsToBePrinted
             if s.productId() == testProduct.id],
             [])
 
@@ -562,7 +585,7 @@ class GenTest(TagtrailTestCase):
         (testProduct, _) = self.create_inactive_test_product(model.db)
 
         # add another sheet that would need to be replaced to make enough space
-        sheet = model.generateProductSheet(testProduct, 2)
+        sheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
         sheet.boxByName('dataBox0(0,0)').text = 'TEST'
         sheet.boxByName('dataBox0(0,0)').confidence = 1
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
@@ -585,7 +608,7 @@ class GenTest(TagtrailTestCase):
         (testProduct, _) = self.create_inactive_test_product(model.db)
 
         # add another sheet that has to be replaced to make enough space
-        sheet = model.generateProductSheet(testProduct, 2)
+        sheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
         sheet.boxByName('dataBox0(0,0)').text = 'TEST'
         sheet.boxByName('dataBox0(0,0)').confidence = 1
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
@@ -596,18 +619,20 @@ class GenTest(TagtrailTestCase):
         # make sure we need all sheets empty for next accounting
         testProduct.addedQuantity = (sheets.ProductSheet.maxQuantity() * maxNumSheets
                 - testProduct.expectedQuantity)
+        assert(testProduct.expectedQuantity ==
+                sheets.ProductSheet.maxQuantity() * maxNumSheets)
 
         model.initializeSheets()
         model.save()
 
         self.check_files(model, [testProduct.id])
         self.check_sheet_in_category(testProduct.id, 1,
-                model.activeSheetsFromInactive)
+                model.sheetCategorizer.activeSheetsFromInactive)
         self.check_sheet_in_category(testProduct.id, 2,
-                model.obsoleteSheetsFromActive)
+                model.sheetCategorizer.obsoleteSheetsFromActive)
         for n in range(2, maxNumSheets):
             self.check_sheet_in_category(testProduct.id, n,
-                    model.activeSheetsToBePrinted)
+                    model.sheetCategorizer.activeSheetsToBePrinted)
 
     def test_not_enough_space_in_max_num_sheets(self):
         """
@@ -630,17 +655,12 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_active_test_product(model.db)
-        sheet = model.generateProductSheet(testProduct, 2)
+        sheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
+        # smuggle in name inconsistency
+        sheet.name = self.testProductIds[0]
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
-        model.initializeSheets()
 
-        # smuggle in name change after initialization
-        for sheet in model.sheets:
-            if sheet.name == testProduct.description:
-                sheet.name = self.testProductIds[0]
-                break
-
-        self.assertRaises(AssertionError, model.save)
+        self.assertRaises(ValueError, model.initializeSheets)
 
     def test_fail_if_generated_sheets_amount_and_unit_inconsistent(self):
         """
@@ -649,17 +669,12 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
-        sheet = model.generateProductSheet(testProduct, 2)
+        sheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
+        # smuggle in amountAndUnit inconsistency
+        sheet.amountAndUnit = 'Test Amount'
         sheet.store(f'{self.testRootDir}/0_input/sheets/active/')
-        model.initializeSheets()
 
-        # smuggle in change after initialization
-        for sheet in model.sheets:
-            if sheet.name == testProduct.description:
-                sheet.amountAndUnit = 'Test Amount'
-                break
-
-        self.assertRaises(AssertionError, model.save)
+        self.assertRaises(ValueError, model.initializeSheets)
 
     def test_fail_if_generated_sheets_price_inconsistent(self):
         """
@@ -668,19 +683,14 @@ class GenTest(TagtrailTestCase):
         model = tagtrail_gen.Model(self.testRootDir, True, self.testDate,
                 self.testGenDir, self.testNextDir)
         (testProduct, _) = self.create_inactive_test_product(model.db)
-        sheet = model.generateProductSheet(testProduct, 2)
+        sheet = sheet_categorizer.SheetCategorizer.generateProductSheet(model.db, testProduct, 2)
+        # smuggle in price change
+        sheet.grossSalesPrice = helpers.formatPrice(
+                testProduct.grossSalesPrice()+Decimal(0.1),
+                self.config.get('general', 'currency'))
         sheet.store(f'{self.testRootDir}/0_input/sheets/inactive/')
-        model.initializeSheets()
 
-        # smuggle in price change after initialization
-        for sheet in model.sheets:
-            if sheet.name == testProduct.description:
-                sheet.grossSalesPrice = helpers.formatPrice(
-                        testProduct.grossSalesPrice()+Decimal(0.1),
-                        self.config.get('general', 'currency'))
-                break
-
-        self.assertRaises(AssertionError, model.save)
+        self.assertRaises(ValueError, model.initializeSheets)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Test tagtrail_gen')

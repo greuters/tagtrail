@@ -163,7 +163,7 @@ class TagtrailTestCase(unittest.TestCase):
         for filename in os.listdir(templateDir):
             if not filenameFilter(filename):
                 continue
-            self.assertIn(filename, testedFilenames)
+            self.assertIn(filename, sorted(testedFilenames))
 
         testedFilenames = list(filter(filenameFilter, testedFilenames))
 

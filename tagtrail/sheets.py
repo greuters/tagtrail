@@ -133,6 +133,22 @@ class ProductSheet(ABC):
                     text,
                     ), row+1, col)
 
+    @classmethod
+    def empty_from_sheet(cls, sheet):
+        """
+        Copy constructor for basic product data, without tags
+
+        :param sheet: sheet to copy
+        :type sheet: :class: `ProductSheet`
+        :rtype: :class" `ProductSheet`
+        """
+        newSheet = ProductSheet()
+        newSheet.name = sheet.name
+        newSheet.amountAndUnit = sheet.amountAndUnit
+        newSheet.grossSalesPrice = sheet._boxes['priceBox'].text
+        newSheet.sheetNumber = sheet.sheetNumber
+        return newSheet
+
     @property
     def name(self):
         return self._boxes['nameBox'].text
@@ -315,6 +331,26 @@ class ProductSheet(ABC):
                    '(productId_sheetNumber.csv) expected')
         return filename.split('_')[1][:-4]
 
+    @classmethod
+    def parse_sheetNumber(cls, db, sheetNumberStr):
+        """
+        Parse the sheet number from a formatted sheet number string
+
+        :param db: database specifiyng the sheet_number_string format
+        :type db: :class: `Database`
+        :param sheetNumberStr: sheet number string in tagtrail.cfg
+            `sheet_number_string` format
+        :type sheetNumberStr: str
+        :return: parsed number
+        :rtype: int
+        """
+        # TODO: save actual sheet number instead of only string version on the
+        # sheet
+        digits = ''.join([s for s in sheetNumberStr.split() if s.isdigit()])
+        assert(db.config.get('tagtrail_gen', 'sheet_number_string')
+                .format(sheetNumber=digits).upper() == sheetNumberStr.upper())
+        return int(digits)
+
     def store(self, path):
         filePath = f'{path}{self.filename}'
         self._logger.debug(f'storing sheet {filePath}')
@@ -322,6 +358,20 @@ class ProductSheet(ABC):
             fout.write(f'boxName;text;confidence\n')
             for box in self.boxes():
                 fout.write(f'{box.name};{box.text};{box.confidence:.1f}\n')
+
+    def equalContent(self, other):
+        """
+        Check if the content of self and other is equal.
+
+        :param other: sheet to compare
+        :type other: :class: `ProductSheet`
+        """
+        if not isinstance(other, ProductSheet):
+            return False
+        for box in self.boxes():
+            if not box.equalContent(other._boxes[box.name]):
+                return False
+        return True
 
 class Box(ABC):
     fontColor = 'black'
@@ -375,3 +425,16 @@ class Box(ABC):
             draw.text((0,0), self.text, self.fontColor, self.font)
             textImg = cv.cvtColor(np.array(canvas), cv.COLOR_RGB2BGR)
             img[textY:textY+textH,textX:textX+textW] = textImg
+
+    def equalContent(self, other):
+        """
+        Check if the content of self and other is equal.
+
+        :param other: box to compare
+        :type other: :class: `Box`
+        """
+        if not isinstance(other, Box):
+            return False
+        return (self.name == other.name
+                and self.text == other.text
+                and self.confidence == other.confidence)

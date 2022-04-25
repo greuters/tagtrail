@@ -28,15 +28,14 @@ import csv
 import copy
 import sys
 import functools
-import cv2 as cv
 import logging
 from decimal import Decimal
 
 from . import helpers
-from . import gui_components
 from .sheets import ProductSheet
 from . import database
 from . import eaternity
+from . import sheet_categorizer
 
 class TagCollector(ABC):
     """
@@ -353,230 +352,38 @@ class TagCollector(ABC):
                         during next inventory.
                         ''')
 
-class GUI(gui_components.BaseGUI):
-    scanPostfix = '_normalized_scan.jpg'
-    padx = 5
-    pady = 5
+class AccountSheetCategorizer(sheet_categorizer.SheetCategorizer):
+    def _checkPreconditions(self):
+        # check no sheets have been removed from products.csv
+        activeSheetDir = f'{self.rootDir}0_input/sheets/active/'
+        inactiveSheetDir = f'{self.rootDir}0_input/sheets/inactive/'
+        for fileDir, filename in (
+                [(activeSheetDir, fn) for fn in os.listdir(activeSheetDir)] +
+                [(inactiveSheetDir, fn) for fn in os.listdir(inactiveSheetDir)]):
+            productId = ProductSheet.productId_from_filename(filename)
+            if productId not in self.db.products:
+                raise ValueError(f"Product '{productId}' has sheet "
+                        f"'{fileDir+filename}', but is missing in products.csv.\n"
+                        'the product to products.csv to continue accounting.\n'
+                        'If you want to remove the product, remove it from '
+                        'products.csv after tagtrail_account and run '
+                        'tagtrail_gen with --allowRemoval option')
 
-    def __init__(self, model):
-        self.model = model
-        self.productFrame = None
-        self.activeFrame = None
-        self.inactiveFrame = None
-        self.obsoleteFrame = None
-        self.scrollbarY = None
+        super()._checkPreconditions()
 
-        width = self.model.db.config.getint('general', 'screen_width')
-        width = None if width == -1 else width
-        height = self.model.db.config.getint('general', 'screen_height')
-        height = None if height == -1 else height
-        super().__init__(width, height)
-
-    def populateRoot(self):
-        if self.productFrame is None:
-            self.productFrame = gui_components.ScrollableFrame(self.root,
-                    relief=tkinter.GROOVE)
-        self.productFrame.config(width = self.width - self.buttonFrameWidth,
-                    height = self.height)
-        self.productFrame.place(x=0, y=0)
-
-        if self.activeFrame is None:
-            self.activeFrame = tkinter.Frame(self.productFrame.scrolledwindow, relief=tkinter.GROOVE)
-        for w in self.activeFrame.winfo_children():
-            w.destroy()
-        self.populateActiveFrame()
-
-        if self.inactiveFrame is None:
-            self.inactiveFrame = tkinter.Frame(self.productFrame.scrolledwindow, relief=tkinter.GROOVE)
-        for w in self.inactiveFrame.winfo_children():
-            w.destroy()
-        self.populateInactiveFrame()
-
-        if self.obsoleteFrame is None:
-            self.obsoleteFrame = tkinter.Frame(self.productFrame.scrolledwindow, relief=tkinter.GROOVE)
-        for w in self.obsoleteFrame.winfo_children():
-            w.destroy()
-        self.populateObsoleteFrame()
-
-        maxHeight = max(self.activeFrame.winfo_reqheight(),
-                self.inactiveFrame.winfo_reqheight(),
-                self.obsoleteFrame.winfo_reqheight())
-        maxWidth = max(self.activeFrame.winfo_reqwidth(),
-                self.inactiveFrame.winfo_reqwidth(),
-                self.obsoleteFrame.winfo_reqwidth())
-
-        self.activeFrame.place(x = 0, y = 0,
-                width = maxWidth, height = maxHeight)
-        self.inactiveFrame.place(x = maxWidth, y = 0,
-                width = maxWidth, height = maxHeight)
-        self.obsoleteFrame.place(x = 2*maxWidth, y = 0,
-                width = maxWidth, height = maxHeight)
-        self.productFrame.scrolledwindow.config(width = 3 * maxWidth,
-                height = maxHeight)
-
-        buttons = []
-        buttons.append(('cancelAndQuit', 'Cancel', self.cancelAndQuit))
-        buttons.append(('saveAndQuit', 'Save and Quit', self.saveAndQuit))
-        self.addButtonFrame(buttons)
-        self.buttons['saveAndQuit'].focus_set()
-
+class AccountGUI(sheet_categorizer.CategorizerGUI):
     def populateActiveFrame(self):
-        activeLabel = tkinter.Label(self.activeFrame, text='Active sheets')
-        activeLabel.pack(side=tkinter.TOP, fill=tkinter.X, padx = self.padx, pady = self.pady)
-        gui_components.ToolTip(activeLabel,
-                ('These sheets should be available for customers to tag '
-                '(physical printouts in the store) after accounting is done.'))
-
-        self.__addCategoryFrame(self.activeFrame, 'New', 'newActive',
-                ('These sheets were marked inactive last time, but '
-                'they should not be according to products.csv\n'
-                'Make sure they are available to customers.'),
-                ('Deactivate', 'newInactive'),
-                ('Replace', 'replace')
-                ).config(background='tan1')
-
-        self.__addCategoryFrame(self.activeFrame, 'Missing Scans', 'missingActive',
+        self._addCategoryFrame(self.activeFrame, 'Missing', 'active',
+                'missing', False, False,
                 ('These sheets should be active but have not been scanned.\n'
                 'Either leave it for the next time (customers will be billed '
                 'with next accounting),\n'
                 'or cancel tagtrail_account, scan these sheets, run '
                 'tagtrail_ocr with --individualScan option and '
                 'tagtrail_sanitize before restarting tagtrail_account.'),
-                ('Deactivate', 'newInactive'),
-                ('Remove', 'remove')
                 ).config(background='tan1')
 
-        self.__addCategoryFrame(self.activeFrame, 'Unchanged', 'active',
-                'These sheets are active and have been scanned. All good.',
-                ('Deactivate', 'newInactive'),
-                ('Replace', 'replace')
-                ).config(background='green')
-
-    def populateInactiveFrame(self):
-        inactiveLabel = tkinter.Label(self.inactiveFrame, text='Inactive sheets')
-        inactiveLabel.pack(side=tkinter.TOP, fill=tkinter.X, padx = self.padx, pady = self.pady)
-        gui_components.ToolTip(inactiveLabel,
-                ('These sheets should be kept somewhere out of customers'
-                ' reach, ready for reuse when new stock arrives.'))
-
-        self.__addCategoryFrame(self.inactiveFrame, 'New', 'newInactive',
-                ('These sheets were scanned but became inactive (product sold '
-                'out).\n'
-                'Remove them from the store and keep them somewhere for later '
-                'reuse.'),
-                ('Activate', 'newActive'),
-                ('Remove', 'remove')
-                ).config(background='tan1')
-
-        self.__addCategoryFrame(self.inactiveFrame, 'Unchanged', 'inactive',
-                ('These sheets were already inactive after last accounting, '
-                'just keep them for later reuse.'),
-                ('Activate', 'newActive'),
-                ('Remove', 'remove')
-                ).config(background='green')
-
-    def populateObsoleteFrame(self):
-        obsoleteLabel = tkinter.Label(self.obsoleteFrame, text='Obsolete sheets')
-        obsoleteLabel.pack(side=tkinter.TOP, fill=tkinter.X, padx = self.padx, pady = self.pady)
-        gui_components.ToolTip(obsoleteLabel,
-                ('These sheets are full and should be removed and destroyed '
-                'or archived.'))
-
-        self.__addCategoryFrame(self.obsoleteFrame, 'To be replaced', 'replace',
-                ('You selected these sheets to be replaced (E.g. because they '
-                'are damaged).\n'
-                'Remove them from the store and replace them with a new '
-                'copy from 1_emptySheets/products/.'),
-                ('Activate', 'newActive'),
-                ('Deactivate', 'newInactive')
-                ).config(background='tan1')
-
-        self.__addCategoryFrame(self.obsoleteFrame, 'To be removed', 'remove',
-                ('These sheets should be removed and thrown away '
-                'or archived.'),
-                ('Activate', 'newActive'),
-                ('Deactivate', 'newInactive')
-                ).config(background='tan1')
-
-    def __addCategoryFrame(self, parent, title, category, tooltip,
-            button1 = None, button2 = None):
-        """
-        Add a frame with all sheets of one category, plus optional buttons for
-        the user to change the category of each sheet.
-
-        :param parent: parent widget
-        :type parent: tkinter widget
-        :param title: title of the frame
-        :type title: str
-        :param category: category identifier
-        :type category: str
-        :param tooltip: tooltip describing the category and necessary actions
-        to be taken for sheets in this category to the user
-        :type tooltip: str
-        :param button1: (text, category) to initialize a button which sets the
-        corresponding sheet to another category
-        :type button1: pair (str, str)
-        :param button2: (text, category) to initialize a button which sets the
-        corresponding sheet to another category
-        :type button2: pair (str, str)
-        :return: created frame
-        :rtype: tkinter.Frame
-        """
-        frame = tkinter.Frame(parent)
-        tkinter.Label(frame, text=title).grid(row=0, column=0)
-        rowIdx = 0
-        for sheet in self.model.accountedSheets:
-            if sheet.category != category:
-                continue
-            rowIdx += 1
-            tkinter.Label(frame, text=sheet.filename).grid(
-                    row=rowIdx, column=0, padx = self.padx, pady = self.pady)
-            if button1 is not None:
-                b = tkinter.Button(frame, text=button1[0])
-                command = functools.partial(self.__setSheetCategory, sheet,
-                        button1[1])
-                b.bind('<Button-1>', command)
-                b.bind('<Return>', command)
-                b.grid(row=rowIdx, column=1)
-            if button2 is not None:
-                b = tkinter.Button(frame, text=button2[0])
-                command = functools.partial(self.__setSheetCategory, sheet,
-                        button2[1])
-                b.bind('<Button-1>', command)
-                b.bind('<Return>', command)
-                b.grid(row=rowIdx, column=2, padx = self.padx, pady = self.pady)
-
-        frame.pack(side=tkinter.TOP, fill=tkinter.X, padx = self.padx, pady = self.pady)
-        frame.config(relief=tkinter.GROOVE, bd=2)
-        gui_components.ToolTip(frame, tooltip)
-        frame.update()
-        return frame
-
-    def __setSheetCategory(self, sheet, category, event):
-        """
-        Set the category of sheet, to be passed to buttons
-
-        :param sheet: sheet
-        :type sheet: :class:`ProductSheet`
-        :param category: category, one of ('newActive', 'missingActive', 'active',
-        'newInactive', 'inactive', 'replace', 'remove')
-        :type category: str
-        :param event: tkinter event
-        """
-        if category not in ['newActive', 'missingActive', 'active',
-                'newInactive', 'inactive', 'replace', 'remove']:
-            raise ValueError(f'invalid category: {category}')
-        sheet.category = category
-        self.populateRoot()
-
-    def saveAndQuit(self, event = None):
-        try:
-            self.model.save()
-        finally:
-            self.root.quit()
-
-    def cancelAndQuit(self, event = None):
-        self.root.quit()
+        super().populateActiveFrame()
 
 class Model():
     """
@@ -621,6 +428,9 @@ class Model():
                 ')\n'
                 'To do a valid accounting, either redo the inventory or '
                 'the accounting.')
+
+        if os.path.exists(self.renamedRootDir):
+            raise ValueError(f'{self.renamedRootDir} already exists!')
 
     def loadAccountData(self):
         """
@@ -675,61 +485,13 @@ class Model():
         self.inventoryDifferenceTransactions = self.createInventoryDifferenceTransactions()
         self.accounts = database.MemberAccountDict(self.db.config,
                 **{m.id: database.MemberAccount(m.id) for m in self.db.members.values()})
-        self.accountedSheets = self.categorizeAccountedSheets(tagCollector)
-
-    def categorizeAccountedSheets(self, tagCollector):
-        """
-        Sort active/inactive input sheets and scanned sheets into various
-        categories to present to the user and prepare the next accounting.
-
-        :param tagCollector: initialized TagCollector with loaded and checked sheets
-        :type tagCollector: :class:`TagCollector`
-        :return: alphabetically (by filename) sorted list of all accounted sheets, where each sheet has one of the
-            following categories set: ('newActive', 'missingActive', 'active',
-            'newInactive', 'inactive', 'replace', 'remove')
-        :rtype: list of :class:`ProductSheet`
-        """
-        accountedSheets = []
-
-        fullSheets = []
-        for sheet in tagCollector.scannedSheets.values():
-            if sheet.isFull():
-                sheet.category = 'remove'
-                accountedSheets.append(sheet)
-                fullSheets.append(sheet.filename)
-
-        for (pId, pNum), sheet in tagCollector.inactiveInputSheets.items():
-            if sheet.filename in fullSheets:
-                continue
-            if self.db.products[pId].expectedQuantity <= 0:
-                if (pId, pNum) in tagCollector.scannedSheets:
-                    sheet.category = 'newInactive'
-                else:
-                    sheet.category = 'inactive'
-                accountedSheets.append(sheet)
-            else:
-                sheet.category = 'newActive'
-                accountedSheets.append(sheet)
-
-        for (pId, pNum), sheet in tagCollector.activeInputSheets.items():
-            if sheet.filename in fullSheets:
-                continue
-            if (pId, pNum) not in tagCollector.scannedSheets:
-                sheet.category = 'missingActive'
-                accountedSheets.append(sheet)
-            elif self.db.products[pId].expectedQuantity <= 0:
-                sheet.category = 'newInactive'
-                accountedSheets.append(sheet)
-            else:
-                sheet.category = 'active'
-                accountedSheets.append(sheet)
-
-        accountedSheetFilenames = [s.filename for s in accountedSheets]
-        if len(accountedSheetFilenames) != len(set(accountedSheetFilenames)):
-            raise AssertionError('Sheet assigned to several categories:\n'
-                f'{accountedSheetFilenames}')
-
-        return sorted(accountedSheets, key=lambda sheet: sheet.filename)
+        self.sheetCategorizer = AccountSheetCategorizer(
+                self.rootDir,
+                self.db,
+                tagCollector.activeInputSheets,
+                tagCollector.inactiveInputSheets,
+                tagCollector.scannedSheets,
+                True)
 
     def loadPaymentTransactions(self):
         self.logger.info('Loading payment transactions')
@@ -886,7 +648,7 @@ class Model():
         self.checkConsistency()
         self.writeBills()
         self.writeGnuCashFiles()
-        self.writeAccountedProductSheets()
+        self.sheetCategorizer.writeSheets()
         if self.renamedRootDir != self.rootDir:
             shutil.move(self.rootDir, self.renamedRootDir)
         self.logger.info('Completed account\n')
@@ -933,68 +695,6 @@ class Model():
 
         self.db.writeCsv(f'{destPath}transactions.csv',
                 transactions)
-
-    def writeAccountedProductSheets(self):
-        self.logger.info('Writing accounted product sheets')
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/active/')
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/inactive/')
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/removed/')
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/replaced/')
-        if [s for s in self.accountedSheets if s.category == 'replace'] != []:
-            helpers.recreateDir(f'{self.rootDir}1_emptySheets/')
-        helpers.recreateDir(f'{self.rootDir}5_output/sheets/obsolete/replaced/')
-        for sheet in self.accountedSheets:
-            outputPath = f'{self.rootDir}5_output/sheets/'
-            if sheet.category in ['active', 'newActive', 'missingActive']:
-                outputPath += 'active/'
-            elif sheet.category in ['newInactive', 'inactive']:
-                outputPath += 'inactive/'
-            elif sheet.category == 'remove':
-                outputPath += 'obsolete/removed/'
-            elif sheet.category == 'replace':
-                # generate replacement sheet
-                emptySheet = ProductSheet()
-                emptySheet.name = sheet.name
-                emptySheet.amountAndUnit = sheet.amountAndUnit
-                emptySheet.grossSalesPrice = sheet.grossSalesPrice
-                emptySheet.sheetNumber = sheet.sheetNumber
-                emptySheetPath = (self.rootDir +
-                        '1_emptySheets/' + sheet.filename + '.jpg')
-                if cv.imwrite(emptySheetPath, emptySheet.createImg()) is True:
-                    self.logger.info(f'generated sheet {emptySheetPath}')
-                else:
-                    raise ValueError(f'failed to generate sheet {emptySheetPath}')
-                emptySheet.store(outputPath + 'active/')
-                outputPath += 'obsolete/replaced/'
-            else:
-                assert(False)
-
-            # Available sources of a sheet might be non-intuitive, as users
-            # can assign virtually any category to a sheet.
-            #
-            # As an example, a newActive sheet usually has only an inactive
-            # input file and no scan. However, it could also have a scanned and
-            # an active input file if the user assigned an active file to be
-            # inactive and then activated it again.
-            #
-            # What is guaranteed is that scanned sheets always take precedence
-            # over input sheets and either an active or an inactive input
-            # sheet must exist of any product sheet.
-            scanInputPath = f'{self.rootDir}/2_taggedProductSheets/'
-            activeInputPath = f'{self.rootDir}/0_input/sheets/active/'
-            inactiveInputPath = f'{self.rootDir}/0_input/sheets/inactive/'
-            if os.path.exists(f'{scanInputPath}{sheet.filename}'):
-                shutil.copy(f'{scanInputPath}{sheet.filename}',
-                        f'{outputPath}{sheet.filename}')
-            elif os.path.exists(f'{activeInputPath}{sheet.filename}'):
-                shutil.copy(f'{activeInputPath}{sheet.filename}',
-                        f'{outputPath}{sheet.filename}')
-            elif os.path.exists(f'{inactiveInputPath}{sheet.filename}'):
-                shutil.copy(f'{inactiveInputPath}{sheet.filename}',
-                        f'{outputPath}{sheet.filename}')
-            else:
-                raise AssertionError(
-                        f'No file found for {sheet.filename} ')
 
     def prepareNextAccounting(self):
         self.logger.info('Preparing /next')
@@ -1048,7 +748,7 @@ def main(accountingDir, renamedAccountingDir, accountingDate,
     model = Model(accountingDir, newDir, nextAccountingDir, accountingDate,
             updateCo2Statistics)
     model.loadAccountData()
-    GUI(model)
+    AccountGUI(model)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(

@@ -5,14 +5,13 @@ Previous Balance [CHF];302.70
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];55.55
-Current Balance [CHF];247.15
-Total gCo2e;5443
+Total Price [CHF];50.30
+Current Balance [CHF];252.40
+Total gCo2e;4264
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
 cornflakes;Cornflakes;4;5.10;368;20.40;1472
 haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
 mandeln;Mandeln;3;4.95;211;14.85;633
-pelato-tomaten;Pelato Tomaten;3;1.75;393;5.25;1179
 soya-kloesse;Soya-Kloesse;1;1.85;257;1.85;257
 spaghetti;Spaghetti;2;2.25;491;4.50;982
 zucker-vollrohr;Zucker Vollrohr;1;4.80;None;4.80;None

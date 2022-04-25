@@ -5,12 +5,11 @@ Previous Balance [CHF];293.50
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];44.80
-Current Balance [CHF];248.70
-Total gCo2e;5169
+Total Price [CHF];37.80
+Current Balance [CHF];255.70
+Total gCo2e;3597
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
 balsamico-bianco;Balsamico bianco;1;7.95;491;7.95;491
 kichererbsen-schwarz-hell;Kichererbsen (schwarz / hell);1;11.60;None;11.60;None
-pelato-tomaten;Pelato Tomaten;4;1.75;393;7.00;1572
 pfeffer-schwarz-ganz;Pfeffer schwarz ganz;1;4.75;160;4.75;160
 spaghetti;Spaghetti;6;2.25;491;13.50;2946

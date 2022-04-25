@@ -5,11 +5,10 @@ Previous Balance [CHF];428.20
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];159.60
-Current Balance [CHF];268.60
-Total gCo2e;32329
+Total Price [CHF];137.10
+Current Balance [CHF];291.10
+Total gCo2e;27910
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-eliche-vollkorn;Eliche Vollkorn;9;2.50;491;22.50;4419
 haferflocken-fein;Haferflocken fein;2;1.95;460;3.90;920
 kalkentferner;Kalkentferner;1;6.25;489;6.25;489
 kurbiskerne;Kürbiskerne;1;4.40;257;4.40;257

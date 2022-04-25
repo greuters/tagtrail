@@ -5,10 +5,9 @@ Previous Balance [CHF];270.30
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];12.15
-Current Balance [CHF];258.15
-Total gCo2e;859
+Total Price [CHF];9.65
+Current Balance [CHF];260.65
+Total gCo2e;368
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
 cornflakes;Cornflakes;1;5.10;368;5.10;368
-eliche-vollkorn;Eliche Vollkorn;1;2.50;491;2.50;491
 toilettenpapier;Toilettenpapier;1;4.55;None;4.55;None

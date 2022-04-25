@@ -5,9 +5,8 @@ Previous Balance [CHF];252.55
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];21.25
-Current Balance [CHF];231.30
-Total gCo2e;1964
+Total Price [CHF];11.25
+Current Balance [CHF];241.30
+Total gCo2e;0
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-eliche-vollkorn;Eliche Vollkorn;4;2.50;491;10.00;1964
 papier-mondi-nautilus;Papier Mondi Nautilus;1;11.25;None;11.25;None

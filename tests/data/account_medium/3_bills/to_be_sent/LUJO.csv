@@ -5,8 +5,7 @@ Previous Balance [CHF];-6.30
 Total Payments [CHF];0.00
 Correction Transaction [CHF];0.00
 Reason for correction;
-Total Price [CHF];8.75
-Current Balance [CHF];-15.05
-Total gCo2e;1965
+Total Price [CHF];0.00
+Current Balance [CHF];-6.30
+Total gCo2e;0
 productId;description;numTags;unitPrice;unitGCo2e;totalProductPrice;totalGCo2e
-pelato-tomaten;Pelato Tomaten;5;1.75;393;8.75;1965
