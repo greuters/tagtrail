@@ -59,6 +59,10 @@ class EnrichedDatabase(database.Database):
         if not os.path.isfile(self.inputTransactionsPath):
             raise ValueError(
                     f'Missing required file {self.inputTransactionsPath}\n')
+        # validate format
+        self.logger.info(f"testload transactions from {self.inputTransactionsPath}")
+        self.readCsv(self.inputTransactionsPath,
+                database.PostfinanceTransactionList)
 
         if not os.path.isfile(self.unprocessedTransactionsPath):
             helpers.recreateDir(f'{self.accountingDataPath}4_gnucash/')
