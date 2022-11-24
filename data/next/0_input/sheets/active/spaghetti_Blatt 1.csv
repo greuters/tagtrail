@@ -1,7 +1,7 @@
 boxName;text;confidence
 frameBox;;1
 nameBox;Spaghetti;1
-unitBox;500g;1
+unitBox;500g;1.0
 priceBox;2.25 CHF;1
 sheetNumberBox;Blatt 1;1
 dataBox0(0,0);MAMA;1
@@ -14,14 +14,14 @@ dataBox6(1,1);GEN;1
 dataBox7(1,2);FLOS;1
 dataBox8(1,3);HEL;1
 dataBox9(1,4);FLOS;1
-dataBox10(2,0);DGL;1
-dataBox11(2,1);CHEF;1
+dataBox10(2,0);DGL;1.0
+dataBox11(2,1);CHEF;1.0
 dataBox12(2,2);FLOS;1
 dataBox13(2,3);YEAH;1
 dataBox14(2,4);FLOS;1
 dataBox15(3,0);2TRO;1
 dataBox16(3,1);CHEF;1
-dataBox17(3,2);DGL;1.0
+dataBox17(3,2);DGL;1
 dataBox18(3,3);APFV;1
 dataBox19(3,4);;1.0
 dataBox20(4,0);JEMI;1.0
@@ -35,12 +35,12 @@ dataBox27(5,2);FFL;1
 dataBox28(5,3);APFV;1
 dataBox29(5,4);;1.0
 dataBox30(6,0);APFV;1
-dataBox31(6,1);FFL;1
+dataBox31(6,1);FFL;1.0
 dataBox32(6,2);FFL;1.0
 dataBox33(6,3);KATR;1.0
 dataBox34(6,4);;1.0
-dataBox35(7,0);FLOS;1
-dataBox36(7,1);FFL;1
+dataBox35(7,0);FLOS;1.0
+dataBox36(7,1);FFL;1.0
 dataBox37(7,2);FFL;1.0
 dataBox38(7,3);KATR;1.0
 dataBox39(7,4);;1.0
@@ -77,5 +77,5 @@ dataBox69(13,4);;1.0
 dataBox70(14,0);KATR;1.0
 dataBox71(14,1);KATR;1.0
 dataBox72(14,2);MESCH;1.0
-dataBox73(14,3);KATR;1.0
+dataBox73(14,3);KATR;1
 dataBox74(14,4);;1.0

@@ -931,6 +931,9 @@ class AccountTest(TagtrailTestCase):
         for filename in os.listdir(taggedSheetDir):
             if not filename.endswith('.csv'):
                 continue
+            if os.path.exists(
+                    f'{self.testRootDir}0_input/sheets/inactive/{filename}'):
+                continue
             if additionalSoldValue > unmodifiedBill.currentBalance:
                 break
 
