@@ -1423,7 +1423,7 @@ class SplitSheetDialog(Dialog):
                     'sheetDetector',
                     self.model.tmpDir,
                     self.model.writeDebugImages,
-                    self.log
+                    self.logger
                     ).process(img)
         elif self.selectionMode == 'corners' and len(self._selectedCorners) == 4:
             frameContour = [
@@ -1438,8 +1438,7 @@ class SplitSheetDialog(Dialog):
             self.outputImg = SheetNormalizer(
                     'normalizer',
                     self.model.tmpDir,
-                    self.model.writeDebugImages,
-                    self.log
+                    self.model.writeDebugImages
                     ).process(img, np.array(frameContour))
 
         resizedTemplateImg = cv.cvtColor(cv.resize(self._templateImg, (canvasW,

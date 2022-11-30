@@ -63,7 +63,7 @@ On Ubuntu
 
 * source tagtrail-env/bin/activate
 
-* pip install --upgrade pip && pip install -r requirements.txt
+* make upgrade
 
 * To verify everything works as expected: make test
 
@@ -79,7 +79,7 @@ On MacOs
 
 * source tagtrail-env/bin/activate
 
-* pip install --upgrade pip && pip install -r requirements.txt
+* make upgrade
 
   - if tesserocr fails to install because of missing ios, try CFLAGS='-stdlib=libc++' pip install ...
 
@@ -101,11 +101,26 @@ On Windows
 
 * cd tagtrail
 
-* conda install -c conda-forge tesserocr=2.5.1
+* conda install -c conda-forge tesserocr=2.5.2
  
 * pip install -r requirements.txt
 
 * To verify everything works as expected: python -m tests.scenario_medium
+
+Update to stable int branch
+************************
+
+* git checkout int
+
+* git fetch origin
+
+* git reset --hard origin/main
+
+* git clean -xdf
+
+* pip install -r requirements.txt 
+
+* run tests to verify everything works
 
 Running the provided example (TODO: add a real user guide)
 **********************************************************
