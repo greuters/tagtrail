@@ -12,7 +12,7 @@ argon2-cffi-bindings==21.2.0
     # via argon2-cffi
 babel==2.11.0
     # via sphinx
-certifi==2022.9.24
+certifi==2022.12.7
     # via requests
 cffi==1.15.1
     # via
@@ -33,9 +33,7 @@ idna==3.4
 imagesize==1.4.1
     # via sphinx
 importlib-metadata==5.1.0
-    # via
-    #   keyring
-    #   sphinx
+    # via keyring
 imutils==0.5.4
     # via -r requirements.in
 jaraco-classes==3.2.3
