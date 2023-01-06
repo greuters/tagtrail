@@ -1,6 +1,6 @@
 opencv-python
 tesserocr
-python-Levenshtein-wheels
+python-Levenshtein
 python-slugify
 keyrings.cryptfile
 requests
