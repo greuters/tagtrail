@@ -1,8 +1,8 @@
-﻿Date from:;="25.01.2020"
-Date to:;="31.03.2021"
-Entry type:;="All bookings"
-Account:;="CH3609000000890399940"
-Currency:;="CHF"
+﻿Date from:;25.01.2020
+Date to:;31.03.2021
+Entry type:;All bookings
+Account:;CH3609000000890399940
+Currency:;CHF
 
 Booking date;Notification text;Credit in CHF;Debit in CHF;Value;Balance in CHF
 29.11.2020;"GUTSCHRIFT VON FREMDBANK AUFTRAGGEBER: Ashleigh Morgan Grubenacker 12. CH 8000 ZUERI CH MITTEILUNGEN: GIRA REFERENZEN: NOTPROVIDED 903932355A89RE12 201118223ABE ";333.00;;2020-11-18;1003.75

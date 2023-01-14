@@ -4,6 +4,9 @@ init:
 test:
 	python -m tests.scenario_medium
 
+test_basic:
+	python -m tests.scenario_basic
+
 coverage:
 	coverage run --branch -m tests.scenario_medium && coverage html
 

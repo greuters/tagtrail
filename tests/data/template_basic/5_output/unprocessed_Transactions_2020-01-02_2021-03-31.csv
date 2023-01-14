@@ -1,8 +1,8 @@
-﻿Date from:;="25.10.2020"
-Date to:;="31.03.2021"
-Entry type:;="All bookings"
-Account:;="CH3609000000890399940"
-Currency:;="CHF"
+﻿Date from:;25.10.2020
+Date to:;31.03.2021
+Entry type:;All bookings
+Account:;CH3609000000890399940
+Currency:;CHF
 
 Booking date;Notification text;Credit in CHF;Debit in CHF;Value;Balance in CHF
 31.10.2020;"PREIS FÜR DIE KONTOFÜHRUNG ";;-5.00;2020-10-31;1085.75
