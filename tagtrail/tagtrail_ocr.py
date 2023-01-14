@@ -1422,8 +1422,7 @@ class SplitSheetDialog(Dialog):
             frameContour = LineBasedFrameFinder(
                     'sheetDetector',
                     self.model.tmpDir,
-                    self.model.writeDebugImages,
-                    self.logger
+                    self.model.writeDebugImages
                     ).process(img)
         elif self.selectionMode == 'corners' and len(self._selectedCorners) == 4:
             frameContour = [
