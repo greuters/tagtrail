@@ -404,10 +404,15 @@ class SheetCategorizer(ABC):
             else:
                 # product did not change and some existing sheets need to be
                 # active
-                generatedSheetList = self.activateAndReplaceIndividualSheets(product, numTagsNeeded,
-                        updatedActiveSheetList, missingInputSheetList,
-                        inactiveInputSheetList)
-                categorizedSheets += generatedSheetList
+                if missingInputSheetList != []:
+                    self.handleProductWithMissingSheetsAndIndividualReplacement(product,
+                            updatedActiveSheetList, missingInputSheetList,
+                            inactiveInputSheetList)
+                else:
+                    generatedSheets = self.activateAndReplaceIndividualSheets(
+                            product, numTagsNeeded, updatedActiveSheetList,
+                            inactiveInputSheetList)
+                    categorizedSheets += generatedSheets
 
             categorizedSheets += updatedActiveSheetList
             categorizedSheets += missingInputSheetList
@@ -487,8 +492,52 @@ class SheetCategorizer(ABC):
 
         return False
 
-    def activateAndReplaceIndividualSheets(self, product, numTagsNeeded,
+    def handleProductWithMissingSheetsAndIndividualReplacement(self, product,
             updatedActiveInputSheets, missingInputSheets, inactiveInputSheets):
+        """
+        If any sheet is missing, it is impossible to know how many tags
+        are still empty on this sheet, therefore it is unclear if any
+        others of the same product should be activated or printed new.
+        We can just assume the state of all sheets is still ok, as it was
+        checked last time when no sheets were missing.
+
+        The only exception
+        were sheets can safely change state is to remove them if they are
+        full, given self.allowRemoval == True.
+
+        :param product: product to consider
+        :type product: :class: `database.Product`
+        :param updatedActiveInputSheets: list of previously active sheets of product in 0_input
+        :type updatedActiveInputSheets: list of :class: `sheets.ProductSheet`
+        :param missingInputSheets: list of active sheets of product in 0_input
+        which are missing in 2_taggedProductSheets
+        :type missingInputSheets: list of :class: `sheets.ProductSheet`
+        :param inactiveInputSheets: list of previously inactive sheets of product in 0_input
+        :type inactiveInputSheets: list of :class: `sheets.ProductSheet`
+        """
+        for s in updatedActiveInputSheets:
+            if s.isFull() and self.allowRemoval:
+                self.setPreviousSheetState(s, 'active')
+                self.setNewSheetState(s, 'obsolete')
+                s.tooltip = 'sheet is full'
+            else:
+                self.setPreviousSheetState(s, 'active')
+                self.setNewSheetState(s, 'active')
+                s.tooltip = 'sheet state unchanged, as another sheet of this product is missing'
+
+        for s in inactiveInputSheets:
+            self.setPreviousSheetState(s, 'inactive')
+            self.setNewSheetState(s, 'inactive')
+            s.tooltip = 'sheet state unchanged, as another sheet of this product is missing'
+
+        for s in missingInputSheets:
+            self.setPreviousSheetState(s, 'active')
+            self.setNewSheetState(s, 'missing')
+            s.tooltip = ('''sheet should be active but is missing in scans
+                    - redo as --individualScan or leave for next accounting''')
+ 
+    def activateAndReplaceIndividualSheets(self, product, numTagsNeeded,
+            updatedActiveInputSheets, inactiveInputSheets):
         """
         Activate inactive sheets and add new sheets to print until enough room
         is available to accomodate the expected quantity
@@ -496,15 +545,13 @@ class SheetCategorizer(ABC):
         If self.allowRemoval == True, full sheets are removed, active ones can
         be deactivated and existing sheets replaced where necessary.
 
-        No missingInputSheets are allowed if product.addedQuantity > 0.
+        Precondition: no missingInputSheets for this product.
 
         :param product: product to consider
         :type product: :class: `database.Product`
         :param numTagsNeeded: number of tags needed for the product
         :param updatedActiveInputSheets: list of previously active sheets of product in 0_input
         :type updatedActiveInputSheets: list of :class: `sheets.ProductSheet`
-        :param missingInputSheets: list of missing active sheets of product in 0_input
-        :type missingInputSheets: list of :class: `sheets.ProductSheet`
         :param inactiveInputSheets: list of previously inactive sheets of product in 0_input
         :type inactiveInputSheets: list of :class: `sheets.ProductSheet`
         :return: a list of generated sheets
@@ -574,12 +621,6 @@ class SheetCategorizer(ABC):
                 self.setNewSheetState(s, 'inactive')
                 s.tooltip = 'sheet has free tags, but they are not needed'
 
-        # missing sheets cannot be replaced
-        for s in missingInputSheets:
-            self.setPreviousSheetState(s, 'active')
-            self.setNewSheetState(s, 'missing')
-            s.tooltip = 'out of stock but sheet missing - unable to remove'
-
         if numFreeTags >= numTagsNeeded:
             return []
 
@@ -592,9 +633,7 @@ class SheetCategorizer(ABC):
                 if not (
                     n in activeInputSheetsByNumber.keys()
                     or n in inactiveInputSheetsByNumber.keys()
-                    # missing sheets cannot be replaced and are assumed to be full
-                    or n in [ProductSheet.parse_sheetNumber(self.db,
-                        s.sheetNumber) for s in missingInputSheets])]
+                    )]
         if (numFreeTags + len(newSheetNumbers)*ProductSheet.maxQuantity() <
                 numTagsNeeded):
             if not self.allowRemoval:
@@ -604,12 +643,6 @@ class SheetCategorizer(ABC):
                         'you are sure no new tags have been added since '
                         'last accounting. If you are not sure, do an accounting '
                         'before adding new products.')
-            if missingInputSheets != []:
-                raise ValueError(f'{product.id} would need to replace '
-                        'some sheets but following sheets are missing:\n'
-                        f'{missingInputSheets}\n'
-                        'Run tagtrail_ocr --individualScan to add them and'
-                        'rerun tagtrail_sanitize and tagtrail_account')
 
         sheetNumbersInReplacementOrder = newSheetNumbers.copy()
         if self.allowRemoval:
@@ -634,14 +667,15 @@ class SheetCategorizer(ABC):
             if sheetNumber not in newSheetNumbers:
                 self.logger.debug(f'sheet number {sheetNumber} is not new')
                 s = None
+                assert sheetNumber in activeInputSheetsByNumber \
+                        or sheetNumber in inactiveInputSheetsByNumber, \
+                        'replaced sheet must be active or inacive'
                 if sheetNumber in activeInputSheetsByNumber:
                     s = activeInputSheetsByNumber[sheetNumber]
                     self.setPreviousSheetState(s, 'active')
-                elif sheetNumber in inactiveInputSheetsByNumber:
+                else:
                     s = inactiveInputSheetsByNumber[sheetNumber]
                     self.setPreviousSheetState(s, 'inactive')
-                else:
-                    assert(False, 'replaced sheet must be active or inacive')
                 self.setNewSheetState(s, 'obsolete')
                 s.tooltip = 'replaced by new sheet'
                 numFreeTags -= len(s.emptyDataBoxes())

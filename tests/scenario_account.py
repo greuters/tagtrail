@@ -67,6 +67,7 @@ class AccountTest(TagtrailTestCase):
         self.logger.info(f'Accounting done, checking output\n')
         self.check_transaction_files_per_member(model)
         self.check_product_sheets(model)
+        self.check_missing_sheets(model)
         self.check_output_matches_template(model, modifiedProductIds,
                 modifiedMemberIds)
         self.check_members_tsv(model)
@@ -200,6 +201,40 @@ class AccountTest(TagtrailTestCase):
                     f'{nextSheetDir}inactive/{sheet.filename}')
             else:
                 assert(sheet.newState == 'obsolete')
+
+    def check_missing_sheets(self, model):
+        """
+        Check products with missing sheets
+        """
+        self.logger.info('Check missing sheets')
+
+        # Other sheets of a product with missing sheets should not change, but
+        # for obsoleting full ones or inactivating if the product is sold out
+        for missingSheet in model.sheetCategorizer.sheets:
+            if missingSheet.newState != 'missing':
+                continue
+            product = model.db.products[missingSheet.productId()]
+            soldOut = (product.inventoryQuantity or product.expectedQuantity) <= 0
+            for s in model.sheetCategorizer.sheets:
+                if missingSheet.productId() != s.productId():
+                    continue
+                if soldOut:
+                    validTransitions = [('active', 'missing'),
+                            ('active', 'obsolete'),
+                            ('active', 'inactive')]
+                    assert (s.previousState, s.newState) in validTransitions \
+                            or s.newState == s.previousState, \
+                        f'''{s.filename} changed from {s.previousState} to
+                        {s.newState}, but the product is sold out and has
+                        missing sheets'''
+                else:
+                    validTransitions = [('active', 'missing'),
+                            ('active', 'obsolete')]
+                    assert (s.previousState, s.newState) in validTransitions \
+                            or s.newState == s.previousState, \
+                        f'''{s.filename} changed from {s.previousState} to
+                        {s.newState}, but the product is sold out and has
+                        missing sheets'''
 
     def check_output_matches_template(self, model, modifiedProductIds,
             modifiedMemberIds):
