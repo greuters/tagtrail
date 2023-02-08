@@ -22,7 +22,7 @@ charset-normalizer==2.1.1
     # via requests
 coverage==7.0.3
     # via -r requirements.in
-cryptography==39.0.0
+cryptography==39.0.1
     # via secretstorage
 docutils==0.19
     # via sphinx
